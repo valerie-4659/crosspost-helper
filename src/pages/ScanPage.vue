@@ -11,6 +11,7 @@ async function scan(sourceId: string) {
   if (!source) return;
   await sourceStore.scanSource(source);
   await imageStore.load();
+  await imageStore.loadFolders();
 }
 
 async function addPlaceholder(type: "google_drive" | "dropbox") {

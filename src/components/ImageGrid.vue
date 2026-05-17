@@ -7,7 +7,7 @@ defineProps<{
   images: ImageWithPostState[];
   targets: PostingTarget[];
   activeTargetId?: string;
-  selectedImageIds: string[];
+  selectedImageIds: Set<string>;
   selectedImages: ImageWithPostState[];
 }>();
 
@@ -31,7 +31,7 @@ const emit = defineEmits<{
       :image="image"
       :targets="targets"
       :active-target-id="activeTargetId"
-      :selected="selectedImageIds.includes(image.id)"
+      :selected="selectedImageIds.has(image.id)"
       :drag-images="selectedImages"
       @toggle-selected="emit('toggleSelected', $event)"
       @preview="emit('preview', $event)"

@@ -86,7 +86,10 @@ export async function listImages(filters: Partial<ImageFilters> = {}): Promise<I
     params.push(filters.sourceId);
     conditions.push(`images.source_id = $${params.length}`);
   }
-  if (filters.folderPath) {
+  if (filters.exactFolderPath) {
+    params.push(filters.exactFolderPath);
+    conditions.push(`images.folder_path = $${params.length}`);
+  } else if (filters.folderPath) {
     params.push(`%${filters.folderPath}%`);
     conditions.push(`images.folder_path LIKE $${params.length}`);
   }
@@ -166,7 +169,7 @@ export async function upsertImage(input: ImageInput): Promise<{ imageId: string;
   if (existing[0]) {
     await db.execute(
       `UPDATE images SET local_path = $1, filename = $2, folder_path = $3, mime_type = $4, file_size = $5,
-       thumbnail_url = $6, web_view_link = $7, created_at = $8, modified_at = $9, indexed_at = $10,
+       thumbnail_url = COALESCE($6, thumbnail_url), web_view_link = $7, created_at = $8, modified_at = $9, indexed_at = $10,
        perceptual_hash = COALESCE($11, perceptual_hash), width = COALESCE($12, width),
        height = COALESCE($13, height), rating = COALESCE($14, rating)
        WHERE id = $15`,
@@ -311,4 +314,28 @@ export async function findDuplicateCandidates(input: ImageInput) {
   }
 
   return [...new Map(candidates.map((candidate) => [candidate.id, mapImage(candidate)])).values()];
+}
+
+export interface FolderEntry {
+  folderPath: string;
+  count: number;
+}
+
+/** Returns all distinct folder paths and their image counts, sorted alphabetically. */
+export async function listDistinctFolders(sourceId?: string): Promise<FolderEntry[]> {
+  const db = await getDatabase();
+  const params: unknown[] = [];
+  const conditions = ["images.is_archived = 0"];
+  if (sourceId) {
+    params.push(sourceId);
+    conditions.push(`images.source_id = $${params.length}`);
+  }
+  const rows = await db.select<Array<{ folder_path: string; count: number }>>(
+    `SELECT folder_path, COUNT(*) AS count FROM images
+     WHERE ${conditions.join(" AND ")}
+     GROUP BY folder_path
+     ORDER BY folder_path`,
+    params,
+  );
+  return rows.map((r) => ({ folderPath: r.folder_path, count: r.count }));
 }

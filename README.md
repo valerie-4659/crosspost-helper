@@ -37,6 +37,13 @@ git push origin main --tags
 
 GitHub Actions builds unsigned macOS, Windows, and Linux artifacts from the tag.
 
+After the GitHub release is built, publish with the locally installed itch.io butler:
+
+```bash
+npm run release:download -- v0.1.1
+npm run release:itch -- v0.1.1
+```
+
 ## Release Signing
 
 Current builds are unsigned. macOS Gatekeeper and Windows SmartScreen may show warnings on first launch.

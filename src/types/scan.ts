@@ -10,6 +10,7 @@ export interface LocalImageFile {
   perceptualHash: string | null;
   width: number | null;
   height: number | null;
+  thumbnailUrl: string | null;
 }
 
 export interface ScanResult {

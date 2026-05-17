@@ -12,11 +12,11 @@ const emit = defineEmits<{
   close: [];
 }>();
 
+// Always use the original full-resolution file in the lightbox — never the thumbnail.
 const imageUrl = computed(() => {
   if (!props.image) return "";
-  if (props.image.thumbnailUrl) return props.image.thumbnailUrl;
   if (props.image.localPath) return convertFileSrc(props.image.localPath);
-  return "";
+  return props.image.thumbnailUrl ?? "";
 });
 </script>
 

@@ -15,6 +15,7 @@ function localFileToImageInput(source: ImageSource, file: Awaited<ReturnType<typ
     folderPath: file.folderPath,
     mimeType: file.mimeType,
     fileSize: file.fileSize,
+    thumbnailUrl: file.thumbnailUrl,
     createdAt: file.createdAt,
     modifiedAt: file.modifiedAt,
     perceptualHash: file.perceptualHash,

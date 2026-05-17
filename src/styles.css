@@ -60,11 +60,14 @@ textarea {
   }
 
   .button-primary {
-    @apply border-accent bg-accent px-4 py-2 text-sm font-semibold text-ink hover:border-mint hover:bg-mint hover:text-ink;
+    @apply inline-flex items-center justify-center gap-2 border-accent bg-accent px-4 py-2 text-sm font-semibold text-ink hover:border-mint hover:bg-mint hover:text-ink;
   }
 
   .field {
     @apply rounded-md border border-line bg-ink px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-accent;
+    /* macOS WebKit ignores `color` on native <select> — force it via -webkit-text-fill-color.
+       Using currentColor means dynamic Tailwind text-* classes (e.g. text-accent) still work. */
+    -webkit-text-fill-color: currentColor;
   }
 
   .muted {

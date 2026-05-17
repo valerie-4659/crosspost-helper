@@ -1,4 +1,4 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { writeImage, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -25,9 +25,7 @@ export async function copyImageToClipboard(image: ImageWithPostState) {
     return;
   }
 
-  const response = await fetch(convertFileSrc(image.localPath));
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  await writeImage(bytes);
+  await writeImage(image.localPath);
 }
 
 export function setImageDragData(event: DragEvent, image: ImageWithPostState) {

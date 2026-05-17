@@ -9,15 +9,20 @@ import SidebarNavigation, { type AppPage } from "@/components/SidebarNavigation.
 import { useTargetStore } from "@/stores/targetStore";
 import { useSourceStore } from "@/stores/sourceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useImageStore } from "@/stores/imageStore";
 
 const currentPage = ref<AppPage>("picker");
 const targetStore = useTargetStore();
 const sourceStore = useSourceStore();
 const settingsStore = useSettingsStore();
+const imageStore = useImageStore();
 
 onMounted(async () => {
   settingsStore.applyTheme();
   await Promise.all([targetStore.load(), sourceStore.load()]);
+  // Pre-load images and folder list so Library and Picker are populated immediately.
+  await imageStore.load();
+  await imageStore.loadFolders();
 });
 </script>
 

@@ -50,6 +50,8 @@ export interface ImageWithPostState extends IndexedImage {
 export interface ImageFilters {
   sourceId?: string;
   folderPath?: string;
+  /** Exact folder path match — set by the folder sidebar, takes precedence over folderPath LIKE. */
+  exactFolderPath?: string;
   targetId?: string;
   dateFrom?: string;
   dateTo?: string;

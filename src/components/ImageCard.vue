@@ -1,8 +1,29 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { Archive, Check, Clipboard, Copy, Expand, FolderOpen, RotateCcw } from "lucide-vue-next";
 import { setImagesDragData } from "@/services/imageActionService";
+
+function handleDragStart(event: DragEvent) {
+  const localPaths = dragImages.value
+    .map((img) => img.localPath)
+    .filter((p): p is string => Boolean(p));
+
+  if (localPaths.length > 0 && window.desktop?.core?.startDrag) {
+    // Cancel HTML5 drag — running both simultaneously causes the app to freeze
+    // after the drag ends because macOS gets two conflicting drag sessions.
+    event.preventDefault();
+
+    // Use cached thumbnail as drag icon (loads in <1 ms).
+    const firstImg = dragImages.value[0];
+    const iconPath = firstImg.thumbnailUrl?.startsWith("localfile://")
+      ? decodeURIComponent(firstImg.thumbnailUrl.slice("localfile://".length))
+      : undefined;
+    window.desktop.core.startDrag(localPaths, iconPath);
+  } else {
+    setImagesDragData(event, dragImages.value);
+  }
+}
 import type { ImageWithPostState } from "@/types/image";
 import type { PostingTarget } from "@/types/postingTarget";
 
@@ -31,6 +52,15 @@ const imageUrl = computed(() => {
   return "";
 });
 
+const imageLoaded = ref(false);
+const imgEl = ref<HTMLImageElement | null>(null);
+
+// For images already in the browser cache the 'load' event fires before
+// the listener is attached, so we also check img.complete after mount.
+onMounted(() => {
+  if (imgEl.value?.complete) imageLoaded.value = true;
+});
+
 const activeTarget = computed(() => props.targets.find((target) => target.id === props.activeTargetId) ?? null);
 const activeTargetStatus = computed(() => (activeTarget.value ? props.image.postStates[activeTarget.value.id] : undefined));
 const dragImages = computed(() => (props.selected && props.dragImages?.length ? props.dragImages : [props.image]));
@@ -41,10 +71,25 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
     class="surface overflow-hidden rounded-lg transition"
     :class="selected ? 'border-accent ring-1 ring-accent' : ''"
     draggable="true"
-    @dragstart="setImagesDragData($event, dragImages)"
+    @dragstart="handleDragStart"
   >
-    <div class="relative aspect-[4/3] cursor-grab bg-black/40 active:cursor-grabbing" @dblclick="emit('preview', image)">
-      <img v-if="imageUrl" :src="imageUrl" :alt="image.filename" class="h-full w-full object-cover" />
+    <div
+      class="relative aspect-[4/3] cursor-grab bg-black/40 active:cursor-grabbing"
+      :class="{ 'animate-pulse': imageUrl && !imageLoaded }"
+      @dblclick="emit('preview', image)"
+    >
+      <img
+        v-if="imageUrl"
+        ref="imgEl"
+        :src="imageUrl"
+        :alt="image.filename"
+        loading="lazy"
+        decoding="async"
+        class="h-full w-full object-cover transition-opacity duration-500"
+        :class="imageLoaded ? 'opacity-100' : 'opacity-0'"
+        @load="imageLoaded = true"
+        @error="imageLoaded = true"
+      />
       <label class="absolute left-3 top-3 flex h-8 w-8 items-center justify-center rounded-md border border-line bg-ink/80">
         <input class="h-4 w-4 accent-accent" type="checkbox" :checked="selected" @change.stop="emit('toggleSelected', image.id)" />
       </label>

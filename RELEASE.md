@@ -6,8 +6,7 @@
 2. Discord Webhook anlegen: Discord Server -> Kanal-Einstellungen -> Integrationen -> Webhooks.
 3. itch.io Projekt anlegen: `https://valerie-4659.itch.io/crossposthelper`.
 4. GitHub Remote setzen: `https://github.com/valerie-4659/crosspost-helper`.
-5. GitHub Secrets/Variables einrichten.
-6. Optional lokal: `butler` installieren und einloggen.
+5. Lokal `butler` installieren und einloggen.
 
 ## `.env`
 
@@ -19,12 +18,7 @@ Pflicht:
 - `ITCH_USERNAME`
 - `ITCH_GAME_SLUG`
 
-Fuer GitHub Actions:
-
-- Repository Secret `DISCORD_WEBHOOK_URL`, wenn Discord Benachrichtigungen gesendet werden sollen.
-- Repository Secret `BUTLER_API_KEY`, wenn itch.io automatisch veroeffentlicht werden soll.
-- Repository Variable `ITCH_USERNAME`, Standard: `valerie-4659`.
-- Repository Variable `ITCH_GAME_SLUG`, Standard: `crossposthelper`.
+GitHub Actions braucht keine itch.io Secrets. itch.io Publish laeuft lokal mit deinem installierten und eingeloggten `butler`.
 
 ## Signierung
 
@@ -80,8 +74,23 @@ Der GitHub Workflow:
 | 3 | Linux Build auf `ubuntu-22.04` | Automatisch |
 | 4 | Artefakte als GitHub Actions Artifacts hochladen | Automatisch |
 | 5 | Artefakte an GitHub Release haengen | Automatisch |
-| 6 | Optional per `butler` nach itch.io pushen | Nur wenn `BUTLER_API_KEY` gesetzt ist |
-| 7 | Optional Discord Webhook senden | Nur wenn `DISCORD_WEBHOOK_URL` gesetzt ist |
+| 6 | Pruefen, dass alle drei Plattformen Artefakte erzeugt haben | Automatisch |
+
+Danach lokal itch.io veroeffentlichen:
+
+```bash
+npm run release:download -- v0.1.1
+npm run release:itch -- v0.1.1
+npm run release:notify-discord
+```
+
+`release:download` laedt die GitHub Release Assets nach `dist/release/<tag>/`.
+
+`release:itch` nutzt deinen lokalen `butler` Login und pusht:
+
+- `dist/release/<tag>/macos` -> `valerie-4659/crossposthelper:macos`
+- `dist/release/<tag>/windows` -> `valerie-4659/crossposthelper:windows`
+- `dist/release/<tag>/linux` -> `valerie-4659/crossposthelper:linux`
 
 ## Projektwerte
 
@@ -122,4 +131,4 @@ macOS `.app` lokal zippen:
 npm run release:package-local
 ```
 
-Cross-Platform Release-Artefakte fuer macOS, Windows und Linux werden nicht lokal auf einem Mac gebaut, sondern durch GitHub Actions auf den jeweiligen Betriebssystem-Runnern.
+Cross-Platform Release-Artefakte fuer macOS, Windows und Linux werden nicht lokal auf einem Mac gebaut, sondern durch GitHub Actions auf den jeweiligen Betriebssystem-Runnern. Dadurch wird abgesichert, dass die App auf allen drei Zielsystemen kompiliert und paketiert.

@@ -20,7 +20,6 @@ const items = [
   <aside class="flex w-64 shrink-0 flex-col border-r border-line bg-[#0e1117] p-5">
     <div class="mb-8">
       <div class="text-lg font-semibold text-white">Crosspost Helper</div>
-      <div class="mt-1 text-xs text-slate-500">Local-first image picker</div>
     </div>
 
     <nav class="space-y-1">
@@ -35,26 +34,26 @@ const items = [
         {{ item.label }}
       </button>
     </nav>
-    <div class="mt-auto space-y-3 rounded-md border border-line bg-panel p-3">
+    <div class="mt-auto flex items-center justify-between rounded-md border border-line bg-panel px-3 py-2">
       <button class="text-left text-xs font-medium text-accent hover:text-mint" @click="page = 'about'">
-        Crosspost Helper v{{ version }}
+        v{{ version }}
       </button>
-      <div class="grid grid-cols-2 gap-2">
+      <div class="flex gap-1">
         <button
-          class="button h-9 px-2 text-xs"
+          class="button h-7 w-7 p-0"
           :class="settingsStore.themeMode === 'light' ? 'border-accent text-accent' : ''"
+          :title="'Light mode'"
           @click="settingsStore.setThemeMode('light')"
         >
-          <Sun class="h-4 w-4" />
-          Light
+          <Sun class="h-3.5 w-3.5" />
         </button>
         <button
-          class="button h-9 px-2 text-xs"
+          class="button h-7 w-7 p-0"
           :class="settingsStore.themeMode === 'dark' ? 'border-accent text-accent' : ''"
+          :title="'Dark mode'"
           @click="settingsStore.setThemeMode('dark')"
         >
-          <Moon class="h-4 w-4" />
-          Dark
+          <Moon class="h-3.5 w-3.5" />
         </button>
       </div>
     </div>

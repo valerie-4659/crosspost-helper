@@ -14,6 +14,20 @@ const imageUrl = computed(() => {
   if (props.image.localPath) return convertFileSrc(props.image.localPath);
   return "";
 });
+
+function handleDragStart(event: DragEvent) {
+  const localPath = props.image?.localPath;
+  if (!localPath || !window.desktop?.core?.startDrag) return;
+
+  // Cancel HTML5 drag to avoid the dual-drag freeze on macOS.
+  event.preventDefault();
+
+  const iconPath = props.image?.thumbnailUrl?.startsWith("localfile://")
+    ? decodeURIComponent(props.image.thumbnailUrl.slice("localfile://".length))
+    : undefined;
+
+  window.desktop.core.startDrag([localPath], iconPath);
+}
 </script>
 
 <template>
@@ -23,7 +37,9 @@ const imageUrl = computed(() => {
         v-if="image && imageUrl"
         :src="imageUrl"
         :alt="image.filename"
-        class="max-h-full max-w-full object-contain"
+        class="max-h-full max-w-full cursor-grab object-contain"
+        draggable="true"
+        @dragstart="handleDragStart"
       />
       <div v-else class="flex flex-col items-center gap-3 text-slate-500">
         <ImageOff class="h-12 w-12" />

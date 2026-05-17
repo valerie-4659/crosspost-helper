@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Archive, Check, Download, RefreshCcw, RotateCcw, X } from "lucide-vue-next";
+import { Archive, Check, ChevronRight, Download, Folder, RefreshCcw, RotateCcw, X } from "lucide-vue-next";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import ImageLightbox from "@/components/ImageLightbox.vue";
@@ -16,22 +16,110 @@ const targetStore = useTargetStore();
 const previewImage = ref<ImageWithPostState | null>(null);
 const selectedTargetIds = ref<string[]>([]);
 
-onMounted(() => {
-  void imageStore.load();
-});
-
-watch(
-  () => ({ ...imageStore.filters }),
-  () => {
-    void imageStore.load();
-  },
-  { deep: true },
-);
+// Reload images whenever a filter changes.
+onMounted(() => imageStore.load());
+watch(() => imageStore.filters, () => imageStore.load(), { deep: true });
 
 const activeTargetName = computed(
   () => targetStore.targets.find((target) => target.id === imageStore.filters.targetId)?.name ?? "",
 );
-const selectedCount = computed(() => imageStore.selectedImageIds.length);
+const selectedCount = computed(() => imageStore.selectedImageIds.size);
+
+// ── Folder navigation ──────────────────────────────────────────────────────────
+
+/** Segment-aware common ancestor of all scanned folders (the navigation root). */
+const rootDir = computed(() => {
+  const paths = imageStore.folders.map((f) => f.folderPath);
+  if (!paths.length) return "";
+  const segs = paths.map((p) => p.split("/"));
+  const minLen = Math.min(...segs.map((s) => s.length));
+  const common: string[] = [];
+  for (let i = 0; i < minLen; i++) {
+    if (segs.every((s) => s[i] === segs[0][i])) common.push(segs[0][i]);
+    else break;
+  }
+  return common.join("/");
+});
+
+/** The folder path the user has navigated into (empty string = rootDir). */
+const currentDir = ref("");
+
+/** Resolved directory we're currently browsing. */
+const browsePath = computed(() => currentDir.value || rootDir.value);
+
+/** Immediate subdirectories of browsePath, with accumulated image counts. */
+const childFolders = computed(() => {
+  const base = browsePath.value;
+  if (!base) return [];
+  const children = new Map<string, number>();
+  for (const f of imageStore.folders) {
+    if (f.folderPath === base || !f.folderPath.startsWith(base + "/")) continue;
+    const remaining = f.folderPath.slice(base.length + 1);
+    const nextSeg = remaining.split("/")[0];
+    const childPath = base + "/" + nextSeg;
+    children.set(childPath, (children.get(childPath) ?? 0) + f.count);
+  }
+  return [...children.entries()]
+    .map(([path, count]) => ({ path, name: path.split("/").pop()!, count }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+});
+
+/** True when we're in a leaf folder (no subfolders). */
+const isLeafDir = computed(() => childFolders.value.length === 0 && browsePath.value !== "");
+
+/** True when the current folder itself has direct images (mixed: subfolder + images). */
+const hasDirImages = computed(() =>
+  browsePath.value !== "" && imageStore.folders.some((f) => f.folderPath === browsePath.value),
+);
+
+/** Breadcrumb trail from rootDir to the current directory. */
+const breadcrumbs = computed(() => {
+  const root = rootDir.value;
+  const current = browsePath.value;
+  if (!root) return [];
+  const crumbs = [{ name: root.split("/").pop() || root, path: root }];
+  if (current === root) return crumbs;
+  const relative = current.slice(root.length + 1);
+  let path = root;
+  for (const seg of relative.split("/")) {
+    path = path + "/" + seg;
+    crumbs.push({ name: seg, path });
+  }
+  return crumbs;
+});
+
+function navigateTo(path: string) {
+  currentDir.value = path;
+  // browsePath watcher will update the filter.
+}
+
+// Keep exactFolderPath in sync whenever the effective browse path changes.
+// immediate:true ensures the filter is set on first render even when folders are
+// already loaded (pre-loaded in App.vue) and browsePath never "changes" again.
+watch(
+  browsePath,
+  (path) => {
+    if (!path) {
+      imageStore.filters.exactFolderPath = undefined;
+      return;
+    }
+    const hasDirect = imageStore.folders.some((f) => f.folderPath === path);
+    const hasChildren = imageStore.folders.some(
+      (f) => f.folderPath !== path && f.folderPath.startsWith(path + "/"),
+    );
+    imageStore.filters.exactFolderPath = hasDirect || !hasChildren ? path : undefined;
+    imageStore.filters.folderPath = undefined;
+  },
+  { immediate: true },
+);
+
+// Reset navigation whenever the folder list changes (e.g. after a new scan).
+watch(
+  () => imageStore.folders.length,
+  () => {
+    currentDir.value = "";
+  },
+);
 
 async function runAction(action: () => Promise<void>, success: string) {
   imageStore.error = "";
@@ -62,8 +150,10 @@ async function markSelected() {
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-4 p-5">
-    <header class="flex items-center justify-between">
+  <div class="flex h-full flex-col overflow-hidden">
+
+    <!-- ── Header ──────────────────────────────────────────────────── -->
+    <header class="flex shrink-0 items-center justify-between px-5 pt-5">
       <div>
         <h1 class="text-2xl font-semibold text-white">Image Library</h1>
         <p class="mt-1 text-sm text-slate-400">
@@ -76,82 +166,137 @@ async function markSelected() {
       </button>
     </header>
 
-    <FilterBar
-      v-model:filters="imageStore.filters"
-      :sources="sourceStore.sources"
-      :targets="targetStore.enabledTargets"
-      show-target-filter
-      show-target-rules
-    />
-
-    <div v-if="activeTargetName" class="rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-accent">
-      Showing images not yet posted on {{ activeTargetName }}.
-    </div>
-
-    <section class="surface rounded-lg p-3">
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="mr-2 text-sm font-medium text-white">{{ selectedCount }} selected</span>
-        <button class="button" @click="imageStore.selectVisible">Select visible</button>
-        <button class="button" :disabled="selectedCount === 0" @click="imageStore.clearSelection">
-          <X class="h-4 w-4" />
-          Clear
-        </button>
-        <button class="button" :disabled="selectedCount === 0" @click="imageStore.excludeSelected">
-          <Archive class="h-4 w-4" />
-          Exclude
-        </button>
-        <button class="button" :disabled="selectedCount === 0" @click="imageStore.restoreSelected">
-          <RotateCcw class="h-4 w-4" />
-          Restore
-        </button>
-        <button class="button" :disabled="selectedCount === 0" @click="exportSelected">
-          <Download class="h-4 w-4" />
-          Download
-        </button>
-      </div>
-
-      <div class="mt-3 flex flex-wrap items-center gap-2">
-        <span class="mr-2 text-sm text-slate-400">Mark selected as posted on</span>
-        <label
-          v-for="target in targetStore.enabledTargets"
-          :key="target.id"
-          class="flex items-center gap-2 rounded-md border border-line bg-ink px-3 py-2 text-sm text-slate-300"
+    <!-- ── Breadcrumb navigation ────────────────────────────────────── -->
+    <nav v-if="breadcrumbs.length" class="flex shrink-0 items-center gap-1 px-5 pt-3 text-sm">
+      <template v-for="(crumb, i) in breadcrumbs" :key="crumb.path">
+        <button
+          class="max-w-48 truncate transition"
+          :class="i === breadcrumbs.length - 1 ? 'font-medium text-white' : 'text-slate-400 hover:text-white'"
+          :title="crumb.path"
+          @click="navigateTo(crumb.path)"
         >
-          <input v-model="selectedTargetIds" type="checkbox" class="accent-accent" :value="target.id" />
-          {{ target.name }}
-        </label>
-        <button class="button-primary rounded-md" :disabled="selectedCount === 0 || selectedTargetIds.length === 0" @click="markSelected">
-          <Check class="h-4 w-4" />
-          Marked
+          {{ crumb.name }}
+        </button>
+        <ChevronRight v-if="i < breadcrumbs.length - 1" class="h-3.5 w-3.5 shrink-0 text-slate-600" />
+      </template>
+    </nav>
+
+    <!-- ── Scrollable body ──────────────────────────────────────────── -->
+    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5 pt-3">
+
+      <!-- Filter bar (always visible for source / target filtering) -->
+      <FilterBar
+        v-model:filters="imageStore.filters"
+        :sources="sourceStore.sources"
+        :targets="targetStore.enabledTargets"
+        show-target-filter
+        show-target-rules
+      />
+
+      <div v-if="activeTargetName" class="rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-accent">
+        Showing images not yet posted on {{ activeTargetName }}.
+      </div>
+
+      <!-- ── FOLDER BROWSER ─────────────────────────────────────────── -->
+      <div
+        v-if="childFolders.length"
+        class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+      >
+        <button
+          v-for="folder in childFolders"
+          :key="folder.path"
+          class="group flex flex-col items-center gap-3 rounded-xl border border-line bg-panel p-6 text-center transition hover:border-accent hover:bg-panelSoft"
+          :title="folder.path"
+          @click="navigateTo(folder.path)"
+        >
+          <Folder class="h-12 w-12 text-slate-500 transition group-hover:text-accent" />
+          <div class="w-full">
+            <p class="truncate font-medium text-white">{{ folder.name }}</p>
+            <p class="mt-0.5 text-xs text-slate-500">{{ folder.count }} images</p>
+          </div>
         </button>
       </div>
-    </section>
 
-    <div v-if="imageStore.message" class="rounded-md border border-mint/30 bg-mint/10 px-3 py-2 text-sm text-mint">
-      {{ imageStore.message }}
-    </div>
+      <!-- Divider when folder has both subfolders and direct images -->
+      <div v-if="childFolders.length && hasDirImages" class="flex items-center gap-3">
+        <div class="h-px flex-1 bg-line" />
+        <span class="text-xs text-slate-500">Images in this folder</span>
+        <div class="h-px flex-1 bg-line" />
+      </div>
 
-    <div v-if="imageStore.error" class="rounded-md border border-rose/40 bg-rose/10 px-3 py-2 text-sm text-rose">
-      {{ imageStore.error }}
-    </div>
+      <!-- ── IMAGE VIEW (leaf folder OR mixed folder with direct images) -->
+      <template v-if="isLeafDir || hasDirImages">
+        <!-- Action toolbar -->
+        <section class="surface shrink-0 rounded-lg p-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="mr-2 text-sm font-medium text-white">{{ selectedCount }} selected</span>
+            <button class="button" @click="imageStore.selectVisible">Select visible</button>
+            <button class="button" :disabled="selectedCount === 0" @click="imageStore.clearSelection">
+              <X class="h-4 w-4" />Clear
+            </button>
+            <button class="button" :disabled="selectedCount === 0" @click="imageStore.excludeSelected">
+              <Archive class="h-4 w-4" />Exclude
+            </button>
+            <button class="button" :disabled="selectedCount === 0" @click="imageStore.restoreSelected">
+              <RotateCcw class="h-4 w-4" />Restore
+            </button>
+            <button class="button" :disabled="selectedCount === 0" @click="exportSelected">
+              <Download class="h-4 w-4" />Download
+            </button>
+          </div>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <span class="mr-2 shrink-0 text-sm text-slate-400">Mark selected as posted on</span>
+            <label
+              v-for="target in targetStore.enabledTargets"
+              :key="target.id"
+              class="flex shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition"
+              :class="selectedTargetIds.includes(target.id) ? 'border-accent bg-accent/10 text-accent' : 'border-line bg-ink text-slate-300'"
+            >
+              <input v-model="selectedTargetIds" type="checkbox" class="accent-accent" :value="target.id" />
+              {{ target.name }}
+            </label>
+            <button
+              class="button-primary shrink-0 whitespace-nowrap rounded-md px-5"
+              :disabled="selectedCount === 0 || selectedTargetIds.length === 0"
+              @click="markSelected"
+            >
+              <Check class="h-4 w-4" />Mark as posted
+            </button>
+          </div>
+        </section>
 
-    <div class="min-h-0 flex-1 overflow-y-auto pr-1">
-      <ImageGrid
-        :images="imageStore.images"
-        :targets="targetStore.targets"
-        :active-target-id="imageStore.filters.targetId"
-        :selected-image-ids="imageStore.selectedImageIds"
-        :selected-images="imageStore.selectedImages"
-        @toggle-selected="imageStore.toggleSelected"
-        @preview="previewImage = $event"
-        @archive="imageStore.archive"
-        @reveal="(image: ImageWithPostState) => runAction(() => revealImage(image), 'Opened in Finder.')"
-        @copy-path="(image: ImageWithPostState) => runAction(() => copyImagePath(image), 'Path copied.')"
-        @copy-image="(image: ImageWithPostState) => runAction(() => copyImageToClipboard(image), 'Image copied.')"
-        @mark-posted="imageStore.markPosted"
-        @mark-skipped="imageStore.markSkipped"
-      />
-    </div>
+        <div v-if="imageStore.message" class="rounded-md border border-mint/30 bg-mint/10 px-3 py-2 text-sm text-mint">
+          {{ imageStore.message }}
+        </div>
+        <div v-if="imageStore.error" class="rounded-md border border-rose/40 bg-rose/10 px-3 py-2 text-sm text-rose">
+          {{ imageStore.error }}
+        </div>
+
+        <ImageGrid
+          :images="imageStore.images"
+          :targets="targetStore.targets"
+          :active-target-id="imageStore.filters.targetId"
+          :selected-image-ids="imageStore.selectedImageIds"
+          :selected-images="imageStore.selectedImages"
+          @toggle-selected="imageStore.toggleSelected"
+          @preview="previewImage = $event"
+          @archive="imageStore.archive"
+          @reveal="(image: ImageWithPostState) => runAction(() => revealImage(image), 'Opened in Finder.')"
+          @copy-path="(image: ImageWithPostState) => runAction(() => copyImagePath(image), 'Path copied.')"
+          @copy-image="(image: ImageWithPostState) => runAction(() => copyImageToClipboard(image), 'Image copied.')"
+          @mark-posted="imageStore.markPosted"
+          @mark-skipped="imageStore.markSkipped"
+        />
+      </template>
+
+      <!-- ── EMPTY STATE ─────────────────────────────────────────────── -->
+      <div v-if="!childFolders.length && !isLeafDir && !hasDirImages" class="flex flex-1 flex-col items-center justify-center gap-3 text-center text-slate-500">
+        <Folder class="h-16 w-16 opacity-30" />
+        <p class="text-lg font-medium">No images scanned yet</p>
+        <p class="text-sm">Go to <strong class="text-slate-400">Scan</strong> and add a source folder.</p>
+      </div>
+
+    </div><!-- end scrollable body -->
 
     <ImageLightbox :image="previewImage" @close="previewImage = null" />
   </div>

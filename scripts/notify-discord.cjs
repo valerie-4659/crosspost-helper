@@ -1,21 +1,10 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
+const { loadEnv } = require("./env.cjs");
 
 const root = path.resolve(__dirname, "..");
-const envPath = path.join(root, ".env");
-
-if (fs.existsSync(envPath)) {
-  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const index = trimmed.indexOf("=");
-    if (index === -1) continue;
-    const key = trimmed.slice(0, index);
-    const value = trimmed.slice(index + 1);
-    process.env[key] ||= value;
-  }
-}
+loadEnv(root);
 
 const webhook = process.env.DISCORD_WEBHOOK_URL;
 if (!webhook) {
