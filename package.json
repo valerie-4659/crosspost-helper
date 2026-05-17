@@ -8,7 +8,10 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:build:app": "tauri build --bundles app"
+    "tauri:build:app": "tauri build --bundles app",
+    "release": "node scripts/release.cjs",
+    "release:package-local": "node scripts/package-local-release.cjs",
+    "release:notify-discord": "node scripts/notify-discord.cjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",

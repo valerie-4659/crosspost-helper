@@ -1,32 +1,14 @@
 <script setup lang="ts">
 import { ExternalLink, Github, Heart, PackageCheck } from "lucide-vue-next";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { changelogEntries } from "@/data/changelog";
 
 const version = __APP_VERSION__;
 const authorImage = new URL("../../autor.png", import.meta.url).href;
 const appIcon = new URL("../../crossposthelpericon.png", import.meta.url).href;
 const appBanner = new URL("../../crossposthelperbanner.png", import.meta.url).href;
 
-const changelog = [
-  {
-    version,
-    year: "2026",
-    items: [
-      "Manual library workflow with bulk selection and target marking",
-      "Large image preview, exclude/restore, and local export",
-      "Light and dark mode with a dedicated About page",
-    ],
-  },
-  {
-    version: "0.1.0",
-    year: "2026",
-    items: [
-      "Local folder indexing with SQLite tracking",
-      "Per-target duplicate posting protection",
-      "Import/export foundation for local-first backups",
-    ],
-  },
-];
+const changelog = changelogEntries;
 </script>
 
 <template>
@@ -86,7 +68,7 @@ const changelog = [
           <article v-for="entry in changelog" :key="entry.version" class="surface rounded-lg p-5">
             <div class="flex items-center justify-between">
               <h3 class="text-lg font-semibold text-accent">v{{ entry.version }}</h3>
-              <span class="text-sm text-slate-500">{{ entry.year }}</span>
+              <span class="text-sm text-slate-500">{{ entry.date }}</span>
             </div>
             <ul class="mt-4 space-y-2 text-sm leading-6 text-slate-300">
               <li v-for="item in entry.items" :key="item" class="flex gap-3">

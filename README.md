@@ -28,6 +28,15 @@ Build the macOS app bundle:
 npm run tauri:build:app
 ```
 
+Start a tagged release:
+
+```bash
+npm run release
+git push origin main --tags
+```
+
+GitHub Actions builds unsigned macOS, Windows, and Linux artifacts from the tag.
+
 ## Release Signing
 
 Current builds are unsigned. macOS Gatekeeper and Windows SmartScreen may show warnings on first launch.
