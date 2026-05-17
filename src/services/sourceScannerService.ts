@@ -17,6 +17,9 @@ function localFileToImageInput(source: ImageSource, file: Awaited<ReturnType<typ
     fileSize: file.fileSize,
     createdAt: file.createdAt,
     modifiedAt: file.modifiedAt,
+    perceptualHash: file.perceptualHash,
+    width: file.width,
+    height: file.height,
     rating: "unknown",
   };
 }
@@ -58,4 +61,3 @@ export async function scanImageSource(source: ImageSource): Promise<ScanResult> 
 
   return result;
 }
-

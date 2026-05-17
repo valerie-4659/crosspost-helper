@@ -7,6 +7,9 @@ export interface LocalImageFile {
   fileSize: number | null;
   createdAt: string | null;
   modifiedAt: string | null;
+  perceptualHash: string | null;
+  width: number | null;
+  height: number | null;
 }
 
 export interface ScanResult {
