@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.2 - 2026-05-17
+
+- fix: target Windows x64 for cross-platform compatibility
+
+
 ## v0.1.1 - 2026-05-17
 
 - feat: migrate from Tauri to Electron

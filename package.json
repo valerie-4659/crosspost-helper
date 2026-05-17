@@ -1,6 +1,6 @@
 {
   "name": "crossposthelper",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local-first image library and cross-posting helper for artists.",
   "homepage": "https://valerie-4659.itch.io/crossposthelper",
   "author": {
@@ -78,7 +78,12 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "crossposthelpericon.png"
     },

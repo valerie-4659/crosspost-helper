@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.1.2",
+    date: "2026-05-17",
+    items: [
+      "fix: target Windows x64 for cross-platform compatibility",
+    ],
+  },
+  {
     version: "0.1.1",
     date: "2026-05-17",
     items: [
