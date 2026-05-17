@@ -1,6 +1,11 @@
 {
   "name": "crossposthelper",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "description": "Local-first image library and cross-posting helper for artists.",
+  "homepage": "https://valerie-4659.itch.io/crossposthelper",
+  "author": {
+    "name": "Valerie"
+  },
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
@@ -9,7 +14,7 @@
     "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://localhost:5173 && VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "electron:build": "npm run build && electron-builder --mac --win",
+    "electron:build": "npm run build && electron-builder --mac --win --linux",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
     "build:win": "npm run build && electron-builder --win",
@@ -64,18 +69,27 @@
       }
     ],
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "crossposthelpericon.png",
       "identity": null
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "crossposthelpericon.png"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "crossposthelpericon.png",
-      "category": "Graphics"
+      "category": "Graphics",
+      "maintainer": "Valerie <crossposthelper@localhost>"
     },
     "nsis": {
       "oneClick": false,
