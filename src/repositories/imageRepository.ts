@@ -94,6 +94,27 @@ export async function listImages(filters: Partial<ImageFilters> = {}): Promise<I
     params.push(filters.rating);
     conditions.push(`images.rating = $${params.length}`);
   }
+  if (filters.targetId) {
+    params.push(filters.targetId);
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM post_records selected_target_record
+      WHERE selected_target_record.image_id = images.id
+      AND selected_target_record.target_id = $${params.length}
+      AND selected_target_record.status = 'posted'
+    )`);
+  }
+  if (filters.excludePostedAnywhere) {
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM post_records posted_anywhere
+      WHERE posted_anywhere.image_id = images.id AND posted_anywhere.status = 'posted'
+    )`);
+  }
+  if (!filters.includeSkipped) {
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM post_records skipped_records
+      WHERE skipped_records.image_id = images.id AND skipped_records.status = 'skipped'
+    )`);
+  }
   if (!filters.includeArchived) {
     conditions.push("images.is_archived = 0");
   }

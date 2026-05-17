@@ -1,7 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { openPath, openUrl } from "@tauri-apps/plugin-opener";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { copyImagePath, copyImageToClipboard, revealImage } from "@/services/imageActionService";
 import { markImagePosted, markImageSkipped, pickRandomUnpostedImage } from "@/services/pickerService";
 import { useTargetStore } from "./targetStore";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
@@ -11,8 +10,7 @@ export const usePickerStore = defineStore("picker", () => {
   const currentImage = ref<ImageWithPostState | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
-  const postUrl = ref("");
-  const caption = ref("");
+  const message = ref("");
   const filters = ref<ImageFilters>({
     targetId: "",
     includeSkipped: false,
@@ -32,8 +30,6 @@ export const usePickerStore = defineStore("picker", () => {
       if (!currentImage.value) {
         error.value = "No unposted image matched the current filters.";
       }
-      postUrl.value = "";
-      caption.value = "";
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : String(caught);
     } finally {
@@ -43,35 +39,38 @@ export const usePickerStore = defineStore("picker", () => {
 
   async function markPosted() {
     if (!currentImage.value || !targetStore.activeTargetId) return;
-    await markImagePosted(currentImage.value.id, targetStore.activeTargetId, postUrl.value, caption.value);
+    await markTargetPosted(targetStore.activeTargetId);
+  }
+
+  async function markTargetPosted(targetId: string) {
+    if (!currentImage.value) return;
+    await markImagePosted(currentImage.value.id, targetId);
+    message.value = "Marked as posted.";
     await pickRandom();
   }
 
   async function markSkipped() {
     if (!currentImage.value || !targetStore.activeTargetId) return;
-    await markImageSkipped(currentImage.value.id, targetStore.activeTargetId, caption.value);
+    await markImageSkipped(currentImage.value.id, targetStore.activeTargetId);
     await pickRandom();
   }
 
   async function openCurrentImage() {
     const image = currentImage.value;
     if (!image) return;
-    if (image.webViewLink) {
-      await openUrl(image.webViewLink);
-    } else if (image.localPath) {
-      await openPath(image.localPath);
-    }
+    await revealImage(image);
   }
 
-  async function copyFilename() {
+  async function copyPath() {
     if (currentImage.value) {
-      await writeText(currentImage.value.filename);
+      await copyImagePath(currentImage.value);
     }
   }
 
-  async function copyCaptionPlaceholder() {
-    const text = caption.value || `${currentImage.value?.filename ?? "Image"}\n\nPosted manually.`;
-    await writeText(text);
+  async function copyImage() {
+    if (currentImage.value) {
+      await copyImageToClipboard(currentImage.value);
+    }
   }
 
   return {
@@ -79,14 +78,14 @@ export const usePickerStore = defineStore("picker", () => {
     filters,
     loading,
     error,
-    postUrl,
-    caption,
+    message,
     canPick,
     pickRandom,
     markPosted,
+    markTargetPosted,
     markSkipped,
     openCurrentImage,
-    copyFilename,
-    copyCaptionPlaceholder,
+    copyPath,
+    copyImage,
   };
 });

@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Clipboard, Copy, ExternalLink, SkipForward, Shuffle, Upload } from "lucide-vue-next";
+import { Check, Clipboard, Copy, FolderOpen, SkipForward, Shuffle } from "lucide-vue-next";
 import FilterBar from "@/components/FilterBar.vue";
 import ImagePreview from "@/components/ImagePreview.vue";
-import StatusBadge from "@/components/StatusBadge.vue";
 import { usePickerStore } from "@/stores/pickerStore";
 import { useSourceStore } from "@/stores/sourceStore";
 import { useTargetStore } from "@/stores/targetStore";
@@ -20,7 +19,7 @@ const activeTargetName = computed(() => targets.activeTarget?.name ?? "target");
     <header class="flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-semibold text-white">Posting Picker</h1>
-        <p class="mt-1 text-sm text-slate-400">Randomly pick an image that has not been posted to the selected target.</p>
+        <p class="mt-1 text-sm text-slate-400">Use this when you want a random suggestion for the selected target.</p>
       </div>
       <div class="flex items-center gap-3">
         <select v-model="targets.activeTargetId" class="field min-w-44">
@@ -40,44 +39,50 @@ const activeTargetName = computed(() => targets.activeTarget?.name ?? "target");
 
       <aside class="surface flex w-96 shrink-0 flex-col gap-4 rounded-lg p-4">
         <div>
-          <h2 class="text-base font-semibold text-white">Manual posting</h2>
-          <p class="mt-1 text-sm text-slate-400">Post to {{ activeTargetName }}, paste the URL here, then mark it as posted.</p>
+          <h2 class="text-base font-semibold text-white">Use image</h2>
+          <p class="mt-1 text-sm text-slate-400">Drag from Finder, copy the image, or reveal the file. Then mark the network.</p>
         </div>
 
         <div v-if="picker.currentImage" class="flex flex-wrap gap-2">
-          <StatusBadge
+          <button
             v-for="target in targets.targets"
             :key="target.id"
-            :label="target.name"
-            :status="picker.currentImage.postStates[target.id]"
-          />
+            class="rounded-md border px-2 py-1 text-xs transition"
+            :class="{
+              'border-mint/50 bg-mint/10 text-mint': picker.currentImage.postStates[target.id] === 'posted',
+              'border-gold/50 bg-gold/10 text-gold': picker.currentImage.postStates[target.id] === 'planned',
+              'border-rose/50 bg-rose/10 text-rose': picker.currentImage.postStates[target.id] === 'skipped',
+              'border-line bg-panelSoft text-slate-400 hover:border-accent hover:text-accent': !picker.currentImage.postStates[target.id],
+            }"
+            :disabled="picker.currentImage.postStates[target.id] === 'posted'"
+            @click="picker.markTargetPosted(target.id)"
+          >
+            {{ picker.currentImage.postStates[target.id] === "posted" ? `${target.name}: posted` : `Mark ${target.name}` }}
+          </button>
         </div>
-
-        <input v-model="picker.postUrl" class="field" placeholder="Post URL after publishing" />
-        <textarea v-model="picker.caption" class="field min-h-28 resize-none" placeholder="Caption placeholder" />
 
         <div class="grid grid-cols-2 gap-2">
           <button class="button" :disabled="!picker.currentImage" @click="picker.openCurrentImage">
-            <ExternalLink class="h-4 w-4" />
-            Open
+            <FolderOpen class="h-4 w-4" />
+            Reveal
           </button>
-          <button class="button" :disabled="!picker.currentImage" @click="picker.copyFilename">
-            <Copy class="h-4 w-4" />
-            Filename
-          </button>
-          <button class="button" :disabled="!picker.currentImage" @click="picker.copyCaptionPlaceholder">
+          <button class="button" :disabled="!picker.currentImage" @click="picker.copyImage">
             <Clipboard class="h-4 w-4" />
-            Caption
+            Image
           </button>
-          <button class="button" :disabled="!picker.currentImage" @click="picker.markSkipped">
+          <button class="button" :disabled="!picker.currentImage" @click="picker.copyPath">
+            <Copy class="h-4 w-4" />
+            Path
+          </button>
+          <button class="button" :disabled="!picker.currentImage || !targets.activeTargetId" @click="picker.markSkipped">
             <SkipForward class="h-4 w-4" />
-            Skip
+            Skip {{ activeTargetName }}
           </button>
         </div>
 
         <button class="button-primary rounded-md" :disabled="!picker.currentImage || !targets.activeTargetId" @click="picker.markPosted">
-          <Upload class="h-4 w-4" />
-          Mark posted to {{ activeTargetName }}
+          <Check class="h-4 w-4" />
+          Mark {{ activeTargetName }}
         </button>
 
         <div v-if="picker.error" class="rounded-md border border-gold/40 bg-gold/10 p-3 text-sm text-gold">

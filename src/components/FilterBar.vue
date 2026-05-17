@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import type { ImageFilters, ImageRating } from "@/types/image";
 import type { ImageSource } from "@/types/imageSource";
+import type { PostingTarget } from "@/types/postingTarget";
 
 const filters = defineModel<Partial<ImageFilters>>("filters", { required: true });
 
 defineProps<{
   sources: ImageSource[];
+  targets?: PostingTarget[];
   showTargetRules?: boolean;
+  showTargetFilter?: boolean;
 }>();
 
 const ratings: Array<ImageRating | "all"> = ["all", "sfw", "suggestive", "nsfw", "unknown"];
@@ -14,6 +17,11 @@ const ratings: Array<ImageRating | "all"> = ["all", "sfw", "suggestive", "nsfw",
 
 <template>
   <div class="surface grid grid-cols-2 gap-3 rounded-lg p-3 lg:grid-cols-6">
+    <select v-if="showTargetFilter" v-model="filters.targetId" class="field">
+      <option value="">All targets</option>
+      <option v-for="target in targets" :key="target.id" :value="target.id">Available for {{ target.name }}</option>
+    </select>
+
     <select v-model="filters.sourceId" class="field">
       <option value="">All sources</option>
       <option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option>

@@ -6,11 +6,16 @@ import type { PostingTarget } from "@/types/postingTarget";
 defineProps<{
   images: ImageWithPostState[];
   targets: PostingTarget[];
+  activeTargetId?: string;
 }>();
 
 const emit = defineEmits<{
   archive: [imageId: string, archived: boolean];
-  open: [image: ImageWithPostState];
+  reveal: [image: ImageWithPostState];
+  copyPath: [image: ImageWithPostState];
+  copyImage: [image: ImageWithPostState];
+  markPosted: [imageId: string, targetId: string];
+  markSkipped: [imageId: string, targetId: string];
 }>();
 </script>
 
@@ -21,8 +26,13 @@ const emit = defineEmits<{
       :key="image.id"
       :image="image"
       :targets="targets"
+      :active-target-id="activeTargetId"
       @archive="(imageId, archived) => emit('archive', imageId, archived)"
-      @open="emit('open', $event)"
+      @reveal="emit('reveal', $event)"
+      @copy-path="emit('copyPath', $event)"
+      @copy-image="emit('copyImage', $event)"
+      @mark-posted="(imageId, targetId) => emit('markPosted', imageId, targetId)"
+      @mark-skipped="(imageId, targetId) => emit('markSkipped', imageId, targetId)"
     />
   </div>
   <div v-else class="surface flex h-72 items-center justify-center rounded-lg text-sm text-slate-400">
