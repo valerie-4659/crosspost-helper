@@ -4,15 +4,19 @@ import PickerPage from "@/pages/PickerPage.vue";
 import LibraryPage from "@/pages/LibraryPage.vue";
 import ScanPage from "@/pages/ScanPage.vue";
 import SettingsPage from "@/pages/SettingsPage.vue";
+import AboutPage from "@/pages/AboutPage.vue";
 import SidebarNavigation, { type AppPage } from "@/components/SidebarNavigation.vue";
 import { useTargetStore } from "@/stores/targetStore";
 import { useSourceStore } from "@/stores/sourceStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 const currentPage = ref<AppPage>("picker");
 const targetStore = useTargetStore();
 const sourceStore = useSourceStore();
+const settingsStore = useSettingsStore();
 
 onMounted(async () => {
+  settingsStore.applyTheme();
   await Promise.all([targetStore.load(), sourceStore.load()]);
 });
 </script>
@@ -24,7 +28,8 @@ onMounted(async () => {
       <PickerPage v-if="currentPage === 'picker'" />
       <LibraryPage v-else-if="currentPage === 'library'" />
       <ScanPage v-else-if="currentPage === 'scan'" />
-      <SettingsPage v-else />
+      <SettingsPage v-else-if="currentPage === 'settings'" />
+      <AboutPage v-else />
     </main>
   </div>
 </template>

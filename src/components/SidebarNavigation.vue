@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { Images, Search, Settings, Shuffle } from "lucide-vue-next";
+import { Images, Moon, Search, Settings, Shuffle, Sun } from "lucide-vue-next";
+import { useSettingsStore } from "@/stores/settingsStore";
 
-export type AppPage = "picker" | "library" | "scan" | "settings";
+export type AppPage = "picker" | "library" | "scan" | "settings" | "about";
 
 const page = defineModel<AppPage>("page", { required: true });
+const settingsStore = useSettingsStore();
+const version = __APP_VERSION__;
 
 const items = [
   { id: "picker", label: "Picker", icon: Shuffle },
@@ -32,9 +35,28 @@ const items = [
         {{ item.label }}
       </button>
     </nav>
-
-    <div class="mt-auto rounded-md border border-line bg-panel p-3 text-xs leading-5 text-slate-400">
-      Images stay local. Posting is tracked per target so X, Bluesky, Civitai, and custom destinations remain independent.
+    <div class="mt-auto space-y-3 rounded-md border border-line bg-panel p-3">
+      <button class="text-left text-xs font-medium text-accent hover:text-mint" @click="page = 'about'">
+        Crosspost Helper v{{ version }}
+      </button>
+      <div class="grid grid-cols-2 gap-2">
+        <button
+          class="button h-9 px-2 text-xs"
+          :class="settingsStore.themeMode === 'light' ? 'border-accent text-accent' : ''"
+          @click="settingsStore.setThemeMode('light')"
+        >
+          <Sun class="h-4 w-4" />
+          Light
+        </button>
+        <button
+          class="button h-9 px-2 text-xs"
+          :class="settingsStore.themeMode === 'dark' ? 'border-accent text-accent' : ''"
+          @click="settingsStore.setThemeMode('dark')"
+        >
+          <Moon class="h-4 w-4" />
+          Dark
+        </button>
+      </div>
     </div>
   </aside>
 </template>
