@@ -28,6 +28,10 @@ Build the macOS app bundle:
 npm run tauri:build:app
 ```
 
+## Release Signing
+
+Current builds are unsigned. macOS Gatekeeper and Windows SmartScreen may show warnings on first launch.
+
 ## Author
 
 Made by Valerie.

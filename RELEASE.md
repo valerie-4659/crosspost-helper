@@ -18,11 +18,21 @@ Pflicht:
 - `ITCH_USERNAME`
 - `ITCH_GAME_SLUG`
 
-Optional fuer macOS Notarisierung:
+## Signierung
 
-- `APPLE_ID`
-- `APPLE_APP_SPECIFIC_PASSWORD`
-- `APPLE_TEAM_ID`
+Die Releases sind aktuell bewusst unsigned:
+
+- macOS: keine Developer-ID-Signatur und keine Apple-Notarisierung.
+- Windows: kein Code-Signing-Zertifikat.
+- Linux: keine zentrale Signatur, normale Tauri/Linux-Artefakte.
+
+Das bedeutet:
+
+- macOS Gatekeeper kann beim ersten Start warnen. Nutzer muessen die App ggf. ueber Rechtsklick -> Oeffnen starten oder in Systemeinstellungen -> Datenschutz & Sicherheit freigeben.
+- Windows SmartScreen kann beim ersten Start warnen. Nutzer muessen die Ausfuehrung ggf. manuell bestaetigen.
+- Release-Notes und itch.io Beschreibung muessen klar darauf hinweisen, dass die Builds unsigned sind.
+
+Die Release-Automation darf ohne vorhandene Zertifikate keine Signierungs- oder Notarisierungsschritte erwarten.
 
 ## Jeder Release
 
@@ -36,8 +46,8 @@ Ziel fuer die spaetere Automation:
 | 4 | `CHANGELOG.md` oben erweitern | Automatisch |
 | 5 | In-App-Changelog der About-Seite erweitern | Automatisch |
 | 6 | Git add, commit, tag und push nach GitHub | Automatisch |
-| 7 | macOS Build | Automatisch |
-| 8 | Windows Build | Automatisch |
+| 7 | macOS Build unsigned | Automatisch |
+| 8 | Windows Build unsigned | Automatisch |
 | 9 | Linux Build | Automatisch |
 | 10 | Builds per `butler` nach itch.io pushen | Automatisch |
 | 11 | Discord Webhook senden | Automatisch |
@@ -58,3 +68,11 @@ Das vorhandene Projekt nutzt Tauri, nicht Electron. Release-Skripte muessen dahe
 - macOS: `.app` oder `.dmg`
 - Windows: `.msi` oder `.exe`, abhaengig von Tauri-Bundle-Konfiguration
 - Linux: `.AppImage`, `.deb` oder `.rpm`, abhaengig von Tauri-Bundle-Konfiguration
+
+Fuer macOS kann lokal zum Testen ein unsigniertes `.app`-Bundle gebaut werden:
+
+```bash
+npm run tauri:build:app
+```
+
+Ein `.dmg` ist optional. Wenn DMG-Packaging lokal Probleme macht, reicht fuer interne Tests und itch.io zuerst das `.app`-Bundle als ZIP.
