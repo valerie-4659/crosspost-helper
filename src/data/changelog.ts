@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.1.3",
+    date: "2026-05-17",
+    items: [
+      "Release v0.1.3",
+    ],
+  },
+  {
     version: "0.1.2",
     date: "2026-05-17",
     items: [

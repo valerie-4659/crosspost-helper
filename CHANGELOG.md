@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.3 - 2026-05-17
+
+- Release v0.1.3
+
+
 ## v0.1.2 - 2026-05-17
 
 - fix: target Windows x64 for cross-platform compatibility
