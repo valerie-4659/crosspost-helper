@@ -7,7 +7,8 @@
     "core:default",
     "dialog:default",
     "opener:default",
-    "clipboard-manager:default",
-    "sql:default"
+    "clipboard-manager:allow-write-text",
+    "sql:default",
+    "sql:allow-execute"
   ]
 }

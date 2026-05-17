@@ -45,6 +45,10 @@ async function addPlaceholder(type: "google_drive" | "dropbox") {
       </div>
     </header>
 
+    <div v-if="sourceStore.error" class="rounded-md border border-rose/40 bg-rose/10 p-3 text-sm text-rose">
+      {{ sourceStore.error }}
+    </div>
+
     <div v-if="sourceStore.sources.length" class="grid gap-3">
       <article v-for="source in sourceStore.sources" :key="source.id" class="surface rounded-lg p-4">
         <div class="flex items-start justify-between gap-4">
