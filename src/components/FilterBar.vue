@@ -40,7 +40,7 @@ const ratings: Array<ImageRating | "all"> = ["all", "sfw", "suggestive", "nsfw",
 
     <label class="flex items-center gap-2 rounded-md border border-line bg-ink px-3 text-sm text-slate-300">
       <input v-model="filters.includeArchived" type="checkbox" class="accent-accent" />
-      Archived
+      Excluded
     </label>
 
     <label v-if="showTargetRules" class="flex items-center gap-2 rounded-md border border-line bg-ink px-3 text-sm text-slate-300">

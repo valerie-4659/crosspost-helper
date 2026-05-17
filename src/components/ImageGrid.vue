@@ -7,9 +7,13 @@ defineProps<{
   images: ImageWithPostState[];
   targets: PostingTarget[];
   activeTargetId?: string;
+  selectedImageIds: string[];
+  selectedImages: ImageWithPostState[];
 }>();
 
 const emit = defineEmits<{
+  toggleSelected: [imageId: string];
+  preview: [image: ImageWithPostState];
   archive: [imageId: string, archived: boolean];
   reveal: [image: ImageWithPostState];
   copyPath: [image: ImageWithPostState];
@@ -27,6 +31,10 @@ const emit = defineEmits<{
       :image="image"
       :targets="targets"
       :active-target-id="activeTargetId"
+      :selected="selectedImageIds.includes(image.id)"
+      :drag-images="selectedImages"
+      @toggle-selected="emit('toggleSelected', $event)"
+      @preview="emit('preview', $event)"
       @archive="(imageId, archived) => emit('archive', imageId, archived)"
       @reveal="emit('reveal', $event)"
       @copy-path="emit('copyPath', $event)"

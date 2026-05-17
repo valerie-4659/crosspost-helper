@@ -75,6 +75,58 @@ fn scan_local_folder(root_path: String) -> Result<Vec<LocalImageFile>, String> {
     Ok(images)
 }
 
+#[tauri::command]
+fn copy_images_to_folder(paths: Vec<String>, destination: String) -> Result<usize, String> {
+    let destination = PathBuf::from(destination);
+    if !destination.exists() || !destination.is_dir() {
+        return Err("Destination folder does not exist".to_string());
+    }
+
+    let mut copied = 0;
+    for path in paths {
+        let source = PathBuf::from(path);
+        if !source.exists() || !source.is_file() {
+            continue;
+        }
+
+        let Some(filename) = source.file_name() else {
+            continue;
+        };
+
+        let mut target = destination.join(filename);
+        if target.exists() {
+            target = unique_destination_path(&destination, filename);
+        }
+
+        fs::copy(source, target).map_err(|error| error.to_string())?;
+        copied += 1;
+    }
+
+    Ok(copied)
+}
+
+fn unique_destination_path(destination: &Path, filename: &std::ffi::OsStr) -> PathBuf {
+    let source_name = Path::new(filename);
+    let stem = source_name
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("image");
+    let extension = source_name.extension().and_then(|value| value.to_str());
+
+    for index in 1..10000 {
+        let candidate_name = match extension {
+            Some(extension) => format!("{stem}-{index}.{extension}"),
+            None => format!("{stem}-{index}"),
+        };
+        let candidate = destination.join(candidate_name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    destination.join(filename)
+}
+
 struct ImageMetadata {
     perceptual_hash: Option<String>,
     width: u32,
@@ -140,7 +192,7 @@ pub fn run() {
                 .add_migrations("sqlite:crossposthelper.db", migrations)
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![scan_local_folder])
+        .invoke_handler(tauri::generate_handler![scan_local_folder, copy_images_to_folder])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
