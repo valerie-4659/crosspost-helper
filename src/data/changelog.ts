@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.0",
+    date: "2026-05-18",
+    items: [
+      "chore: ignore dist-electron/ build output in git",
+      "feat: browser extension + Firefox support + in-app download page",
+    ],
+  },
+  {
     version: "0.1.3",
     date: "2026-05-17",
     items: [

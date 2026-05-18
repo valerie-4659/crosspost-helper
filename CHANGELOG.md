@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.0 - 2026-05-18
+
+- chore: ignore dist-electron/ build output in git
+- feat: browser extension + Firefox support + in-app download page
+
+
 ## v0.1.3 - 2026-05-17
 
 - Release v0.1.3
