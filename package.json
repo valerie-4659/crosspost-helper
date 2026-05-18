@@ -66,12 +66,15 @@
       {
         "from": "node_modules/sql.js/dist/sql-wasm.wasm",
         "to": "sql-wasm.wasm"
+      },
+      {
+        "from": "chrome-extension",
+        "to": "chrome-extension"
       }
     ],
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        "dmg"
       ],
       "icon": "crossposthelpericon.png",
       "identity": null

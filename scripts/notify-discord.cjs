@@ -13,9 +13,27 @@ if (!webhook) {
 }
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-const version = process.env.RELEASE_VERSION || packageJson.version;
-const repoUrl = "https://github.com/valerie-4659/crosspost-helper";
+const version = (process.env.RELEASE_VERSION || `v${packageJson.version}`).replace(/^v/, "");
 const itchUrl = "https://valerie-4659.itch.io/crossposthelper";
+
+// Up to 3 user-facing bullets passed as JSON array from release.cjs
+const rawBullets = process.env.RELEASE_BULLETS || "[]";
+const bullets = JSON.parse(rawBullets).slice(0, 3);
+const bulletLines = bullets.length
+  ? bullets.map((b) => `• ${b}`).join("\n")
+  : null;
+
+const description = [
+  `**v${version}**`,
+  "",
+  bulletLines,
+  "",
+  `[:inbox_tray: Download on itch.io](${itchUrl})`,
+  "",
+  `v${version} · Windows · macOS · Linux`,
+]
+  .filter((line) => line !== null)
+  .join("\n");
 
 fetch(webhook, {
   method: "POST",
@@ -23,8 +41,8 @@ fetch(webhook, {
   body: JSON.stringify({
     embeds: [
       {
-        title: `Crosspost Helper v${version}`,
-        description: `Unsigned desktop builds for macOS, Windows, and Linux are available.\n\nGitHub: ${repoUrl}/releases/tag/v${version}\nitch.io: ${itchUrl}`,
+        title: "Crosspost Helper Update",
+        description,
         color: 7395071,
       },
     ],

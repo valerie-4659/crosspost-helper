@@ -27,6 +27,12 @@ declare global {
         /** Trigger a native OS file drag so external apps receive real files. */
         startDrag?: (filePaths: string[], iconPath?: string) => void;
       };
+      extension: {
+        /** Reveal the Chrome extension folder in Finder / Explorer. */
+        openChrome(): Promise<void>;
+        /** Package the Firefox extension as a .zip and prompt a save dialog. */
+        downloadFirefox(): Promise<{ ok: boolean; filePath?: string; error?: string }>;
+      };
     };
   }
 }

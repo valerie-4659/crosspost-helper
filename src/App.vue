@@ -5,6 +5,7 @@ import LibraryPage from "@/pages/LibraryPage.vue";
 import ScanPage from "@/pages/ScanPage.vue";
 import SettingsPage from "@/pages/SettingsPage.vue";
 import AboutPage from "@/pages/AboutPage.vue";
+import BrowserExtensionPage from "@/pages/BrowserExtensionPage.vue";
 import SidebarNavigation, { type AppPage } from "@/components/SidebarNavigation.vue";
 import { useTargetStore } from "@/stores/targetStore";
 import { useSourceStore } from "@/stores/sourceStore";
@@ -34,6 +35,7 @@ onMounted(async () => {
       <LibraryPage v-else-if="currentPage === 'library'" />
       <ScanPage v-else-if="currentPage === 'scan'" />
       <SettingsPage v-else-if="currentPage === 'settings'" />
+      <BrowserExtensionPage v-else-if="currentPage === 'extension'" />
       <AboutPage v-else />
     </main>
   </div>

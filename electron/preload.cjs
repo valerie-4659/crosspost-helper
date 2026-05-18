@@ -30,4 +30,8 @@ contextBridge.exposeInMainWorld("desktop", {
     // iconPath is optional: path to a small thumbnail to use as the drag cursor icon.
     startDrag: (filePaths, iconPath) => ipcRenderer.send("drag:start", filePaths, iconPath),
   },
+  extension: {
+    openChrome: () => ipcRenderer.invoke("extension:open-chrome"),
+    downloadFirefox: () => ipcRenderer.invoke("extension:download-firefox"),
+  },
 });

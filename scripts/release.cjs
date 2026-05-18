@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
-const readline = require("node:readline/promises");
-const { stdin: input, stdout: output } = require("node:process");
 const { execFileSync } = require("node:child_process");
 const { loadEnv } = require("./env.cjs");
 
@@ -19,6 +17,7 @@ function run(command, args, options = {}) {
     cwd: root,
     stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
     encoding: "utf8",
+    ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
   });
 }
 
@@ -106,17 +105,9 @@ async function main() {
 
   const previousTag = latestTag();
   const defaultBullets = commitsSince(previousTag);
-  const rl = readline.createInterface({ input, output });
-
-  console.log("\nRelease bullets. Enter custom bullets or press Enter to use commit subjects:");
-  defaultBullets.forEach((bullet) => console.log(`- ${bullet}`));
-  const enteredBullets = [];
-  while (true) {
-    const line = (await rl.question("Bullet: ")).trim();
-    if (!line) break;
-    enteredBullets.push(line.replace(/^- /, ""));
-  }
-  const bullets = enteredBullets.length ? enteredBullets : defaultBullets.length ? defaultBullets : [`Release ${tag}`];
+  const bullets = defaultBullets.length ? defaultBullets : [`Release ${tag}`];
+  console.log("\nRelease bullets (from commits):");
+  bullets.forEach((bullet) => console.log(`- ${bullet}`));
 
   packageJson.version = version;
   writeJson(packagePath, packageJson);
@@ -135,16 +126,13 @@ async function main() {
   console.log("\nCollecting artifacts...");
   run("node", ["scripts/collect-local-release.cjs", tag]);
 
-  const publishAnswer = (await rl.question("Publish to itch.io with local butler now? [Y/n]: ")).trim().toLowerCase();
-  if (publishAnswer !== "n" && publishAnswer !== "no") {
-    run("node", ["scripts/publish-itch-local.cjs", tag]);
-  }
+  console.log("\nPublishing to itch.io...");
+  run("node", ["scripts/publish-itch-local.cjs", tag]);
 
-  const discordAnswer = (await rl.question("Send Discord notification now? [Y/n]: ")).trim().toLowerCase();
-  if (discordAnswer !== "n" && discordAnswer !== "no") {
-    run("node", ["scripts/notify-discord.cjs"], { env: { RELEASE_VERSION: tag } });
-  }
-  rl.close();
+  console.log("\nSending Discord notification...");
+  run("node", ["scripts/notify-discord.cjs"], {
+    env: { RELEASE_VERSION: tag, RELEASE_BULLETS: JSON.stringify(bullets.slice(0, 3)) },
+  });
 
   run("git", ["add", "package.json", "package-lock.json", "CHANGELOG.md", "src/data/changelog.ts"]);
   run("git", ["commit", "-m", `chore: release ${tag}`]);

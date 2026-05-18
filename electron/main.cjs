@@ -1,6 +1,7 @@
 const { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, net, protocol, shell } = require("electron");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const initSqlJs = require("sql.js");
@@ -174,6 +175,128 @@ function copyImagesToFolder(paths, destination) {
   return copied;
 }
 
+// ─── Chrome Extension Bridge ─────────────────────────────────────────────────
+const BRIDGE_PORT = 27842;
+let bridgeServer = null;
+
+function bridgeSendJson(res, data, status = 200) {
+  const body = JSON.stringify(data);
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  });
+  res.end(body);
+}
+
+async function handleBridge(req, res) {
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" });
+    res.end();
+    return;
+  }
+  const url = new URL(req.url, `http://127.0.0.1:${BRIDGE_PORT}`);
+  const db = await getDatabase();
+
+  if (req.method === "GET" && url.pathname === "/status") {
+    bridgeSendJson(res, { running: true, version: app.getVersion() });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/next-image") {
+    const targetType = url.searchParams.get("target");
+    if (!targetType) { bridgeSendJson(res, { error: "target parameter required" }, 400); return; }
+    const tStmt = db.prepare("SELECT id FROM posting_targets WHERE type = ? AND enabled = 1 LIMIT 1");
+    tStmt.bind([targetType]);
+    const targets = [];
+    while (tStmt.step()) targets.push(tStmt.getAsObject());
+    tStmt.free();
+    if (!targets.length) { bridgeSendJson(res, { error: `No enabled target of type '${targetType}'` }, 404); return; }
+    const targetId = targets[0].id;
+    const iStmt = db.prepare(
+      `SELECT images.id, images.local_path, images.filename, images.mime_type FROM images
+       JOIN image_sources ON image_sources.id = images.source_id AND image_sources.enabled = 1
+       WHERE images.is_archived = 0
+       AND NOT EXISTS (
+         SELECT 1 FROM post_records
+         WHERE post_records.image_id = images.id AND post_records.target_id = ? AND post_records.status = 'posted'
+       )
+       ORDER BY RANDOM() LIMIT 1`
+    );
+    iStmt.bind([targetId]);
+    const imgs = [];
+    while (iStmt.step()) imgs.push(iStmt.getAsObject());
+    iStmt.free();
+    if (!imgs.length) { bridgeSendJson(res, { error: "No unposted images found" }, 404); return; }
+    const img = imgs[0];
+    bridgeSendJson(res, { id: img.id, filename: img.filename, localPath: img.local_path, mimeType: img.mime_type, targetId });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/image-file") {
+    const imageId = url.searchParams.get("id");
+    if (!imageId) { bridgeSendJson(res, { error: "id required" }, 400); return; }
+    const stmt = db.prepare("SELECT local_path, mime_type FROM images WHERE id = ? LIMIT 1");
+    stmt.bind([imageId]);
+    const rows = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    if (!rows.length || !rows[0].local_path) { bridgeSendJson(res, { error: "Not found" }, 404); return; }
+    const { local_path, mime_type } = rows[0];
+    if (!fs.existsSync(local_path)) { bridgeSendJson(res, { error: "File missing on disk" }, 404); return; }
+    const data = fs.readFileSync(local_path);
+    res.writeHead(200, { "Content-Type": mime_type || "application/octet-stream", "Content-Length": data.length, "Access-Control-Allow-Origin": "*" });
+    res.end(data);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/mark-posted") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", async () => {
+      try {
+        const { imageId, targetId } = JSON.parse(body);
+        if (!imageId || !targetId) { bridgeSendJson(res, { error: "imageId and targetId required" }, 400); return; }
+        const db2 = await getDatabase();
+        const now = new Date().toISOString();
+        const chk = db2.prepare("SELECT id FROM post_records WHERE image_id = ? AND target_id = ? LIMIT 1");
+        chk.bind([imageId, targetId]);
+        const existing = [];
+        while (chk.step()) existing.push(chk.getAsObject());
+        chk.free();
+        if (existing.length) {
+          const upd = db2.prepare("UPDATE post_records SET status = 'posted', posted_at = ?, updated_at = ? WHERE id = ?");
+          upd.run([now, now, existing[0].id]);
+          upd.free();
+        } else {
+          const ins = db2.prepare("INSERT INTO post_records (id, image_id, target_id, status, posted_at, created_at, updated_at) VALUES (?, ?, ?, 'posted', ?, ?, ?)");
+          ins.run([`pr_${crypto.randomUUID()}`, imageId, targetId, now, now, now]);
+          ins.free();
+        }
+        persistDatabase();
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("bridge:image-posted", { imageId, targetId });
+        bridgeSendJson(res, { ok: true });
+      } catch (err) { bridgeSendJson(res, { error: err.message }, 400); }
+    });
+    return;
+  }
+
+  bridgeSendJson(res, { error: "Not found" }, 404);
+}
+
+function startBridgeServer() {
+  bridgeServer = http.createServer(handleBridge);
+  bridgeServer.listen(BRIDGE_PORT, "127.0.0.1", () => {
+    console.log(`[Bridge] Listening on http://127.0.0.1:${BRIDGE_PORT}`);
+  });
+  bridgeServer.on("error", (err) => {
+    if (err.code === "EADDRINUSE") console.warn(`[Bridge] Port ${BRIDGE_PORT} already in use — bridge disabled.`);
+    else console.error(`[Bridge] ${err.message}`);
+  });
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1320,
@@ -257,6 +380,56 @@ app.whenReady().then(() => {
     throw new Error(`Unknown command: ${command}`);
   });
 
+  // Browser Extension helpers
+  // extensionDir() resolves the chrome-extension folder whether we are in dev
+  // (next to package.json) or in the packaged app (inside extraResources).
+  function extensionDir() {
+    if (app.isPackaged) return path.join(process.resourcesPath, "chrome-extension");
+    return path.join(__dirname, "..", "chrome-extension");
+  }
+
+  ipcMain.handle("extension:open-chrome", () => {
+    shell.showItemInFolder(path.join(extensionDir(), "manifest.json"));
+  });
+
+  ipcMain.handle("extension:download-firefox", async (_event) => {
+    const srcDir = extensionDir();
+    const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
+      title: "Save Firefox Extension",
+      defaultPath: path.join(app.getPath("downloads"), "crossposthelper-firefox.zip"),
+      filters: [{ name: "ZIP Archive", extensions: ["zip"] }],
+    });
+    if (canceled || !filePath) return { ok: false };
+
+    // Build zip using the OS zip tool (cross-platform via PowerShell on Windows)
+    const { execFileSync } = require("node:child_process");
+    try {
+      if (process.platform === "win32") {
+        // Replace manifest.json with manifest.firefox.json inside the zip
+        const tmpDir = path.join(app.getPath("temp"), `cph-ff-${Date.now()}`);
+        fs.mkdirSync(tmpDir, { recursive: true });
+        // Copy all files
+        const { execSync } = require("node:child_process");
+        execSync(`xcopy /E /I /Q "${srcDir}" "${tmpDir}"`, { stdio: "ignore" });
+        fs.copyFileSync(path.join(srcDir, "manifest.firefox.json"), path.join(tmpDir, "manifest.json"));
+        execSync(
+          `powershell -NoProfile -Command "Compress-Archive -Path '${tmpDir}\\*' -DestinationPath '${filePath}' -Force"`,
+          { stdio: "ignore" }
+        );
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } else {
+        const tmpDir = path.join(app.getPath("temp"), `cph-ff-${Date.now()}`);
+        fs.cpSync(srcDir, tmpDir, { recursive: true });
+        fs.copyFileSync(path.join(srcDir, "manifest.firefox.json"), path.join(tmpDir, "manifest.json"));
+        execFileSync("zip", ["-r", filePath, "."], { cwd: tmpDir, stdio: "ignore" });
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+      return { ok: true, filePath };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   // Serve local files via the localfile:// protocol so the renderer can
   // display images from arbitrary disk locations safely.
   protocol.handle("localfile", (request) => {
@@ -264,12 +437,12 @@ app.whenReady().then(() => {
     return net.fetch(fileUrl);
   });
 
+  startBridgeServer();
   createWindow();
-
-
 });
 
 app.on("window-all-closed", () => {
+  if (bridgeServer) bridgeServer.close();
   if (process.platform !== "darwin") app.quit();
 });
 

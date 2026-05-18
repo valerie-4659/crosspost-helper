@@ -8,7 +8,7 @@ const tag = process.argv[2] || `v${packageJson.version}`;
 const outputRoot = path.join(root, "dist", "release", tag);
 
 const rules = [
-  { platform: "macos", test: (name) => /\.(dmg|zip)$/i.test(name) && !name.includes("blockmap") },
+  { platform: "macos", test: (name) => /\.dmg$/i.test(name) && !name.includes("blockmap") },
   // Only the NSIS setup installer — not the unpacked app exe or helper binaries.
   { platform: "windows", test: (name) => /setup.*\.exe$/i.test(name) && !name.includes("blockmap") },
   { platform: "linux", test: (name) => /\.(AppImage|deb|rpm)$/i.test(name) },

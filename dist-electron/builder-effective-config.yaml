@@ -1,0 +1,38 @@
+directories:
+  output: dist-electron
+  buildResources: build
+appId: com.crossposthelper.desktop
+productName: Crosspost Helper
+files:
+  - filter:
+      - dist/**/*
+      - electron/**/*
+      - src/database/migrations/**/*
+      - package.json
+extraResources:
+  - from: node_modules/sql.js/dist/sql-wasm.wasm
+    to: sql-wasm.wasm
+mac:
+  target:
+    - dmg
+    - zip
+  icon: crossposthelpericon.png
+  identity: null
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: crossposthelpericon.png
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: crossposthelpericon.png
+  category: Graphics
+  maintainer: Valerie <crossposthelper@localhost>
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+electronVersion: 38.8.6

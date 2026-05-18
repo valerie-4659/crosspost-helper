@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Crosspost Helper Bridge",
+  "version": "0.1.0",
+  "description": "Post images from Crosspost Helper to X, Bluesky, DeviantArt, and CivitAI without an API.",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "http://127.0.0.1:27842/*",
+    "https://twitter.com/*",
+    "https://x.com/*",
+    "https://bsky.app/*",
+    "https://www.deviantart.com/*",
+    "https://civitai.com/*",
+    "https://civitai.red/*"
+  ],
+  "background": {
+    "service_worker": "background/worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://twitter.com/*", "https://x.com/*"],
+      "js": ["content/bridge.js", "content/adapters/x.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://bsky.app/*"],
+      "js": ["content/bridge.js", "content/adapters/bluesky.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.deviantart.com/*"],
+      "js": ["content/bridge.js", "content/adapters/deviantart.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://civitai.com/*", "https://civitai.red/*"],
+      "js": ["content/bridge.js", "content/adapters/civitai.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "Crosspost Helper"
+  }
+}
