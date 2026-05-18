@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-ssr
+dist-electron
 *.local
 src-tauri/target
 src-tauri/gen
