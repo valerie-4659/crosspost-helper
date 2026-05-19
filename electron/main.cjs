@@ -81,6 +81,21 @@ async function getDatabase() {
       // written by pre-v0.2.5 builds.  Forward slashes work on every platform
       // (Node fs APIs accept them on Windows) and the LibraryPage folder-tree
       // logic relies on "/" splits, so every path in the DB must be "/"-only.
+      //
+      // Step 1: Some intermediate builds already inserted forward-slash rows
+      // while the old backslash rows were still present, creating duplicates.
+      // Delete the stale backslash row when a forward-slash sibling exists so
+      // that Step 2's UPDATE cannot hit a UNIQUE constraint violation.
+      database.run(`
+        DELETE FROM images
+        WHERE instr(COALESCE(source_file_id, ''), '\\') > 0
+          AND EXISTS (
+            SELECT 1 FROM images AS dup
+            WHERE dup.source_id      = images.source_id
+              AND dup.source_file_id = REPLACE(images.source_file_id, '\\', '/')
+          )
+      `);
+      // Step 2: Normalise all remaining backslash paths in-place.
       database.run(`
         UPDATE images SET
           local_path     = REPLACE(local_path,     '\\', '/'),
