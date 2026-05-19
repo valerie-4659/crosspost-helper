@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.5",
+    date: "2026-05-19",
+    items: [
+      "perf: batch-index local folder scans in a single SQL transaction",
+    ],
+  },
+  {
     version: "0.2.4",
     date: "2026-05-19",
     items: [

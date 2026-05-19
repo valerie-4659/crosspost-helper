@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.5 - 2026-05-19
+
+- perf: batch-index local folder scans in a single SQL transaction
+
+
 ## v0.2.4 - 2026-05-19
 
 - fix: normalise path separators + fix localfile:// handler on Windows
