@@ -11,6 +11,7 @@ export const useSourceStore = defineStore("sources", () => {
   const loading = ref(false);
   const scanningSourceId = ref<string | null>(null);
   const lastScanResults = ref<Record<string, ScanResult>>({});
+  const scanProgress = ref<{ scanned: number; currentFile: string } | null>(null);
   const error = ref<string | null>(null);
 
   async function load() {
@@ -61,12 +62,20 @@ export const useSourceStore = defineStore("sources", () => {
   async function scanSource(source: ImageSource) {
     error.value = null;
     scanningSourceId.value = source.id;
+    scanProgress.value = null;
+
+    window.desktop?.scan?.onProgress((data) => {
+      scanProgress.value = data;
+    });
+
     try {
       const result = await scanImageSource(source);
       lastScanResults.value[source.id] = result;
       return result;
     } finally {
       scanningSourceId.value = null;
+      scanProgress.value = null;
+      window.desktop?.scan?.offProgress();
     }
   }
 
@@ -75,6 +84,7 @@ export const useSourceStore = defineStore("sources", () => {
     loading,
     scanningSourceId,
     lastScanResults,
+    scanProgress,
     error,
     load,
     addSource,

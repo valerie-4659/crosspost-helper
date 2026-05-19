@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Cloud, FolderPlus, Plus, RefreshCcw, Trash2 } from "lucide-vue-next";
+import { Cloud, FolderPlus, Loader2, Plus, RefreshCcw, Trash2 } from "lucide-vue-next";
 import { useImageStore } from "@/stores/imageStore";
 import { useSourceStore } from "@/stores/sourceStore";
 
@@ -59,7 +59,25 @@ async function addPlaceholder(type: "google_drive" | "dropbox") {
               <span class="rounded-md border border-line bg-panelSoft px-2 py-1 text-xs text-slate-400">{{ source.type }}</span>
             </div>
             <p class="mt-1 truncate text-sm text-slate-400">{{ source.rootPathOrId }}</p>
-            <p v-if="sourceStore.lastScanResults[source.id]" class="mt-2 text-sm text-slate-300">
+            <!-- Live progress while this source is being scanned -->
+            <div v-if="sourceStore.scanningSourceId === source.id" class="mt-3 space-y-1.5">
+              <div class="flex items-center gap-2 text-sm text-accent">
+                <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                <span class="font-medium">Scanning…</span>
+                <span v-if="sourceStore.scanProgress" class="text-slate-300">
+                  {{ sourceStore.scanProgress.scanned.toLocaleString() }} files found
+                </span>
+              </div>
+              <p
+                v-if="sourceStore.scanProgress"
+                class="max-w-sm truncate text-xs text-slate-500"
+                :title="sourceStore.scanProgress.currentFile"
+              >
+                {{ sourceStore.scanProgress.currentFile }}
+              </p>
+            </div>
+
+            <p v-if="!sourceStore.scanningSourceId && sourceStore.lastScanResults[source.id]" class="mt-2 text-sm text-slate-300">
               Scanned {{ sourceStore.lastScanResults[source.id].scanned }},
               new {{ sourceStore.lastScanResults[source.id].indexed }},
               existing {{ sourceStore.lastScanResults[source.id].duplicates }}
@@ -74,8 +92,9 @@ async function addPlaceholder(type: "google_drive" | "dropbox") {
               Enabled
             </label>
             <button class="button" :disabled="sourceStore.scanningSourceId === source.id || !source.enabled" @click="scan(source.id)">
-              <RefreshCcw class="h-4 w-4" />
-              Scan
+              <Loader2 v-if="sourceStore.scanningSourceId === source.id" class="h-4 w-4 animate-spin" />
+              <RefreshCcw v-else class="h-4 w-4" />
+              {{ sourceStore.scanningSourceId === source.id ? "Scanning…" : "Scan" }}
             </button>
             <button class="button h-10 w-10 p-0" title="Remove source" @click="sourceStore.removeSource(source.id)">
               <Trash2 class="h-4 w-4" />

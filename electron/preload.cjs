@@ -34,4 +34,8 @@ contextBridge.exposeInMainWorld("desktop", {
     openChrome: () => ipcRenderer.invoke("extension:open-chrome"),
     downloadFirefox: () => ipcRenderer.invoke("extension:download-firefox"),
   },
+  scan: {
+    onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),
+    offProgress: () => ipcRenderer.removeAllListeners("scan:progress"),
+  },
 });

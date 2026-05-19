@@ -33,6 +33,12 @@ declare global {
         /** Package the Firefox extension as a .zip and prompt a save dialog. */
         downloadFirefox(): Promise<{ ok: boolean; filePath?: string; error?: string }>;
       };
+      scan: {
+        /** Subscribe to per-file progress events emitted during a folder scan. */
+        onProgress(cb: (data: { scanned: number; currentFile: string }) => void): void;
+        /** Remove all scan:progress listeners. */
+        offProgress(): void;
+      };
     };
   }
 }

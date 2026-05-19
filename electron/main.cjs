@@ -117,7 +117,7 @@ async function dbExecute(_event, sql, params = []) {
   return { rowsAffected: db.getRowsModified(), lastInsertId: 0 };
 }
 
-async function walkImages(rootPath) {
+async function walkImages(rootPath, onProgress) {
   const results = [];
   async function recurse(dir) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -140,6 +140,7 @@ async function walkImages(rootPath) {
         height: null,
         thumbnailUrl: thumbPath ? "localfile://" + encodeURI(thumbPath) : null,
       });
+      if (onProgress) onProgress({ scanned: results.length, currentFile: entry.name });
     }
   }
   await recurse(rootPath);
@@ -371,7 +372,12 @@ app.whenReady().then(() => {
     event.sender.startDrag({ file: paths[0], icon });
   });
   ipcMain.handle("core:invoke", (_event, command, args = {}) => {
-    if (command === "scan_local_folder") return walkImages(args.rootPath);
+    if (command === "scan_local_folder") {
+      const onProgress = (mainWindow && !mainWindow.isDestroyed())
+        ? (data) => mainWindow.webContents.send("scan:progress", data)
+        : null;
+      return walkImages(args.rootPath, onProgress);
+    }
     if (command === "copy_images_to_folder") return copyImagesToFolder(args.paths ?? [], args.destination);
     if (command === "debug_image_count") return getDatabase().then((db) => {
       const r = db.exec("SELECT COUNT(*) FROM images");
