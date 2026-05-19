@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.7 - 2026-05-19
+
+- fix: handle duplicate backslash/forwardslash rows in path migration
+
+
 ## v0.2.6 - 2026-05-19
 
 - fix: auto-migrate backslash paths on DB open + fix thumbnail URL on Windows

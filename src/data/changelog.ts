@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.7",
+    date: "2026-05-19",
+    items: [
+      "fix: handle duplicate backslash/forwardslash rows in path migration",
+    ],
+  },
+  {
     version: "0.2.6",
     date: "2026-05-19",
     items: [
