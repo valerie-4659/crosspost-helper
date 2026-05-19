@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.4 - 2026-05-19
+
+- fix: normalise path separators + fix localfile:// handler on Windows
+
+
 ## v0.2.3 - 2026-05-19
 
 - feat: offload folder scan to Worker Thread to keep UI responsive

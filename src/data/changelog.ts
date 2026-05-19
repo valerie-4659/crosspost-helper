@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.4",
+    date: "2026-05-19",
+    items: [
+      "fix: normalise path separators + fix localfile:// handler on Windows",
+    ],
+  },
+  {
     version: "0.2.3",
     date: "2026-05-19",
     items: [
