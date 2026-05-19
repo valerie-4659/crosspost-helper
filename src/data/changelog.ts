@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.8",
+    date: "2026-05-19",
+    items: [
+      "fix: replace net.fetch with fs.promises.readFile in localfile:// handler",
+    ],
+  },
+  {
     version: "0.2.7",
     date: "2026-05-19",
     items: [

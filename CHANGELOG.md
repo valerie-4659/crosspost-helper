@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.8 - 2026-05-19
+
+- fix: replace net.fetch with fs.promises.readFile in localfile:// handler
+
+
 ## v0.2.7 - 2026-05-19
 
 - fix: handle duplicate backslash/forwardslash rows in path migration
