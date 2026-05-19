@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.3 - 2026-05-19
+
+- feat: offload folder scan to Worker Thread to keep UI responsive
+- feat: live scan progress indicator
+
+
 ## v0.2.2 - 2026-05-19
 
 - fix: set vite base to './' for Electron file:// protocol on Windows

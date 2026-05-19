@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.3",
+    date: "2026-05-19",
+    items: [
+      "feat: offload folder scan to Worker Thread to keep UI responsive",
+      "feat: live scan progress indicator",
+    ],
+  },
+  {
     version: "0.2.2",
     date: "2026-05-19",
     items: [
