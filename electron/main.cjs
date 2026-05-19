@@ -158,11 +158,26 @@ async function walkImages(rootPath, onProgress) {
   const results = [];
   for (const file of fileQueue) {
     const thumbPath = await generateThumbnail(file.localPath);
+
+    // Normalise path separators to forward slashes so that paths stored in
+    // the database are always /-separated regardless of the host OS.
+    // LibraryPage.vue computes rootDir / childFolders by splitting on "/"
+    // and would fail completely for Windows backslash paths, showing
+    // "No images scanned yet" even after a successful scan.
+    // Node.js fs APIs accept forward slashes on Windows, so this is safe.
+    const localPath = file.localPath.replaceAll("\\", "/");
+    const folderPath = file.folderPath.replaceAll("\\", "/");
+    // thumbnailUrl: use pathToFileURL so the localfile:// handler receives a
+    // path it can hand straight to net.fetch on every platform.
+    const thumbnailUrl = thumbPath
+      ? "localfile://" + pathToFileURL(thumbPath).pathname
+      : null;
+
     results.push({
-      localPath: file.localPath,
-      sourceFileId: file.localPath,
+      localPath,
+      sourceFileId: localPath,
       filename: file.filename,
-      folderPath: file.folderPath,
+      folderPath,
       mimeType: file.mimeType,
       fileSize: file.fileSize,
       createdAt: file.createdAt,
@@ -170,7 +185,7 @@ async function walkImages(rootPath, onProgress) {
       perceptualHash: null,
       width: null,
       height: null,
-      thumbnailUrl: thumbPath ? "localfile://" + encodeURI(thumbPath) : null,
+      thumbnailUrl,
     });
     // Phase-2 progress: total is now known — show "processing N / total"
     if (onProgress) onProgress({ scanned: results.length, total, currentFile: file.filename });
@@ -470,8 +485,14 @@ app.whenReady().then(() => {
   // Serve local files via the localfile:// protocol so the renderer can
   // display images from arbitrary disk locations safely.
   protocol.handle("localfile", (request) => {
-    const fileUrl = "file://" + request.url.slice("localfile://".length);
-    return net.fetch(fileUrl);
+    // Reconstruct a proper file:// URL from the localfile:// URL.
+    // Simple string concatenation ("file://" + path) breaks on Windows because
+    // drive-letter paths produce "file://C:/..." (two slashes) instead of the
+    // required "file:///C:/..." (three slashes).
+    // Decoding first and using pathToFileURL handles all platforms correctly.
+    const encoded = request.url.slice("localfile://".length);
+    const filePath = decodeURIComponent(encoded);
+    return net.fetch(pathToFileURL(filePath).toString());
   });
 
   startBridgeServer();
