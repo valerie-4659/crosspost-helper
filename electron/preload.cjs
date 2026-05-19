@@ -21,11 +21,17 @@ contextBridge.exposeInMainWorld("desktop", {
   core: {
     invoke: (command, args) => ipcRenderer.invoke("core:invoke", command, args),
     convertFileSrc: (filePath) => ipcRenderer.invoke("core:convert-file-src", filePath),
-    // Synchronous: converts an absolute local path to localfile:// so img src
-    // can be set inline without an async round-trip through IPC.
-    // encodeURI handles spaces and special chars; % is encoded as %25 so the
-    // localfile:// handler in main.cjs correctly resolves it back to a file:// URL.
-    convertFileSrcSync: (filePath) => "localfile://" + encodeURI(filePath),
+    // Synchronous: converts an absolute local path to a localfile:// URL.
+    // IMPORTANT: must use 3 slashes (localfile:///path) so that Chromium's URL
+    // parser does NOT treat the drive letter as a hostname.
+    //   localfile://C:/...  → host="C", path="/..." → drive letter LOST ❌
+    //   localfile:///C:/... → host="",  path="/C:/..." → drive letter OK  ✓
+    // For macOS/Linux the path already starts with "/" so we get 3 slashes too.
+    convertFileSrcSync: (filePath) => {
+      const fwd = filePath.replaceAll("\\", "/");
+      const p = fwd.startsWith("/") ? fwd : "/" + fwd;
+      return "localfile://" + encodeURI(p);
+    },
     // Native OS drag — sends real files to external apps (browsers, native apps).
     // iconPath is optional: path to a small thumbnail to use as the drag cursor icon.
     startDrag: (filePaths, iconPath) => ipcRenderer.send("drag:start", filePaths, iconPath),

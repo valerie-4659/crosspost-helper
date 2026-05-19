@@ -106,6 +106,16 @@ async function getDatabase() {
            OR instr(COALESCE(local_path,     ''), '\\') > 0
            OR instr(COALESCE(source_file_id, ''), '\\') > 0
       `);
+      // Step 3: Upgrade old 2-slash thumbnail URLs to 3-slash format.
+      // "localfile://C:/..."  →  "localfile:///C:/..."
+      // (The 2-slash form loses the Windows drive letter in Chromium's URL parser.)
+      // Safe for macOS: "localfile:///Users/..." already has 3 slashes → skipped.
+      database.run(`
+        UPDATE images
+        SET thumbnail_url = REPLACE(thumbnail_url, 'localfile://', 'localfile:///')
+        WHERE thumbnail_url LIKE 'localfile://%'
+          AND thumbnail_url NOT LIKE 'localfile:///%'
+      `);
 
       persistDatabase();
       return database;
@@ -198,11 +208,15 @@ async function walkImages(rootPath, onProgress) {
     // Node.js fs APIs accept forward slashes on Windows, so this is safe.
     const localPath = file.localPath.replaceAll("\\", "/");
     const folderPath = file.folderPath.replaceAll("\\", "/");
-    // thumbnailUrl: normalise to forward slashes so the localfile:// handler
-    // always receives a "C:/..." style path (not "C:\..." with backslashes and
-    // not "/C:/..." with a spurious leading slash from pathToFileURL().pathname).
+    // thumbnailUrl: always use the 3-slash localfile:/// format.
+    // localfile://C:/... gets parsed by Chromium as host="C", losing the drive
+    // letter.  localfile:///C:/... → host="", pathname="/C:/..." → preserved.
     const thumbnailUrl = thumbPath
-      ? "localfile://" + thumbPath.replaceAll("\\", "/")
+      ? (() => {
+          const fwd = thumbPath.replaceAll("\\", "/");
+          const p = fwd.startsWith("/") ? fwd : "/" + fwd;
+          return "localfile://" + encodeURI(p);
+        })()
       : null;
 
     results.push({
@@ -602,14 +616,21 @@ app.whenReady().then(() => {
   // Serve local files via the localfile:// protocol so the renderer can
   // display images from arbitrary disk locations safely.
   //
-  // We use fs.promises.readFile instead of net.fetch("file://...") because
-  // net.fetch relies on Chromium's file fetcher which does NOT work for:
-  //   • Windows virtual/network drives (Google Drive, OneDrive, Dropbox)
-  //   • Paths that contain characters Chromium URL-encodes differently
-  // Node's fs API speaks directly to the OS and works everywhere.
+  // All URLs are emitted as "localfile:///path" (3 slashes) so that Chromium's
+  // URL parser does not swallow the Windows drive letter:
+  //   localfile://C:/...  →  host="C", path="/..." → "C:" LOST ❌
+  //   localfile:///C:/... →  host="",  path="/C:/..." → "C:" kept ✓
+  //
+  // We use fs.promises.readFile (not net.fetch("file://...")) because
+  // Chromium's file fetcher does not support virtual drives (Google Drive,
+  // OneDrive, Dropbox) on Windows; Node's fs goes through the Win32 API.
   protocol.handle("localfile", async (request) => {
-    const encoded = request.url.slice("localfile://".length);
-    const filePath = decodeURIComponent(encoded);
+    // After stripping "localfile://", the path always starts with "/" because
+    // we use 3-slash URLs.  For Windows drive paths ("/C:/...") strip the
+    // leading "/" so Node gets a valid "C:/..." absolute path.
+    const withSlash = decodeURIComponent(request.url.slice("localfile://".length));
+    const isWinDrive = /^\/[A-Za-z]:\//.test(withSlash);
+    const filePath = isWinDrive ? withSlash.slice(1) : withSlash;
     const ext = path.extname(filePath).toLowerCase();
     const mime = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                    ".png": "image/png",  ".webp": "image/webp",
