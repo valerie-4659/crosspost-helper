@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.1 - 2026-05-19
+
+- fix: clean dist-electron/ before build + filter artifacts by version
+
+
 ## v0.2.0 - 2026-05-18
 
 - chore: ignore dist-electron/ build output in git

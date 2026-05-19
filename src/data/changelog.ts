@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.1",
+    date: "2026-05-19",
+    items: [
+      "fix: clean dist-electron/ before build + filter artifacts by version",
+    ],
+  },
+  {
     version: "0.2.0",
     date: "2026-05-18",
     items: [
