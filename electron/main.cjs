@@ -118,32 +118,63 @@ async function dbExecute(_event, sql, params = []) {
 }
 
 async function walkImages(rootPath, onProgress) {
+  // ── Phase 1: file-system walk in a Worker Thread ────────────────────────
+  // The worker uses fs.promises (fully async) so the main-process event loop
+  // is never blocked, keeping the UI responsive even for huge folder trees.
+  // nativeImage (thumbnail) requires the main thread, so the worker only
+  // collects lightweight file metadata and streams it back here.
+  const { Worker } = require("node:worker_threads");
+  const workerPath = path.join(__dirname, "scanWorker.cjs");
+
+  const fileQueue = await new Promise((resolve, reject) => {
+    const worker = new Worker(workerPath, {
+      workerData: { rootPath, supportedExtensions: [...supportedExtensions] },
+    });
+    const files = [];
+    let found = 0;
+
+    worker.on("message", (msg) => {
+      if (msg.type === "file") {
+        files.push(msg.data);
+        found += 1;
+        // Phase-1 progress: total is unknown yet (null) — show "found N files"
+        if (onProgress) onProgress({ scanned: found, total: null, currentFile: msg.data.filename });
+      } else if (msg.type === "done") {
+        resolve(files);
+      } else if (msg.type === "error") {
+        reject(new Error(msg.message));
+      }
+    });
+    worker.on("error", reject);
+    worker.on("exit", (code) => {
+      if (code !== 0) reject(new Error(`Scan worker exited with code ${code}`));
+    });
+  });
+
+  // ── Phase 2: thumbnail generation in main thread ────────────────────────
+  // nativeImage.createThumbnailFromPath is async so it yields the event loop
+  // between each file — the UI stays responsive throughout.
+  const total = fileQueue.length;
   const results = [];
-  async function recurse(dir) {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const current = path.join(dir, entry.name);
-      if (entry.isDirectory()) { await recurse(current); continue; }
-      if (!entry.isFile() || !supportedExtensions.has(path.extname(entry.name).toLowerCase())) continue;
-      const stat = fs.statSync(current);
-      const thumbPath = await generateThumbnail(current);
-      results.push({
-        localPath: current,
-        sourceFileId: current,
-        filename: entry.name,
-        folderPath: path.dirname(current),
-        mimeType: mimeTypeFor(current),
-        fileSize: stat.size,
-        createdAt: stat.birthtime.toISOString(),
-        modifiedAt: stat.mtime.toISOString(),
-        perceptualHash: null,
-        width: null,
-        height: null,
-        thumbnailUrl: thumbPath ? "localfile://" + encodeURI(thumbPath) : null,
-      });
-      if (onProgress) onProgress({ scanned: results.length, currentFile: entry.name });
-    }
+  for (const file of fileQueue) {
+    const thumbPath = await generateThumbnail(file.localPath);
+    results.push({
+      localPath: file.localPath,
+      sourceFileId: file.localPath,
+      filename: file.filename,
+      folderPath: file.folderPath,
+      mimeType: file.mimeType,
+      fileSize: file.fileSize,
+      createdAt: file.createdAt,
+      modifiedAt: file.modifiedAt,
+      perceptualHash: null,
+      width: null,
+      height: null,
+      thumbnailUrl: thumbPath ? "localfile://" + encodeURI(thumbPath) : null,
+    });
+    // Phase-2 progress: total is now known — show "processing N / total"
+    if (onProgress) onProgress({ scanned: results.length, total, currentFile: file.filename });
   }
-  await recurse(rootPath);
   return results;
 }
 

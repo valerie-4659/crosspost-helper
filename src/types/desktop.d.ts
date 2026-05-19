@@ -34,8 +34,12 @@ declare global {
         downloadFirefox(): Promise<{ ok: boolean; filePath?: string; error?: string }>;
       };
       scan: {
-        /** Subscribe to per-file progress events emitted during a folder scan. */
-        onProgress(cb: (data: { scanned: number; currentFile: string }) => void): void;
+        /**
+         * Subscribe to per-file progress events emitted during a folder scan.
+         * `total` is null during the walk phase (total unknown) and a number
+         * during the thumbnail phase (total files found by the worker).
+         */
+        onProgress(cb: (data: { scanned: number; total: number | null; currentFile: string }) => void): void;
         /** Remove all scan:progress listeners. */
         offProgress(): void;
       };

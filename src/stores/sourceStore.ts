@@ -11,7 +11,7 @@ export const useSourceStore = defineStore("sources", () => {
   const loading = ref(false);
   const scanningSourceId = ref<string | null>(null);
   const lastScanResults = ref<Record<string, ScanResult>>({});
-  const scanProgress = ref<{ scanned: number; currentFile: string } | null>(null);
+  const scanProgress = ref<{ scanned: number; total: number | null; currentFile: string } | null>(null);
   const error = ref<string | null>(null);
 
   async function load() {
