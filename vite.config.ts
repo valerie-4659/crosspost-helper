@@ -4,6 +4,10 @@ import { defineConfig } from "vite";
 import packageJson from "./package.json";
 
 export default defineConfig({
+  // Use relative asset paths so the built index.html works with Electron's
+  // file:// protocol on all platforms (Windows requires "./" — absolute paths
+  // like "/assets/xxx.js" resolve from the drive root and are never found).
+  base: "./",
   plugins: [vue()],
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
