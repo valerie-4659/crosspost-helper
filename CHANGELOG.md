@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.10 - 2026-05-19
+
+- fix: use 3-slash localfile:/// URLs to preserve Windows drive letter
+
+
+## v0.2.9 - 2026-05-19
+
+- fix: use 3-slash localfile:/// URLs to preserve Windows drive letter
+
+
 ## v0.2.8 - 2026-05-19
 
 - fix: replace net.fetch with fs.promises.readFile in localfile:// handler

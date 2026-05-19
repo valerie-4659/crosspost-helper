@@ -6,6 +6,20 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.10",
+    date: "2026-05-19",
+    items: [
+      "fix: use 3-slash localfile:/// URLs to preserve Windows drive letter",
+    ],
+  },
+  {
+    version: "0.2.9",
+    date: "2026-05-19",
+    items: [
+      "fix: use 3-slash localfile:/// URLs to preserve Windows drive letter",
+    ],
+  },
+  {
     version: "0.2.8",
     date: "2026-05-19",
     items: [
