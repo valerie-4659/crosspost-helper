@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.6",
+    date: "2026-05-19",
+    items: [
+      "fix: auto-migrate backslash paths on DB open + fix thumbnail URL on Windows",
+    ],
+  },
+  {
     version: "0.2.5",
     date: "2026-05-19",
     items: [
