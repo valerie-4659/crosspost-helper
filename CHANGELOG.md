@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.2 - 2026-05-19
+
+- fix: set vite base to './' for Electron file:// protocol on Windows
+
+
 ## v0.2.1 - 2026-05-19
 
 - fix: clean dist-electron/ before build + filter artifacts by version

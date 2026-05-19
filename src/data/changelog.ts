@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.2",
+    date: "2026-05-19",
+    items: [
+      "fix: set vite base to './' for Electron file:// protocol on Windows",
+    ],
+  },
+  {
     version: "0.2.1",
     date: "2026-05-19",
     items: [
