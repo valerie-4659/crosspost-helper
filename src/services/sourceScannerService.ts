@@ -6,37 +6,26 @@ import type { ImageInput } from "@/types/image";
 import type { ImageSource } from "@/types/imageSource";
 import type { ScanResult } from "@/types/scan";
 
-function localFileToImageInput(source: ImageSource, file: Awaited<ReturnType<typeof scanLocalFolder>>[number]): ImageInput {
-  return {
-    sourceId: source.id,
-    sourceFileId: file.sourceFileId,
-    localPath: file.localPath,
-    filename: file.filename,
-    folderPath: file.folderPath,
-    mimeType: file.mimeType,
-    fileSize: file.fileSize,
-    thumbnailUrl: file.thumbnailUrl,
-    createdAt: file.createdAt,
-    modifiedAt: file.modifiedAt,
-    perceptualHash: file.perceptualHash,
-    width: file.width,
-    height: file.height,
-    rating: "unknown",
-  };
-}
-
-async function scanSourceFiles(source: ImageSource): Promise<ImageInput[]> {
-  if (source.type === "local_folder") {
-    const files = await scanLocalFolder(source.rootPathOrId);
-    return files.map((file) => localFileToImageInput(source, file));
-  }
-  if (source.type === "google_drive") {
-    return scanGoogleDriveSource(source);
-  }
-  return scanDropboxSource(source);
-}
-
 export async function scanImageSource(source: ImageSource): Promise<ScanResult> {
+  // local_folder: walk + thumbnails + DB upserts all happen inside the main
+  // process in one SQL transaction. The renderer never touches the DB per-file,
+  // so no N × 2 IPC round-trips and no N disk-writes after the progress bar
+  // reaches 100 %.
+  if (source.type === "local_folder") {
+    try {
+      return await scanLocalFolder(source.id, source.rootPathOrId);
+    } catch (error) {
+      return {
+        sourceId: source.id,
+        scanned: 0,
+        indexed: 0,
+        duplicates: 0,
+        errors: [error instanceof Error ? error.message : String(error)],
+      };
+    }
+  }
+
+  // Cloud sources: keep the existing per-file upsert pattern (low volume).
   const result: ScanResult = {
     sourceId: source.id,
     scanned: 0,
@@ -46,7 +35,12 @@ export async function scanImageSource(source: ImageSource): Promise<ScanResult> 
   };
 
   try {
-    const files = await scanSourceFiles(source);
+    let files: ImageInput[];
+    if (source.type === "google_drive") {
+      files = await scanGoogleDriveSource(source);
+    } else {
+      files = await scanDropboxSource(source);
+    }
     result.scanned = files.length;
     for (const file of files) {
       const upsert = await upsertImage(file);

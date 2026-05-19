@@ -193,6 +193,86 @@ async function walkImages(rootPath, onProgress) {
   return results;
 }
 
+// ─── scan_and_index ──────────────────────────────────────────────────────────
+// Walks the folder (via Worker Thread), generates thumbnails, then upserts all
+// images into the database inside a single SQLite TRANSACTION so that only one
+// persistDatabase() call is needed. This avoids 2 × N IPC round-trips and
+// N synchronous disk-writes that previously caused the UI to freeze after the
+// progress bar reached 100 %.
+async function scanAndIndex(sourceId, rootPath, onProgress) {
+  const files = await walkImages(rootPath, onProgress);
+
+  // Signal the start of the (hidden) indexing phase so the UI doesn't look
+  // frozen while the batch DB write is happening.
+  if (onProgress && files.length > 0) {
+    onProgress({ scanned: files.length, total: files.length, currentFile: "Indexing database…" });
+  }
+
+  const db = await getDatabase();
+  const now = new Date().toISOString();
+  let indexed = 0;
+  let duplicates = 0;
+  const errors = [];
+
+  db.run("BEGIN TRANSACTION");
+  try {
+    for (const file of files) {
+      // Check if this file was already indexed.
+      const chkStmt = db.prepare(
+        "SELECT id FROM images WHERE source_id = ? AND source_file_id = ? LIMIT 1"
+      );
+      chkStmt.bind([sourceId, file.localPath]);
+      const existing = [];
+      while (chkStmt.step()) existing.push(chkStmt.getAsObject());
+      chkStmt.free();
+
+      if (existing[0]) {
+        const updStmt = db.prepare(
+          `UPDATE images SET local_path = ?, filename = ?, folder_path = ?, mime_type = ?,
+           file_size = ?, thumbnail_url = COALESCE(?, thumbnail_url), web_view_link = ?,
+           created_at = ?, modified_at = ?, indexed_at = ?,
+           perceptual_hash = COALESCE(?, perceptual_hash),
+           width = COALESCE(?, width), height = COALESCE(?, height),
+           rating = COALESCE(?, rating) WHERE id = ?`
+        );
+        updStmt.run([
+          file.localPath, file.filename, file.folderPath, file.mimeType,
+          file.fileSize ?? null, file.thumbnailUrl ?? null, null,
+          file.createdAt ?? null, file.modifiedAt ?? null, now,
+          null, null, null, "unknown", existing[0].id,
+        ]);
+        updStmt.free();
+        duplicates += 1;
+      } else {
+        const id = `image_${crypto.randomUUID()}`;
+        const insStmt = db.prepare(
+          `INSERT INTO images (id, source_id, source_file_id, local_path, filename,
+           folder_path, mime_type, file_size, thumbnail_url, web_view_link,
+           created_at, modified_at, indexed_at, perceptual_hash, width, height, rating, is_archived)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+        );
+        insStmt.run([
+          id, sourceId, file.localPath, file.localPath, file.filename,
+          file.folderPath, file.mimeType, file.fileSize ?? null,
+          file.thumbnailUrl ?? null, null,
+          file.createdAt ?? null, file.modifiedAt ?? null, now,
+          null, null, null, "unknown",
+        ]);
+        insStmt.free();
+        indexed += 1;
+      }
+    }
+    db.run("COMMIT");
+  } catch (e) {
+    try { db.run("ROLLBACK"); } catch (_) { /* ignore */ }
+    errors.push(e instanceof Error ? e.message : String(e));
+  }
+
+  // Single write to disk for the entire batch — previously done N times.
+  persistDatabase();
+  return { sourceId, scanned: files.length, indexed, duplicates, errors };
+}
+
 function mimeTypeFor(filePath) {
   const extension = path.extname(filePath).toLowerCase();
   if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
@@ -418,11 +498,16 @@ app.whenReady().then(() => {
     event.sender.startDrag({ file: paths[0], icon });
   });
   ipcMain.handle("core:invoke", (_event, command, args = {}) => {
+    const onProgress = (mainWindow && !mainWindow.isDestroyed())
+      ? (data) => mainWindow.webContents.send("scan:progress", data)
+      : null;
     if (command === "scan_local_folder") {
-      const onProgress = (mainWindow && !mainWindow.isDestroyed())
-        ? (data) => mainWindow.webContents.send("scan:progress", data)
-        : null;
       return walkImages(args.rootPath, onProgress);
+    }
+    // scan_and_index: walk + thumbnail generation + batch DB upsert in a single
+    // SQLite transaction. Avoids N × 2 IPC round-trips and N disk writes.
+    if (command === "scan_and_index") {
+      return scanAndIndex(args.sourceId, args.rootPath, onProgress);
     }
     if (command === "copy_images_to_folder") return copyImagesToFolder(args.paths ?? [], args.destination);
     if (command === "debug_image_count") return getDatabase().then((db) => {
