@@ -76,6 +76,22 @@ async function getDatabase() {
         database = new SQL.Database();
       }
       database.run(migrationSql());
+
+      // One-time normalisation: convert Windows backslash paths that were
+      // written by pre-v0.2.5 builds.  Forward slashes work on every platform
+      // (Node fs APIs accept them on Windows) and the LibraryPage folder-tree
+      // logic relies on "/" splits, so every path in the DB must be "/"-only.
+      database.run(`
+        UPDATE images SET
+          local_path     = REPLACE(local_path,     '\\', '/'),
+          folder_path    = REPLACE(folder_path,    '\\', '/'),
+          source_file_id = REPLACE(source_file_id, '\\', '/'),
+          thumbnail_url  = REPLACE(thumbnail_url,  '\\', '/')
+        WHERE instr(COALESCE(folder_path,    ''), '\\') > 0
+           OR instr(COALESCE(local_path,     ''), '\\') > 0
+           OR instr(COALESCE(source_file_id, ''), '\\') > 0
+      `);
+
       persistDatabase();
       return database;
     })();
@@ -167,10 +183,11 @@ async function walkImages(rootPath, onProgress) {
     // Node.js fs APIs accept forward slashes on Windows, so this is safe.
     const localPath = file.localPath.replaceAll("\\", "/");
     const folderPath = file.folderPath.replaceAll("\\", "/");
-    // thumbnailUrl: use pathToFileURL so the localfile:// handler receives a
-    // path it can hand straight to net.fetch on every platform.
+    // thumbnailUrl: normalise to forward slashes so the localfile:// handler
+    // always receives a "C:/..." style path (not "C:\..." with backslashes and
+    // not "/C:/..." with a spurious leading slash from pathToFileURL().pathname).
     const thumbnailUrl = thumbPath
-      ? "localfile://" + pathToFileURL(thumbPath).pathname
+      ? "localfile://" + thumbPath.replaceAll("\\", "/")
       : null;
 
     results.push({
