@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.11",
+    date: "2026-05-19",
+    items: [
+      "feat: multi-image posting — app controls selection, extension injects queue",
+    ],
+  },
+  {
     version: "0.2.10",
     date: "2026-05-19",
     items: [

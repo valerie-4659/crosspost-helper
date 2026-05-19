@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.11 - 2026-05-19
+
+- feat: multi-image posting — app controls selection, extension injects queue
+
+
 ## v0.2.10 - 2026-05-19
 
 - fix: use 3-slash localfile:/// URLs to preserve Windows drive letter
