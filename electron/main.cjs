@@ -601,15 +601,25 @@ app.whenReady().then(() => {
 
   // Serve local files via the localfile:// protocol so the renderer can
   // display images from arbitrary disk locations safely.
-  protocol.handle("localfile", (request) => {
-    // Reconstruct a proper file:// URL from the localfile:// URL.
-    // Simple string concatenation ("file://" + path) breaks on Windows because
-    // drive-letter paths produce "file://C:/..." (two slashes) instead of the
-    // required "file:///C:/..." (three slashes).
-    // Decoding first and using pathToFileURL handles all platforms correctly.
+  //
+  // We use fs.promises.readFile instead of net.fetch("file://...") because
+  // net.fetch relies on Chromium's file fetcher which does NOT work for:
+  //   • Windows virtual/network drives (Google Drive, OneDrive, Dropbox)
+  //   • Paths that contain characters Chromium URL-encodes differently
+  // Node's fs API speaks directly to the OS and works everywhere.
+  protocol.handle("localfile", async (request) => {
     const encoded = request.url.slice("localfile://".length);
     const filePath = decodeURIComponent(encoded);
-    return net.fetch(pathToFileURL(filePath).toString());
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                   ".png": "image/png",  ".webp": "image/webp",
+                   ".gif": "image/gif" }[ext] ?? "application/octet-stream";
+    try {
+      const data = await fs.promises.readFile(filePath);
+      return new Response(data, { status: 200, headers: { "Content-Type": mime } });
+    } catch {
+      return new Response(null, { status: 404 });
+    }
   });
 
   startBridgeServer();
