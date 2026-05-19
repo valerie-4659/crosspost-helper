@@ -40,6 +40,12 @@ contextBridge.exposeInMainWorld("desktop", {
     openChrome: () => ipcRenderer.invoke("extension:open-chrome"),
     downloadFirefox: () => ipcRenderer.invoke("extension:download-firefox"),
   },
+  bridge: {
+    // Push selected image IDs to the in-memory queue for the Chrome extension.
+    setQueue: (target, imageIds) => ipcRenderer.invoke("bridge:set-queue", target, imageIds),
+    clearQueue: (target) => ipcRenderer.invoke("bridge:clear-queue", target),
+    getQueue: (target) => ipcRenderer.invoke("bridge:get-queue", target),
+  },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),
     offProgress: () => ipcRenderer.removeAllListeners("scan:progress"),

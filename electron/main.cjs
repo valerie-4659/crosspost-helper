@@ -352,6 +352,34 @@ function copyImagesToFolder(paths, destination) {
 const BRIDGE_PORT = 27842;
 let bridgeServer = null;
 
+// Shared post-record upsert used by both /mark-posted and /mark-all-posted.
+async function upsertPostRecord(imageId, targetId) {
+  const db2 = await getDatabase();
+  const now = new Date().toISOString();
+  const chk = db2.prepare("SELECT id FROM post_records WHERE image_id = ? AND target_id = ? LIMIT 1");
+  chk.bind([imageId, targetId]);
+  const existing = [];
+  while (chk.step()) existing.push(chk.getAsObject());
+  chk.free();
+  if (existing.length) {
+    const upd = db2.prepare("UPDATE post_records SET status = 'posted', posted_at = ?, updated_at = ? WHERE id = ?");
+    upd.run([now, now, existing[0].id]);
+    upd.free();
+  } else {
+    const ins = db2.prepare("INSERT INTO post_records (id, image_id, target_id, status, posted_at, created_at, updated_at) VALUES (?, ?, ?, 'posted', ?, ?, ?)");
+    ins.run([`pr_${crypto.randomUUID()}`, imageId, targetId, now, now, now]);
+    ins.free();
+  }
+  persistDatabase();
+}
+
+// Per-platform image limits for multi-image posting.
+const PLATFORM_LIMITS = { civitai: 20, x: 4, bluesky: 4, deviantart: 1 };
+
+// In-memory selection queue: { [target]: string[] } — set by the Electron app,
+// consumed by the Chrome extension.  Lives only in RAM (no DB persistence).
+const selectionQueue = new Map(); // target → string[] of imageIds
+
 function bridgeSendJson(res, data, status = 200) {
   const body = JSON.stringify(data);
   res.writeHead(status, {
@@ -373,7 +401,82 @@ async function handleBridge(req, res) {
   const db = await getDatabase();
 
   if (req.method === "GET" && url.pathname === "/status") {
-    bridgeSendJson(res, { running: true, version: app.getVersion() });
+    // Include per-target queue counts so the popup can show live queue state.
+    const queues = {};
+    for (const [t, ids] of selectionQueue) queues[t] = ids.length;
+    bridgeSendJson(res, { running: true, version: app.getVersion(), queues });
+    return;
+  }
+
+  // ── GET /queue?target=civitai ─────────────────────────────────────────────
+  // Returns the images the user selected in the Electron app for this target.
+  // Each entry: { id, filename, mimeType, targetId }
+  if (req.method === "GET" && url.pathname === "/queue") {
+    const targetType = url.searchParams.get("target");
+    if (!targetType) { bridgeSendJson(res, { error: "target parameter required" }, 400); return; }
+    const ids = selectionQueue.get(targetType) ?? [];
+    if (!ids.length) { bridgeSendJson(res, { images: [], targetId: null }); return; }
+
+    // Resolve targetId from DB
+    const tStmt = db.prepare("SELECT id FROM posting_targets WHERE type = ? AND enabled = 1 LIMIT 1");
+    tStmt.bind([targetType]);
+    const targets = [];
+    while (tStmt.step()) targets.push(tStmt.getAsObject());
+    tStmt.free();
+    const targetId = targets[0]?.id ?? null;
+
+    // Fetch image metadata for each queued id
+    const placeholders = ids.map(() => "?").join(",");
+    const iStmt = db.prepare(`SELECT id, local_path, filename, mime_type FROM images WHERE id IN (${placeholders})`);
+    iStmt.bind(ids);
+    const imgs = [];
+    while (iStmt.step()) imgs.push(iStmt.getAsObject());
+    iStmt.free();
+
+    // Preserve the user's selection order
+    const byId = Object.fromEntries(imgs.map((i) => [i.id, i]));
+    const ordered = ids.map((id) => byId[id]).filter(Boolean);
+    bridgeSendJson(res, {
+      images: ordered.map((i) => ({ id: i.id, filename: i.filename, mimeType: i.mime_type, targetId })),
+      targetId,
+      limit: PLATFORM_LIMITS[targetType] ?? 1,
+    });
+    return;
+  }
+
+  // ── POST /set-queue ───────────────────────────────────────────────────────
+  // Called by the Electron app (via IPC) to push a selection to a target queue.
+  // Body: { target: string, imageIds: string[] }
+  if (req.method === "POST" && url.pathname === "/set-queue") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      try {
+        const { target, imageIds } = JSON.parse(body);
+        if (!target || !Array.isArray(imageIds)) { bridgeSendJson(res, { error: "target and imageIds required" }, 400); return; }
+        const limit = PLATFORM_LIMITS[target] ?? 20;
+        selectionQueue.set(target, imageIds.slice(0, limit));
+        bridgeSendJson(res, { ok: true, count: selectionQueue.get(target).length });
+      } catch (err) { bridgeSendJson(res, { error: err.message }, 400); }
+    });
+    return;
+  }
+
+  // ── POST /clear-queue ─────────────────────────────────────────────────────
+  // Called by the extension after a successful post to clear the queue.
+  // Body: { target: string }
+  if (req.method === "POST" && url.pathname === "/clear-queue") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      try {
+        const { target } = JSON.parse(body);
+        if (!target) { bridgeSendJson(res, { error: "target required" }, 400); return; }
+        selectionQueue.delete(target);
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("bridge:queue-cleared", { target });
+        bridgeSendJson(res, { ok: true });
+      } catch (err) { bridgeSendJson(res, { error: err.message }, 400); }
+    });
     return;
   }
 
@@ -431,25 +534,47 @@ async function handleBridge(req, res) {
       try {
         const { imageId, targetId } = JSON.parse(body);
         if (!imageId || !targetId) { bridgeSendJson(res, { error: "imageId and targetId required" }, 400); return; }
-        const db2 = await getDatabase();
-        const now = new Date().toISOString();
-        const chk = db2.prepare("SELECT id FROM post_records WHERE image_id = ? AND target_id = ? LIMIT 1");
-        chk.bind([imageId, targetId]);
-        const existing = [];
-        while (chk.step()) existing.push(chk.getAsObject());
-        chk.free();
-        if (existing.length) {
-          const upd = db2.prepare("UPDATE post_records SET status = 'posted', posted_at = ?, updated_at = ? WHERE id = ?");
-          upd.run([now, now, existing[0].id]);
-          upd.free();
-        } else {
-          const ins = db2.prepare("INSERT INTO post_records (id, image_id, target_id, status, posted_at, created_at, updated_at) VALUES (?, ?, ?, 'posted', ?, ?, ?)");
-          ins.run([`pr_${crypto.randomUUID()}`, imageId, targetId, now, now, now]);
-          ins.free();
-        }
-        persistDatabase();
+        await upsertPostRecord(imageId, targetId);
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("bridge:image-posted", { imageId, targetId });
         bridgeSendJson(res, { ok: true });
+      } catch (err) { bridgeSendJson(res, { error: err.message }, 400); }
+    });
+    return;
+  }
+
+  // ── POST /mark-all-posted ─────────────────────────────────────────────────
+  // Marks an entire batch of images as posted in one round-trip.
+  // Body: { imageIds: string[], targetId: string }
+  if (req.method === "POST" && url.pathname === "/mark-all-posted") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", async () => {
+      try {
+        const { imageIds, targetId } = JSON.parse(body);
+        if (!Array.isArray(imageIds) || !targetId) { bridgeSendJson(res, { error: "imageIds[] and targetId required" }, 400); return; }
+        const db2 = await getDatabase();
+        db2.run("BEGIN");
+        const now = new Date().toISOString();
+        for (const imageId of imageIds) {
+          const chk = db2.prepare("SELECT id FROM post_records WHERE image_id = ? AND target_id = ? LIMIT 1");
+          chk.bind([imageId, targetId]);
+          const existing = [];
+          while (chk.step()) existing.push(chk.getAsObject());
+          chk.free();
+          if (existing.length) {
+            const upd = db2.prepare("UPDATE post_records SET status = 'posted', posted_at = ?, updated_at = ? WHERE id = ?");
+            upd.run([now, now, existing[0].id]);
+            upd.free();
+          } else {
+            const ins = db2.prepare("INSERT INTO post_records (id, image_id, target_id, status, posted_at, created_at, updated_at) VALUES (?, ?, ?, 'posted', ?, ?, ?)");
+            ins.run([`pr_${crypto.randomUUID()}`, imageId, targetId, now, now, now]);
+            ins.free();
+          }
+        }
+        db2.run("COMMIT");
+        persistDatabase();
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("bridge:images-posted", { imageIds, targetId });
+        bridgeSendJson(res, { ok: true, count: imageIds.length });
       } catch (err) { bridgeSendJson(res, { error: err.message }, 400); }
     });
     return;
@@ -517,6 +642,22 @@ app.whenReady().then(() => {
   ipcMain.handle("clipboard:write-image", (_event, bytes) => clipboard.writeImage(nativeImage.createFromBuffer(Buffer.from(bytes))));
   ipcMain.handle("clipboard:write-image-from-path", (_event, filePath) => clipboard.writeImage(nativeImage.createFromPath(filePath)));
   ipcMain.handle("core:convert-file-src", (_event, filePath) => pathToFileURL(filePath).toString());
+
+  // Bridge queue IPC — called from the renderer to push a selection to the
+  // in-memory queue that the Chrome extension reads via /queue.
+  ipcMain.handle("bridge:set-queue", (_event, target, imageIds) => {
+    const limit = PLATFORM_LIMITS[target] ?? 20;
+    const capped = (imageIds ?? []).slice(0, limit);
+    selectionQueue.set(target, capped);
+    return { ok: true, count: capped.length };
+  });
+  ipcMain.handle("bridge:clear-queue", (_event, target) => {
+    selectionQueue.delete(target);
+    return { ok: true };
+  });
+  ipcMain.handle("bridge:get-queue", (_event, target) => {
+    return { imageIds: selectionQueue.get(target) ?? [], limit: PLATFORM_LIMITS[target] ?? 1 };
+  });
 
   // Native OS file drag — attaches real files to the active drag so external
   // apps (Finder, Discord, browsers) receive them on drop.

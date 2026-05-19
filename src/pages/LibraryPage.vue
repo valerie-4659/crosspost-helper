@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Archive, Check, ChevronRight, Download, Folder, RefreshCcw, RotateCcw, X } from "lucide-vue-next";
+import { Archive, Check, ChevronRight, Download, Folder, RefreshCcw, RotateCcw, Send, X } from "lucide-vue-next";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import ImageLightbox from "@/components/ImageLightbox.vue";
@@ -9,6 +9,11 @@ import { useImageStore } from "@/stores/imageStore";
 import { useSourceStore } from "@/stores/sourceStore";
 import { useTargetStore } from "@/stores/targetStore";
 import type { ImageWithPostState } from "@/types/image";
+import type { PostingTargetType } from "@/types/postingTarget";
+
+// Platform types that have a Chrome Extension adapter.
+const EXTENSION_TYPES = new Set<PostingTargetType>(["x", "bluesky", "deviantart", "civitai"]);
+const PLATFORM_LIMITS: Record<string, number> = { civitai: 20, x: 4, bluesky: 4, deviantart: 1 };
 
 const imageStore = useImageStore();
 const sourceStore = useSourceStore();
@@ -24,6 +29,25 @@ const activeTargetName = computed(
   () => targetStore.targets.find((target) => target.id === imageStore.filters.targetId)?.name ?? "",
 );
 const selectedCount = computed(() => imageStore.selectedImageIds.size);
+
+// Enabled targets that have a Chrome Extension adapter.
+const extensionTargets = computed(() =>
+  targetStore.enabledTargets.filter((t) => EXTENSION_TYPES.has(t.type)),
+);
+
+async function queueForExtension(targetType: string) {
+  const ids = [...imageStore.selectedImageIds];
+  if (!ids.length) return;
+  const limit = PLATFORM_LIMITS[targetType] ?? 1;
+  const capped = ids.slice(0, limit);
+  try {
+    await window.desktop.bridge.setQueue(targetType, capped);
+    const extra = ids.length > limit ? ` (capped at ${limit})` : "";
+    imageStore.message = `✓ ${capped.length} image(s) queued for ${targetType}${extra}. Open the Chrome Extension to inject.`;
+  } catch (err) {
+    imageStore.error = err instanceof Error ? err.message : String(err);
+  }
+}
 
 // ── Folder navigation ──────────────────────────────────────────────────────────
 
@@ -261,6 +285,23 @@ async function markSelected() {
               @click="markSelected"
             >
               <Check class="h-4 w-4" />Mark as posted
+            </button>
+          </div>
+
+          <!-- Queue for Chrome Extension -->
+          <div v-if="extensionTargets.length" class="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+            <span class="mr-2 shrink-0 text-sm text-slate-400">Queue for Extension</span>
+            <button
+              v-for="target in extensionTargets"
+              :key="target.id"
+              class="button shrink-0 whitespace-nowrap"
+              :disabled="selectedCount === 0"
+              :title="`Queue up to ${PLATFORM_LIMITS[target.type] ?? 1} images for ${target.name}`"
+              @click="queueForExtension(target.type)"
+            >
+              <Send class="h-4 w-4" />
+              {{ target.name }}
+              <span class="ml-1 text-xs text-slate-500">(max {{ PLATFORM_LIMITS[target.type] ?? 1 }})</span>
             </button>
           </div>
         </section>

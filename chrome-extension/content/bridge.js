@@ -6,6 +6,8 @@ const BRIDGE_URL = "http://127.0.0.1:27842";
 window.CrosspostBridge = {
   _currentAdapter: null,
 
+  // ── Image retrieval ──────────────────────────────────────────────────────
+
   async getNextImage(target) {
     const res = await fetch(`${BRIDGE_URL}/next-image?target=${encodeURIComponent(target)}`);
     if (!res.ok) {
@@ -15,11 +17,24 @@ window.CrosspostBridge = {
     return res.json(); // { id, filename, localPath, mimeType, targetId }
   },
 
+  // Returns the app-selected image queue for a target platform.
+  // Response: { images: [{id, filename, mimeType, targetId}], targetId, limit }
+  async getQueuedImages(target) {
+    const res = await fetch(`${BRIDGE_URL}/queue?target=${encodeURIComponent(target)}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
   async getImageBlob(imageId) {
     const res = await fetch(`${BRIDGE_URL}/image-file?id=${encodeURIComponent(imageId)}`);
     if (!res.ok) throw new Error(`Could not load image: HTTP ${res.status}`);
     return res.blob();
   },
+
+  // ── Post-record helpers ──────────────────────────────────────────────────
 
   async markPosted(imageId, targetId) {
     const res = await fetch(`${BRIDGE_URL}/mark-posted`, {
@@ -31,12 +46,46 @@ window.CrosspostBridge = {
     return res.json();
   },
 
-  // Injects a Blob into a file <input> in a way that works with React/Vue apps.
+  // Marks an entire batch of images as posted in one request.
+  async markAllPosted(imageIds, targetId) {
+    const res = await fetch(`${BRIDGE_URL}/mark-all-posted`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageIds, targetId }),
+    });
+    if (!res.ok) throw new Error(`Mark all posted failed: HTTP ${res.status}`);
+    return res.json();
+  },
+
+  // Clears the selection queue for a platform after a successful post.
+  async clearQueue(target) {
+    await fetch(`${BRIDGE_URL}/clear-queue`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target }),
+    });
+  },
+
+  // ── File injection ───────────────────────────────────────────────────────
+
+  // Injects a single Blob into a file <input> in a way that works with React/Vue apps.
   async injectFileIntoInput(inputEl, blob, filename, mimeType) {
     const file = new File([blob], filename, { type: mimeType });
     const dt = new DataTransfer();
     dt.items.add(file);
     // Some React apps intercept the native files setter — set it directly.
+    Object.defineProperty(inputEl, "files", { value: dt.files, writable: true, configurable: true });
+    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+    inputEl.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  },
+
+  // Injects multiple files into a single <input type="file"> at once.
+  // `files` is an array of { blob, filename, mimeType }.
+  async injectMultipleFilesIntoInput(inputEl, files) {
+    const dt = new DataTransfer();
+    for (const { blob, filename, mimeType } of files) {
+      dt.items.add(new File([blob], filename, { type: mimeType }));
+    }
     Object.defineProperty(inputEl, "files", { value: dt.files, writable: true, configurable: true });
     inputEl.dispatchEvent(new Event("change", { bubbles: true }));
     inputEl.dispatchEvent(new InputEvent("input", { bubbles: true }));

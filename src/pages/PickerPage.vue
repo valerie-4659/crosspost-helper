@@ -1,17 +1,38 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { Check, Clipboard, Copy, FolderOpen, SkipForward, Shuffle } from "lucide-vue-next";
+import { computed, ref } from "vue";
+import { Check, Clipboard, Copy, FolderOpen, Send, SkipForward, Shuffle } from "lucide-vue-next";
 import FilterBar from "@/components/FilterBar.vue";
 import ImagePreview from "@/components/ImagePreview.vue";
 import { usePickerStore } from "@/stores/pickerStore";
 import { useSourceStore } from "@/stores/sourceStore";
 import { useTargetStore } from "@/stores/targetStore";
+import type { PostingTargetType } from "@/types/postingTarget";
 
 const picker = usePickerStore();
 const sources = useSourceStore();
 const targets = useTargetStore();
 
 const activeTargetName = computed(() => targets.activeTarget?.name ?? "target");
+
+const EXTENSION_TYPES = new Set<PostingTargetType>(["x", "bluesky", "deviantart", "civitai"]);
+const extensionTargets = computed(() =>
+  targets.enabledTargets.filter((t) => EXTENSION_TYPES.has(t.type)),
+);
+
+const queueMsg = ref("");
+const queueErr = ref("");
+
+async function queueCurrentForExtension(targetType: string) {
+  if (!picker.currentImage) return;
+  queueMsg.value = "";
+  queueErr.value = "";
+  try {
+    await window.desktop.bridge.setQueue(targetType, [picker.currentImage.id]);
+    queueMsg.value = `✓ Queued for ${targetType}. Open the Chrome Extension to inject.`;
+  } catch (err) {
+    queueErr.value = err instanceof Error ? err.message : String(err);
+  }
+}
 </script>
 
 <template>
@@ -84,6 +105,24 @@ const activeTargetName = computed(() => targets.activeTarget?.name ?? "target");
           <Check class="h-4 w-4" />
           Mark {{ activeTargetName }}
         </button>
+
+        <!-- Queue current image for Chrome Extension -->
+        <div v-if="extensionTargets.length" class="border-t border-line pt-3">
+          <p class="mb-2 text-xs text-slate-500">Queue for Chrome Extension</p>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="target in extensionTargets"
+              :key="target.id"
+              class="button shrink-0 text-sm"
+              :disabled="!picker.currentImage"
+              @click="queueCurrentForExtension(target.type)"
+            >
+              <Send class="h-3.5 w-3.5" />{{ target.name }}
+            </button>
+          </div>
+          <p v-if="queueMsg" class="mt-2 text-xs text-mint">{{ queueMsg }}</p>
+          <p v-if="queueErr" class="mt-2 text-xs text-rose">{{ queueErr }}</p>
+        </div>
 
         <div v-if="picker.error" class="rounded-md border border-gold/40 bg-gold/10 p-3 text-sm text-gold">
           {{ picker.error }}

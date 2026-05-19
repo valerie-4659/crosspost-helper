@@ -33,6 +33,14 @@ declare global {
         /** Package the Firefox extension as a .zip and prompt a save dialog. */
         downloadFirefox(): Promise<{ ok: boolean; filePath?: string; error?: string }>;
       };
+      bridge: {
+        /** Push selected image IDs to the bridge queue for a target platform. */
+        setQueue(target: string, imageIds: string[]): Promise<{ ok: boolean; count: number }>;
+        /** Clear the queue for a target platform. */
+        clearQueue(target: string): Promise<{ ok: boolean }>;
+        /** Read back the current queue for a target platform. */
+        getQueue(target: string): Promise<{ imageIds: string[]; limit: number }>;
+      };
       scan: {
         /**
          * Subscribe to per-file progress events emitted during a folder scan.
