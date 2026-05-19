@@ -120,6 +120,14 @@ async function main() {
   updateChangelog(version, date, bullets);
   updateInAppChangelog(version, date, bullets);
 
+  // Clean previous build output so old artifacts from earlier versions
+  // don't get collected and uploaded alongside the current release.
+  const distElectron = path.join(root, "dist-electron");
+  if (fs.existsSync(distElectron)) {
+    console.log("\nCleaning dist-electron/ before build...");
+    fs.rmSync(distElectron, { recursive: true, force: true });
+  }
+
   console.log("\nBuilding local macOS, Linux, and Windows artifacts with electron-builder...");
   run("npm", ["run", "electron:build"]);
 

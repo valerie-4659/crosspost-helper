@@ -5,13 +5,16 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const tag = process.argv[2] || `v${packageJson.version}`;
+const version = tag.replace(/^v/, "");
 const outputRoot = path.join(root, "dist", "release", tag);
 
+// Each rule also checks that the filename contains the current version so that
+// stale artifacts from previous builds are never accidentally collected.
 const rules = [
-  { platform: "macos", test: (name) => /\.dmg$/i.test(name) && !name.includes("blockmap") },
+  { platform: "macos", test: (name) => /\.dmg$/i.test(name) && !name.includes("blockmap") && name.includes(version) },
   // Only the NSIS setup installer — not the unpacked app exe or helper binaries.
-  { platform: "windows", test: (name) => /setup.*\.exe$/i.test(name) && !name.includes("blockmap") },
-  { platform: "linux", test: (name) => /\.(AppImage|deb|rpm)$/i.test(name) },
+  { platform: "windows", test: (name) => /setup.*\.exe$/i.test(name) && !name.includes("blockmap") && name.includes(version) },
+  { platform: "linux", test: (name) => /\.(AppImage|deb|rpm)$/i.test(name) && name.includes(version) },
 ];
 
 function walk(dir, files = []) {
