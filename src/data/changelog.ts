@@ -6,6 +6,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.13",
+    date: "2026-05-20",
+    items: [
+      "fix: X adapter — use React internal props for file injection (React 17/18 event delegation)",
+      "feat: highlight last visited folder when navigating back",
+      "feat: excluded folders — mark folder as done, hidden from Picker + Library by default",
+    ],
+  },
+  {
     version: "0.2.12",
     date: "2026-05-20",
     items: [

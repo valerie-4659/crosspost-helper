@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.13 - 2026-05-20
+
+- fix: X adapter — use React internal props for file injection (React 17/18 event delegation)
+- feat: highlight last visited folder when navigating back
+- feat: excluded folders — mark folder as done, hidden from Picker + Library by default
+
+
 ## v0.2.12 - 2026-05-20
 
 - feat: delete images/folders, lightbox nav+select+delete, hard reset
