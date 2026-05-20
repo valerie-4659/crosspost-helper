@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.12 - 2026-05-20
+
+- feat: delete images/folders, lightbox nav+select+delete, hard reset
+
+
 ## v0.2.11 - 2026-05-19
 
 - feat: multi-image posting — app controls selection, extension injects queue

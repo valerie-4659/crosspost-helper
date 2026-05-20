@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.12",
+    date: "2026-05-20",
+    items: [
+      "feat: delete images/folders, lightbox nav+select+delete, hard reset",
+    ],
+  },
+  {
     version: "0.2.11",
     date: "2026-05-19",
     items: [
