@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Archive, Check, ChevronRight, Download, Folder, RefreshCcw, RotateCcw, Send, X } from "lucide-vue-next";
+import { Archive, Check, ChevronRight, Download, Folder, RefreshCcw, RotateCcw, Send, Trash2, X } from "lucide-vue-next";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import ImageLightbox from "@/components/ImageLightbox.vue";
@@ -20,6 +20,31 @@ const sourceStore = useSourceStore();
 const targetStore = useTargetStore();
 const previewImage = ref<ImageWithPostState | null>(null);
 const selectedTargetIds = ref<string[]>([]);
+
+// ── Double opt-in delete ────────────────────────────────────────────────────
+const confirmingDeleteSelected = ref(false);
+const confirmingDeleteFolder = ref<string | null>(null);
+
+function requestDeleteSelected() { confirmingDeleteSelected.value = true; }
+function cancelDeleteSelected()  { confirmingDeleteSelected.value = false; }
+async function confirmDeleteSelected() {
+  confirmingDeleteSelected.value = false;
+  await imageStore.deleteSelected();
+}
+
+function requestDeleteFolder(path: string) { confirmingDeleteFolder.value = path; }
+function cancelDeleteFolder()  { confirmingDeleteFolder.value = null; }
+async function confirmDeleteFolder() {
+  if (!confirmingDeleteFolder.value) return;
+  await imageStore.deleteFolder(confirmingDeleteFolder.value);
+  confirmingDeleteFolder.value = null;
+}
+
+async function deleteSingleFromLightbox(imageId: string) {
+  await imageStore.deleteSingleImage(imageId);
+  // If the deleted image was showing in the lightbox, close it.
+  if (previewImage.value?.id === imageId) previewImage.value = null;
+}
 
 // Reload images whenever a filter changes.
 onMounted(() => imageStore.load());
@@ -171,6 +196,10 @@ async function markSelected() {
   await imageStore.markSelectedPosted(selectedTargetIds.value);
   selectedTargetIds.value = [];
 }
+
+function lightboxNavigate(image: ImageWithPostState) {
+  previewImage.value = image;
+}
 </script>
 
 <template>
@@ -226,19 +255,37 @@ async function markSelected() {
         v-if="childFolders.length"
         class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
       >
-        <button
+        <div
           v-for="folder in childFolders"
           :key="folder.path"
-          class="group flex flex-col items-center gap-3 rounded-xl border border-line bg-panel p-6 text-center transition hover:border-accent hover:bg-panelSoft"
-          :title="folder.path"
-          @click="navigateTo(folder.path)"
+          class="group relative flex flex-col items-center gap-3 rounded-xl border border-line bg-panel p-6 text-center transition hover:border-accent hover:bg-panelSoft"
         >
-          <Folder class="h-12 w-12 text-slate-500 transition group-hover:text-accent" />
-          <div class="w-full">
-            <p class="truncate font-medium text-white">{{ folder.name }}</p>
-            <p class="mt-0.5 text-xs text-slate-500">{{ folder.count }} images</p>
+          <button class="flex w-full flex-col items-center gap-3" :title="folder.path" @click="navigateTo(folder.path)">
+            <Folder class="h-12 w-12 text-slate-500 transition group-hover:text-accent" />
+            <div class="w-full">
+              <p class="truncate font-medium text-white">{{ folder.name }}</p>
+              <p class="mt-0.5 text-xs text-slate-500">{{ folder.count }} images</p>
+            </div>
+          </button>
+
+          <!-- Folder delete (two-step) -->
+          <div class="flex shrink-0 items-center gap-1">
+            <template v-if="confirmingDeleteFolder !== folder.path">
+              <button
+                class="button h-7 w-7 p-0 opacity-0 transition group-hover:opacity-100 hover:border-rose/60 hover:text-rose"
+                title="Remove folder from library index"
+                @click.stop="requestDeleteFolder(folder.path)"
+              >
+                <Trash2 class="h-3.5 w-3.5" />
+              </button>
+            </template>
+            <template v-else>
+              <span class="text-xs text-rose">Remove?</span>
+              <button class="button h-7 border-rose/60 bg-rose/10 px-2 text-xs text-rose hover:bg-rose/20" @click.stop="confirmDeleteFolder">Yes</button>
+              <button class="button h-7 px-2 text-xs" @click.stop="cancelDeleteFolder">No</button>
+            </template>
           </div>
-        </button>
+        </div>
       </div>
 
       <!-- Divider when folder has both subfolders and direct images -->
@@ -267,6 +314,23 @@ async function markSelected() {
             <button class="button" :disabled="selectedCount === 0" @click="exportSelected">
               <Download class="h-4 w-4" />Download
             </button>
+
+            <!-- Delete selected (two-step) -->
+            <template v-if="!confirmingDeleteSelected">
+              <button
+                class="button hover:border-rose/60 hover:text-rose"
+                :disabled="selectedCount === 0"
+                title="Remove selected images from the library index"
+                @click="requestDeleteSelected"
+              >
+                <Trash2 class="h-4 w-4" />Delete
+              </button>
+            </template>
+            <template v-else>
+              <span class="text-sm text-rose">Remove {{ selectedCount }} image(s)?</span>
+              <button class="button border-rose/60 bg-rose/10 px-3 text-rose hover:bg-rose/20" @click="confirmDeleteSelected">Confirm</button>
+              <button class="button px-3" @click="cancelDeleteSelected">Cancel</button>
+            </template>
           </div>
           <div class="mt-3 flex flex-wrap items-center gap-2">
             <span class="mr-2 shrink-0 text-sm text-slate-400">Mark selected as posted on</span>
@@ -339,6 +403,14 @@ async function markSelected() {
 
     </div><!-- end scrollable body -->
 
-    <ImageLightbox :image="previewImage" @close="previewImage = null" />
+    <ImageLightbox
+      :image="previewImage"
+      :images="imageStore.images"
+      :selected-image-ids="imageStore.selectedImageIds"
+      @close="previewImage = null"
+      @navigate="lightboxNavigate"
+      @toggle-selected="imageStore.toggleSelected"
+      @delete="deleteSingleFromLightbox"
+    />
   </div>
 </template>

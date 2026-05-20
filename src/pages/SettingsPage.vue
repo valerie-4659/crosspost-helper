@@ -1,13 +1,27 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { Download, Plus, Upload } from "lucide-vue-next";
+import { useImageStore } from "@/stores/imageStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTargetStore } from "@/stores/targetStore";
 
 const settings = useSettingsStore();
 const targets = useTargetStore();
+const imageStore = useImageStore();
 const customTargetName = ref("");
 const importPayload = ref("");
+
+// ── Hard reset ──────────────────────────────────────────────────────────────
+const resetConfirmText = ref("");
+const resetDone = ref(false);
+
+async function doHardReset() {
+  if (resetConfirmText.value.trim().toUpperCase() !== "DELETE") return;
+  await imageStore.hardReset();
+  resetConfirmText.value = "";
+  resetDone.value = true;
+  setTimeout(() => (resetDone.value = false), 4000);
+}
 
 async function addTarget() {
   if (!customTargetName.value.trim()) return;
@@ -55,6 +69,31 @@ async function addTarget() {
       </div>
       <textarea v-model="importPayload" class="field mt-4 h-56 w-full resize-none" placeholder="Paste export JSON to merge safely" />
       <p v-if="settings.lastMessage" class="mt-3 text-sm text-mint">{{ settings.lastMessage }}</p>
+    </section>
+
+    <!-- ── Hard Reset ─────────────────────────────────────────────── -->
+    <section class="surface rounded-lg border border-rose/20 p-4">
+      <h2 class="text-base font-semibold text-rose">Hard Reset</h2>
+      <p class="mt-1 text-sm text-slate-400">
+        Removes <strong class="text-slate-300">all image records and post history</strong> from the local database.
+        Source folders and posting targets are kept. <strong class="text-slate-300">This cannot be undone.</strong>
+      </p>
+      <div v-if="!resetDone" class="mt-4 flex items-center gap-3">
+        <input
+          v-model="resetConfirmText"
+          class="field w-48"
+          placeholder='Type "DELETE" to confirm'
+          @keydown.enter="doHardReset"
+        />
+        <button
+          class="button border-rose/60 bg-rose/10 px-4 text-rose hover:bg-rose/20"
+          :disabled="resetConfirmText.trim().toUpperCase() !== 'DELETE'"
+          @click="doHardReset"
+        >
+          Hard Reset
+        </button>
+      </div>
+      <p v-else class="mt-4 text-sm text-mint">✓ All image data has been removed from the index.</p>
     </section>
   </div>
 </template>

@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { listDistinctFolders, listImages, setImageArchived } from "@/repositories/imageRepository";
+import { deleteAllImages, deleteImages, deleteImagesInFolder, listDistinctFolders, listImages, setImageArchived } from "@/repositories/imageRepository";
 import { upsertPostRecord } from "@/repositories/postRecordRepository";
 import type { FolderEntry } from "@/repositories/imageRepository";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
@@ -139,6 +139,43 @@ export const useImageStore = defineStore("images", () => {
     await load();
   }
 
+  /** Permanently remove selected images from the DB index (not from disk). */
+  async function deleteSelected() {
+    if (selectedImageIds.value.size === 0) return;
+    const ids = [...selectedImageIds.value];
+    await deleteImages(ids);
+    images.value = images.value.filter((img) => !selectedImageIds.value.has(img.id));
+    message.value = `Removed ${ids.length} image(s) from the library index.`;
+    clearSelection();
+    await loadFolders();
+  }
+
+  /** Permanently remove a single image from the DB index. */
+  async function deleteSingleImage(imageId: string) {
+    await deleteImages([imageId]);
+    images.value = images.value.filter((img) => img.id !== imageId);
+    selectedImageIds.value.delete(imageId);
+    message.value = "Image removed from the library index.";
+    await loadFolders();
+  }
+
+  /** Remove all images in a folder (and subfolders) from the DB index. */
+  async function deleteFolder(folderPath: string) {
+    await deleteImagesInFolder(folderPath);
+    message.value = `Folder "${folderPath.split("/").pop()}" removed from the library index.`;
+    await load();
+    await loadFolders();
+  }
+
+  /** Hard reset: wipe ALL image + post_record data from the DB. */
+  async function hardReset() {
+    await deleteAllImages();
+    images.value = [];
+    folders.value = [];
+    clearSelection();
+    message.value = "Hard reset complete — all image data has been removed from the index.";
+  }
+
   return {
     images,
     folders,
@@ -159,5 +196,9 @@ export const useImageStore = defineStore("images", () => {
     markSelectedPosted,
     excludeSelected,
     restoreSelected,
+    deleteSelected,
+    deleteSingleImage,
+    deleteFolder,
+    hardReset,
   };
 });

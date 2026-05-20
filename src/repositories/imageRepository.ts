@@ -291,6 +291,34 @@ export async function setImageArchived(imageId: string, archived: boolean) {
   await db.execute("UPDATE images SET is_archived = $1 WHERE id = $2", [archived ? 1 : 0, imageId]);
 }
 
+/** Remove specific images from the index (post_records cascade-delete automatically). */
+export async function deleteImages(imageIds: string[]) {
+  if (!imageIds.length) return;
+  const db = await getDatabase();
+  const placeholders = imageIds.map((_, i) => `$${i + 1}`).join(",");
+  await db.execute(`DELETE FROM images WHERE id IN (${placeholders})`, imageIds);
+}
+
+/**
+ * Remove all images whose folder_path exactly matches OR is a subfolder of the given path.
+ * e.g. deleteImagesInFolder("G:/art") also removes "G:/art/renders".
+ */
+export async function deleteImagesInFolder(folderPath: string) {
+  const db = await getDatabase();
+  await db.execute(
+    "DELETE FROM images WHERE folder_path = $1 OR folder_path LIKE $2",
+    [folderPath, folderPath + "/%"],
+  );
+}
+
+/** Hard-reset: wipe all image and post_record data (sources/targets are kept). */
+export async function deleteAllImages() {
+  const db = await getDatabase();
+  // post_records FK cascades on image delete but we flush it explicitly for speed.
+  await db.execute("DELETE FROM post_records");
+  await db.execute("DELETE FROM images");
+}
+
 export async function findDuplicateCandidates(input: ImageInput) {
   const db = await getDatabase();
   const candidates: ImageRow[] = [];
