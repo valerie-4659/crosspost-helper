@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.18",
+    date: "2026-05-20",
+    items: [
+      "fix: X injection — click media button first to init React handler, then CDP setFileInputFiles",
+    ],
+  },
+  {
     version: "0.2.17",
     date: "2026-05-20",
     items: [

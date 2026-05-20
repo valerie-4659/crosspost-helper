@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.18 - 2026-05-20
+
+- fix: X injection — click media button first to init React handler, then CDP setFileInputFiles
+
+
 ## v0.2.17 - 2026-05-20
 
 - fix: X image injection via CDP DOM.setFileInputFiles — trusted native change event
