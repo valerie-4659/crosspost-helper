@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.15 - 2026-05-20
+
+- feat: show full image in library grid (natural aspect ratio, no crop)
+
+
 ## v0.2.14 - 2026-05-20
 
 - Release v0.2.14

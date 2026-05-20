@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.15",
+    date: "2026-05-20",
+    items: [
+      "feat: show full image in library grid (natural aspect ratio, no crop)",
+    ],
+  },
+  {
     version: "0.2.14",
     date: "2026-05-20",
     items: [
