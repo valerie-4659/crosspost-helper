@@ -70,41 +70,26 @@ window.CrosspostBridge = {
 
   // Core helper: sets files on a file input and notifies the owning framework.
   //
-  // Strategy A — native event delegation (React 17/18):
-  //   React 17+ delegates events to the React root container, NOT document.
-  //   A native `change` event dispatched on the input bubbles to the root and
-  //   is caught by React's synthetic event system normally — no hacks needed.
-  //   We override `files` with an accessor (getter) so even if React internally
-  //   reads `HTMLInputElement.prototype.files.get.call(el)` it still gets our list.
+  // React 17+ dispatches events to the React root, not document.
+  // We call __reactProps.onChange directly (React-internal handler) so React's
+  // full synthetic-event pipeline runs.  We use a getter accessor for `files`
+  // so the value survives any prototype-chain reads React may do internally.
   //
-  // Strategy B — direct React props call (fallback / belt-and-suspenders):
-  //   We also call __reactProps.onChange directly in case the element is not
-  //   inside the React root or event bubbling is blocked.
-  //
-  // Strategy C — plain DOM events (Vue / non-React pages).
+  // For non-React pages (Vue etc.) we fall back to plain DOM events.
   _injectFilesCore(inputEl, dataTransfer) {
-    // Override `files` as a getter accessor on the instance.
-    // Using a getter (not a value property) ensures that even code which goes
-    // through the HTMLInputElement prototype chain still gets our FileList.
+    // Getter accessor — survives prototype-chain reads inside React/browser.
     Object.defineProperty(inputEl, "files", {
       get() { return dataTransfer.files; },
       configurable: true,
     });
 
-    // Strategy A: native change event — bubbles to React 17/18 root.
-    // This is the primary reliable path; dispatch it unconditionally.
-    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
-    inputEl.dispatchEvent(new InputEvent("input", { bubbles: true }));
-
-    // Strategy B: also call __reactProps.onChange directly if present
-    // (belt-and-suspenders in case the native event gets swallowed).
+    // React 17/18 path: call the handler directly.
     const propsKey = Object.keys(inputEl).find((k) => k.startsWith("__reactProps"));
     if (propsKey && typeof inputEl[propsKey]?.onChange === "function") {
-      const nativeEvent = new Event("change", { bubbles: true });
       inputEl[propsKey].onChange({
         target: inputEl,
         currentTarget: inputEl,
-        nativeEvent,
+        nativeEvent: new Event("change", { bubbles: true }),
         bubbles: true,
         cancelable: false,
         type: "change",
@@ -114,7 +99,29 @@ window.CrosspostBridge = {
         stopPropagation: () => {},
         persist: () => {},
       });
+      return; // don't also fire native events — that confuses React apps (e.g. closes X compose)
     }
+
+    // Fallback: plain DOM events (Vue / non-React pages).
+    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+    inputEl.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  },
+
+  // Simulate drag-and-drop of files onto an element.
+  // Chrome allows real DataTransfer.files in synthetic DragEvents created via
+  // the constructor — making this the most reliable cross-framework injection
+  // method for editors that support drag-and-drop (Draft.js, ProseMirror, etc.).
+  async dropFilesOnElement(el, fileObjs) {
+    const dt = new DataTransfer();
+    for (const { blob, filename, mimeType } of fileObjs) {
+      dt.items.add(new File([blob], filename, { type: mimeType }));
+    }
+    const opts = { bubbles: true, cancelable: true, dataTransfer: dt };
+    el.dispatchEvent(new DragEvent("dragenter", opts));
+    await new Promise((r) => setTimeout(r, 60));
+    el.dispatchEvent(new DragEvent("dragover",  opts));
+    await new Promise((r) => setTimeout(r, 60));
+    el.dispatchEvent(new DragEvent("drop",      opts));
   },
 
   // Injects a single Blob into a file <input>.
