@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.14 - 2026-05-20
+
+- Release v0.2.14
+
+
 ## v0.2.13 - 2026-05-20
 
 - fix: X adapter — use React internal props for file injection (React 17/18 event delegation)
