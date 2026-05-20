@@ -17,7 +17,7 @@ window.CrosspostBridge._currentAdapter = {
         );
         if (composeBtn) {
           composeBtn.click();
-          textarea = await bridge.waitForElement('[data-testid="tweetTextarea_0"]', 2500);
+          textarea = await bridge.waitForElement('[data-testid="tweetTextarea_0"]', 3000);
         }
       }
 
@@ -27,7 +27,16 @@ window.CrosspostBridge._currentAdapter = {
       }
 
       // ── 2. Find the file input ────────────────────────────────────────────
-      const input = document.querySelector('input[data-testid="fileInput"]');
+      // Walk up from the textarea to the compose dialog root, then look for the
+      // fileInput *within that subtree* so we don't accidentally hit a file input
+      // from a background reply box.
+      const dialogRoot = textarea.closest('[role="dialog"]') ?? document.body;
+
+      // Wait up to 1 s for the input to appear in case the dialog is still animating.
+      let input = dialogRoot.querySelector('input[data-testid="fileInput"]');
+      if (!input) {
+        input = await bridge.waitForElement('input[data-testid="fileInput"]', 1000);
+      }
       if (!input) {
         bridge.notify("Could not find the media upload input", "error");
         return null;

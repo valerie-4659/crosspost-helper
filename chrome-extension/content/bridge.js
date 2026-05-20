@@ -68,15 +68,50 @@ window.CrosspostBridge = {
 
   // ── File injection ───────────────────────────────────────────────────────
 
-  // Injects a single Blob into a file <input> in a way that works with React/Vue apps.
-  async injectFileIntoInput(inputEl, blob, filename, mimeType) {
-    const file = new File([blob], filename, { type: mimeType });
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    // Some React apps intercept the native files setter — set it directly.
-    Object.defineProperty(inputEl, "files", { value: dt.files, writable: true, configurable: true });
+  // Core helper: sets files on a file input and notifies the owning framework.
+  //
+  // React 17+ changed event delegation from `document` to the React root element,
+  // so a plain dispatchEvent('change') on the input is never seen by React's
+  // synthetic event system.  The reliable fix is to read the internal
+  // __reactProps* key that React attaches to every DOM node and call its
+  // onChange handler directly, passing a synthetic-event-shaped object.
+  //
+  // If the element has no React props (plain HTML or Vue) we fall back to the
+  // standard DOM event approach which still works for those frameworks.
+  _injectFilesCore(inputEl, dataTransfer) {
+    // Override the read-only `files` getter so our DataTransfer is visible.
+    Object.defineProperty(inputEl, "files", { value: dataTransfer.files, configurable: true, writable: true });
+
+    // --- React 17 / 18 path ---
+    const propsKey = Object.keys(inputEl).find((k) => k.startsWith("__reactProps"));
+    if (propsKey && typeof inputEl[propsKey]?.onChange === "function") {
+      const nativeEvent = new Event("change", { bubbles: true });
+      inputEl[propsKey].onChange({
+        target: inputEl,
+        currentTarget: inputEl,
+        nativeEvent,
+        bubbles: true,
+        cancelable: false,
+        type: "change",
+        isDefaultPrevented: () => false,
+        isPropagationStopped: () => false,
+        preventDefault: () => {},
+        stopPropagation: () => {},
+        persist: () => {},
+      });
+      return;
+    }
+
+    // --- Fallback: plain DOM events (works for Vue / non-React pages) ---
     inputEl.dispatchEvent(new Event("change", { bubbles: true }));
     inputEl.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  },
+
+  // Injects a single Blob into a file <input>.
+  async injectFileIntoInput(inputEl, blob, filename, mimeType) {
+    const dt = new DataTransfer();
+    dt.items.add(new File([blob], filename, { type: mimeType }));
+    this._injectFilesCore(inputEl, dt);
   },
 
   // Injects multiple files into a single <input type="file"> at once.
@@ -86,9 +121,7 @@ window.CrosspostBridge = {
     for (const { blob, filename, mimeType } of files) {
       dt.items.add(new File([blob], filename, { type: mimeType }));
     }
-    Object.defineProperty(inputEl, "files", { value: dt.files, writable: true, configurable: true });
-    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
-    inputEl.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    this._injectFilesCore(inputEl, dt);
   },
 
   // Small toast notification shown on the active page.
