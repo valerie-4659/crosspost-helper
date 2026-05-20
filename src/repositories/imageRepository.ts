@@ -393,6 +393,19 @@ export async function listDistinctFolders(sourceId?: string): Promise<FolderEntr
   return rows.map((r) => ({ folderPath: r.folder_path, count: r.count, isExcluded: Boolean(r.is_excluded) }));
 }
 
+/** Returns posted-image counts grouped by (folder_path, target_id). */
+export async function listFolderPostStats(): Promise<Array<{ folderPath: string; targetId: string; postedCount: number }>> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<{ folder_path: string; target_id: string; posted_count: number }>>(
+    `SELECT i.folder_path, pr.target_id, COUNT(DISTINCT pr.image_id) AS posted_count
+     FROM post_records pr
+     JOIN images i ON i.id = pr.image_id
+     WHERE pr.status = 'posted'
+     GROUP BY i.folder_path, pr.target_id`,
+  );
+  return rows.map((r) => ({ folderPath: r.folder_path, targetId: r.target_id, postedCount: r.posted_count }));
+}
+
 /** Mark a folder (and all its subfolders) as excluded from the Picker and Library default view. */
 export async function excludeFolder(folderPath: string) {
   const db = await getDatabase();

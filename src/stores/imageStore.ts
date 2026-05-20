@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { deleteAllImages, deleteImages, deleteImagesInFolder, excludeFolder, includeFolder, listDistinctFolders, listImages, setImageArchived } from "@/repositories/imageRepository";
+import { deleteAllImages, deleteImages, deleteImagesInFolder, excludeFolder, includeFolder, listDistinctFolders, listFolderPostStats, listImages, setImageArchived } from "@/repositories/imageRepository";
 import { upsertPostRecord } from "@/repositories/postRecordRepository";
 import type { FolderEntry } from "@/repositories/imageRepository";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
@@ -27,9 +27,22 @@ export const useImageStore = defineStore("images", () => {
   /** When true, excluded folders and their images are shown in the Library. */
   const showExcludedFolders = ref(false);
 
+  /**
+   * Map<folderPath, Map<targetId, postedCount>>
+   * Holds how many images in each folder have been posted to each target.
+   */
+  const folderPostStats = ref(new Map<string, Map<string, number>>());
+
   async function loadFolders() {
     try {
       folders.value = await listDistinctFolders(filters.value.sourceId);
+      const stats = await listFolderPostStats();
+      const map = new Map<string, Map<string, number>>();
+      for (const { folderPath, targetId, postedCount } of stats) {
+        if (!map.has(folderPath)) map.set(folderPath, new Map());
+        map.get(folderPath)!.set(targetId, postedCount);
+      }
+      folderPostStats.value = map;
     } catch {
       // non-critical — sidebar just stays empty
     }
@@ -206,6 +219,7 @@ export const useImageStore = defineStore("images", () => {
   return {
     images,
     folders,
+    folderPostStats,
     loading,
     filters,
     message,

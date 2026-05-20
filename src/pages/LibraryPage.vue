@@ -15,6 +15,22 @@ import type { PostingTargetType } from "@/types/postingTarget";
 const EXTENSION_TYPES = new Set<PostingTargetType>(["x", "bluesky", "deviantart", "civitai"]);
 const PLATFORM_LIMITS: Record<string, number> = { civitai: 20, x: 4, bluesky: 4, deviantart: 1 };
 
+// Network stat badge styling per platform type.
+const TARGET_BADGE_STYLE: Record<PostingTargetType | "default", { bg: string; text: string; label: string }> = {
+  x:          { bg: "bg-slate-700",      text: "text-slate-200",  label: "𝕏"  },
+  bluesky:    { bg: "bg-sky-900/70",     text: "text-sky-300",    label: "Bsky" },
+  deviantart: { bg: "bg-green-900/70",   text: "text-green-300",  label: "DA"  },
+  civitai:    { bg: "bg-teal-900/70",    text: "text-teal-300",   label: "Civ" },
+  socialdiff: { bg: "bg-violet-900/70",  text: "text-violet-300", label: "SD"  },
+  custom:     { bg: "bg-slate-700/60",   text: "text-slate-300",  label: "?"   },
+  default:    { bg: "bg-slate-700/60",   text: "text-slate-300",  label: "?"   },
+};
+
+function targetBadge(targetId: string) {
+  const t = targetStore.targets.find((t) => t.id === targetId);
+  return TARGET_BADGE_STYLE[t?.type ?? "default"] ?? TARGET_BADGE_STYLE.default;
+}
+
 const imageStore = useImageStore();
 const sourceStore = useSourceStore();
 const targetStore = useTargetStore();
@@ -119,7 +135,7 @@ const browsePath = computed(() => currentDir.value || rootDir.value);
 const childFolders = computed(() => {
   const base = browsePath.value;
   if (!base) return [];
-  const children = new Map<string, { count: number; isExcluded: boolean }>();
+  const children = new Map<string, { count: number; isExcluded: boolean; postStats: Map<string, number> }>();
   for (const f of imageStore.folders) {
     if (f.folderPath === base || !f.folderPath.startsWith(base + "/")) continue;
     // Skip excluded folders unless showExcludedFolders is on.
@@ -128,18 +144,26 @@ const childFolders = computed(() => {
     const nextSeg = remaining.split("/")[0];
     const childPath = base + "/" + nextSeg;
     const existing = children.get(childPath);
+    // Merge post stats for this leaf folder into the child accumulator.
+    const leafStats = imageStore.folderPostStats.get(f.folderPath) ?? new Map<string, number>();
+    const mergedStats = new Map<string, number>(existing?.postStats ?? []);
+    for (const [targetId, cnt] of leafStats) {
+      mergedStats.set(targetId, (mergedStats.get(targetId) ?? 0) + cnt);
+    }
     children.set(childPath, {
       count: (existing?.count ?? 0) + f.count,
       // A child folder card is excluded if ALL its sub-entries are excluded.
       isExcluded: existing ? (existing.isExcluded && f.isExcluded) : f.isExcluded,
+      postStats: mergedStats,
     });
   }
   return [...children.entries()]
-    .map(([path, { count, isExcluded }]) => ({
+    .map(([path, { count, isExcluded, postStats }]) => ({
       path,
       name: path.split("/").pop()!,
       count,
       isExcluded,
+      postStats,
       isLastVisited: lastVisitedDir.value !== "" && lastVisitedDir.value.startsWith(path),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -334,6 +358,16 @@ function lightboxNavigate(image: ImageWithPostState) {
             <div class="w-full">
               <p class="truncate font-medium" :class="folder.isExcluded ? 'text-slate-400' : 'text-white'">{{ folder.name }}</p>
               <p class="mt-0.5 text-xs text-slate-500">{{ folder.count }} images</p>
+              <!-- Network post stats chips -->
+              <div v-if="folder.postStats.size > 0" class="mt-1.5 flex flex-wrap justify-center gap-1">
+                <span
+                  v-for="[targetId, cnt] in folder.postStats"
+                  :key="targetId"
+                  class="rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none"
+                  :class="[targetBadge(targetId).bg, targetBadge(targetId).text]"
+                  :title="targetStore.targets.find(t => t.id === targetId)?.name + ': ' + cnt + ' posted'"
+                >{{ targetBadge(targetId).label }} {{ cnt }}</span>
+              </div>
             </div>
           </button>
 
