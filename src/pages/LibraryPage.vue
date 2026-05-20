@@ -94,6 +94,9 @@ const rootDir = computed(() => {
 /** The folder path the user has navigated into (empty string = rootDir). */
 const currentDir = ref("");
 
+/** The last folder the user navigated out of — highlighted in the parent view. */
+const lastVisitedDir = ref("");
+
 /** Resolved directory we're currently browsing. */
 const browsePath = computed(() => currentDir.value || rootDir.value);
 
@@ -117,7 +120,13 @@ const childFolders = computed(() => {
     });
   }
   return [...children.entries()]
-    .map(([path, { count, isExcluded }]) => ({ path, name: path.split("/").pop()!, count, isExcluded }))
+    .map(([path, { count, isExcluded }]) => ({
+      path,
+      name: path.split("/").pop()!,
+      count,
+      isExcluded,
+      isLastVisited: lastVisitedDir.value !== "" && lastVisitedDir.value.startsWith(path),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 });
 
@@ -146,8 +155,15 @@ const breadcrumbs = computed(() => {
 });
 
 function navigateTo(path: string) {
+  const prev = currentDir.value || rootDir.value;
+  // Going back (new path is a parent of where we were) → remember the folder we just left.
+  if (prev.startsWith(path + "/")) {
+    lastVisitedDir.value = prev;
+  } else {
+    // Going deeper → clear the highlight so it doesn't linger.
+    lastVisitedDir.value = "";
+  }
   currentDir.value = path;
-  // browsePath watcher will update the filter.
 }
 
 // Keep exactFolderPath in sync whenever the effective browse path changes.
@@ -175,6 +191,7 @@ watch(
   () => imageStore.folders.length,
   () => {
     currentDir.value = "";
+    lastVisitedDir.value = "";
   },
 );
 
@@ -281,7 +298,9 @@ function lightboxNavigate(image: ImageWithPostState) {
           class="group relative flex flex-col items-center gap-3 rounded-xl border p-6 text-center transition"
           :class="folder.isExcluded
             ? 'border-amber-500/30 bg-amber-500/5 opacity-60 hover:opacity-90'
-            : 'border-line bg-panel hover:border-accent hover:bg-panelSoft'"
+            : folder.isLastVisited
+              ? 'border-accent/60 bg-accent/10 hover:border-accent hover:bg-accent/15'
+              : 'border-line bg-panel hover:border-accent hover:bg-panelSoft'"
         >
           <!-- Excluded badge -->
           <span
