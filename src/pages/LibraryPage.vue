@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { Archive, Check, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Send, Trash2, X } from "lucide-vue-next";
+import { Archive, Check, ChevronRight, Download, Eye, EyeOff, Folder, FolderHeart, FolderX, Plus, RefreshCcw, RotateCcw, Send, Trash2, X } from "lucide-vue-next";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import ImageLightbox from "@/components/ImageLightbox.vue";
 import { copyImagePath, copyImageToClipboard, exportImagesToFolder, revealImage } from "@/services/imageActionService";
+import { useCollectionStore } from "@/stores/collectionStore";
 import { useImageStore } from "@/stores/imageStore";
 import { useSourceStore } from "@/stores/sourceStore";
 import { useTargetStore } from "@/stores/targetStore";
@@ -31,11 +32,47 @@ function targetBadge(targetId: string) {
   return TARGET_BADGE_STYLE[t?.type ?? "default"] ?? TARGET_BADGE_STYLE.default;
 }
 
+const collectionStore = useCollectionStore();
 const imageStore = useImageStore();
 const sourceStore = useSourceStore();
 const targetStore = useTargetStore();
 const previewImage = ref<ImageWithPostState | null>(null);
 const selectedTargetIds = ref<string[]>([]);
+
+// ── Add-to-collection modal ─────────────────────────────────────────────────
+const showCollectionModal = ref(false);
+const newCollectionName = ref("");
+const collectionModalError = ref("");
+
+async function openCollectionModal() {
+  collectionModalError.value = "";
+  newCollectionName.value = "";
+  await collectionStore.load();
+  showCollectionModal.value = true;
+}
+
+async function addToCollection(collectionId: string) {
+  const ids = [...imageStore.selectedImageIds];
+  if (!ids.length) return;
+  try {
+    await collectionStore.addImages(collectionId, ids);
+    showCollectionModal.value = false;
+    imageStore.message = collectionStore.message;
+  } catch (e) {
+    collectionModalError.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function createAndAdd() {
+  const name = newCollectionName.value.trim();
+  if (!name) { collectionModalError.value = "Please enter a name."; return; }
+  try {
+    const col = await collectionStore.create({ name });
+    await addToCollection(col.id);
+  } catch (e) {
+    collectionModalError.value = e instanceof Error ? e.message : String(e);
+  }
+}
 
 // ── Double opt-in delete ────────────────────────────────────────────────────
 const confirmingDeleteSelected = ref(false);
@@ -331,6 +368,9 @@ function lightboxNavigate(image: ImageWithPostState) {
         <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" @click="exportSelected">
           <Download class="h-3 w-3" />Download
         </button>
+        <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" @click="openCollectionModal">
+          <FolderHeart class="h-3 w-3" />Add to Collection
+        </button>
         <template v-if="!confirmingDeleteSelected">
           <button
             class="button h-7 px-2 text-xs hover:border-rose/60 hover:text-rose"
@@ -534,5 +574,57 @@ function lightboxNavigate(image: ImageWithPostState) {
       @toggle-selected="imageStore.toggleSelected"
       @delete="deleteSingleFromLightbox"
     />
+
+  <!-- ── Add-to-Collection modal ──────────────────────────────────────── -->
+  <Teleport to="body">
+    <div
+      v-if="showCollectionModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      @click.self="showCollectionModal = false"
+    >
+      <div class="w-full max-w-md rounded-xl border border-line bg-panel p-6 shadow-2xl">
+        <div class="mb-4 flex items-center justify-between">
+          <h2 class="text-base font-semibold text-white">Add {{ selectedCount }} image(s) to Collection</h2>
+          <button class="button h-7 w-7 p-0" @click="showCollectionModal = false"><X class="h-4 w-4" /></button>
+        </div>
+
+        <!-- Error -->
+        <p v-if="collectionModalError" class="mb-3 rounded border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">
+          {{ collectionModalError }}
+        </p>
+
+        <!-- Existing collections -->
+        <div v-if="collectionStore.collections.length" class="mb-4 max-h-52 overflow-y-auto space-y-1">
+          <p class="mb-1.5 text-xs text-slate-400">Add to existing collection:</p>
+          <button
+            v-for="col in collectionStore.collections"
+            :key="col.id"
+            class="flex w-full items-center justify-between rounded-lg border border-line bg-ink px-3 py-2 text-left text-sm transition hover:border-accent hover:bg-accent/10"
+            @click="addToCollection(col.id)"
+          >
+            <span class="font-medium text-white">{{ col.name }}</span>
+            <span class="text-xs text-slate-500">{{ col.imageCount ?? 0 }} images</span>
+          </button>
+        </div>
+
+        <!-- Create new -->
+        <div class="border-t border-line pt-4">
+          <p class="mb-2 text-xs text-slate-400">Or create a new collection:</p>
+          <div class="flex gap-2">
+            <input
+              v-model="newCollectionName"
+              type="text"
+              placeholder="Collection name…"
+              class="flex-1 rounded-lg border border-line bg-ink px-3 py-1.5 text-sm text-white placeholder-slate-500 focus:border-accent focus:outline-none"
+              @keyup.enter="createAndAdd"
+            />
+            <button class="button-primary h-8 px-3 text-sm" @click="createAndAdd">
+              <Plus class="h-3.5 w-3.5" />Create
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
   </div>
 </template>

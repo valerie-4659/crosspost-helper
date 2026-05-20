@@ -50,7 +50,11 @@ async function generateThumbnail(localPath) {
 }
 
 function migrationSql() {
-  return fs.readFileSync(path.join(__dirname, "..", "src", "database", "migrations", "001_initial.sql"), "utf8");
+  const migrationsDir = path.join(__dirname, "..", "src", "database", "migrations");
+  return [
+    "001_initial.sql",
+    "002_collections.sql",
+  ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
 async function getSql() {
