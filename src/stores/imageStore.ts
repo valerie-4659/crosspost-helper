@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { deleteAllImages, deleteImages, deleteImagesInFolder, listDistinctFolders, listImages, setImageArchived } from "@/repositories/imageRepository";
+import { deleteAllImages, deleteImages, deleteImagesInFolder, excludeFolder, includeFolder, listDistinctFolders, listImages, setImageArchived } from "@/repositories/imageRepository";
 import { upsertPostRecord } from "@/repositories/postRecordRepository";
 import type { FolderEntry } from "@/repositories/imageRepository";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
@@ -24,6 +24,9 @@ export const useImageStore = defineStore("images", () => {
     images.value.filter((image) => selectedImageIds.value.has(image.id)),
   );
 
+  /** When true, excluded folders and their images are shown in the Library. */
+  const showExcludedFolders = ref(false);
+
   async function loadFolders() {
     try {
       folders.value = await listDistinctFolders(filters.value.sourceId);
@@ -36,7 +39,10 @@ export const useImageStore = defineStore("images", () => {
     loading.value = true;
     error.value = "";
     try {
-      images.value = await listImages(filters.value);
+      images.value = await listImages({
+        ...filters.value,
+        includeExcludedFolders: showExcludedFolders.value,
+      });
       selectedImageIds.value = new Set([...selectedImageIds.value].filter((id) =>
         images.value.some((image) => image.id === id),
       ));
@@ -176,6 +182,27 @@ export const useImageStore = defineStore("images", () => {
     message.value = "Hard reset complete — all image data has been removed from the index.";
   }
 
+  /** Mark a folder as excluded: hidden from Picker random pick and Library default view. */
+  async function excludeFolderFromLibrary(folderPath: string) {
+    await excludeFolder(folderPath);
+    await loadFolders();
+    if (!showExcludedFolders.value) {
+      // Remove images of this folder from the current in-memory list immediately.
+      images.value = images.value.filter(
+        (img) => img.folderPath !== folderPath && !img.folderPath.startsWith(folderPath + "/"),
+      );
+    }
+    message.value = `Folder "${folderPath.split("/").pop()}" excluded — won't appear in Picker.`;
+  }
+
+  /** Re-include a previously excluded folder. */
+  async function includeFolderInLibrary(folderPath: string) {
+    await includeFolder(folderPath);
+    await loadFolders();
+    await load();
+    message.value = `Folder "${folderPath.split("/").pop()}" is active again.`;
+  }
+
   return {
     images,
     folders,
@@ -185,6 +212,7 @@ export const useImageStore = defineStore("images", () => {
     error,
     selectedImageIds,
     selectedImages,
+    showExcludedFolders,
     load,
     loadFolders,
     archive,
@@ -200,5 +228,7 @@ export const useImageStore = defineStore("images", () => {
     deleteSingleImage,
     deleteFolder,
     hardReset,
+    excludeFolderFromLibrary,
+    includeFolderInLibrary,
   };
 });

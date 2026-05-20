@@ -59,6 +59,8 @@ export interface ImageFilters {
   includeSkipped: boolean;
   includeArchived: boolean;
   excludePostedAnywhere: boolean;
+  /** When true, images from excluded folders are included in results (Library "Show excluded" toggle). */
+  includeExcludedFolders?: boolean;
 }
 
 export interface DuplicateWarning {

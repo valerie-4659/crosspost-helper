@@ -53,6 +53,15 @@ CREATE TABLE IF NOT EXISTS post_records (
   FOREIGN KEY (target_id) REFERENCES posting_targets(id) ON DELETE CASCADE
 );
 
+-- Folders marked as "done" are hidden from the Picker's random pick and from
+-- the Library browser by default.  The folder_path is the canonical "/" path
+-- as stored in images.folder_path.  Excluding a parent path also excludes all
+-- child paths (handled in application code via a LIKE prefix check).
+CREATE TABLE IF NOT EXISTS excluded_folders (
+  folder_path TEXT PRIMARY KEY NOT NULL,
+  excluded_at TEXT NOT NULL
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_images_source_file ON images(source_id, source_file_id) WHERE source_file_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_images_hash ON images(perceptual_hash) WHERE perceptual_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_images_folder ON images(folder_path);

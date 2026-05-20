@@ -121,6 +121,14 @@ export async function listImages(filters: Partial<ImageFilters> = {}): Promise<I
   if (!filters.includeArchived) {
     conditions.push("images.is_archived = 0");
   }
+  if (!filters.includeExcludedFolders) {
+    // Exclude images whose folder_path is in excluded_folders OR is a child of one.
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM excluded_folders ef
+      WHERE images.folder_path = ef.folder_path
+         OR images.folder_path LIKE ef.folder_path || '/%'
+    )`);
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const rows = await db.select<ImageListRow[]>(
@@ -269,6 +277,12 @@ export async function pickRandomImage(filters: ImageFilters): Promise<ImageWithP
       WHERE skipped_records.image_id = images.id AND skipped_records.status = 'skipped'
     )`);
   }
+  // Picker always skips excluded folders — there is no opt-in override here.
+  conditions.push(`NOT EXISTS (
+    SELECT 1 FROM excluded_folders ef
+    WHERE images.folder_path = ef.folder_path
+       OR images.folder_path LIKE ef.folder_path || '/%'
+  )`);
 
   const rows = await db.select<ImageListRow[]>(
     `SELECT images.*, image_sources.name AS source_name, image_sources.type AS source_type,
@@ -347,9 +361,13 @@ export async function findDuplicateCandidates(input: ImageInput) {
 export interface FolderEntry {
   folderPath: string;
   count: number;
+  isExcluded: boolean;
 }
 
-/** Returns all distinct folder paths and their image counts, sorted alphabetically. */
+/**
+ * Returns all distinct folder paths and their image counts, sorted alphabetically.
+ * Each entry includes isExcluded = true when the folder (or a parent) is in excluded_folders.
+ */
 export async function listDistinctFolders(sourceId?: string): Promise<FolderEntry[]> {
   const db = await getDatabase();
   const params: unknown[] = [];
@@ -358,12 +376,41 @@ export async function listDistinctFolders(sourceId?: string): Promise<FolderEntr
     params.push(sourceId);
     conditions.push(`images.source_id = $${params.length}`);
   }
-  const rows = await db.select<Array<{ folder_path: string; count: number }>>(
-    `SELECT folder_path, COUNT(*) AS count FROM images
+  const rows = await db.select<Array<{ folder_path: string; count: number; is_excluded: number }>>(
+    `SELECT images.folder_path,
+            COUNT(*) AS count,
+            CASE WHEN EXISTS (
+              SELECT 1 FROM excluded_folders ef
+              WHERE images.folder_path = ef.folder_path
+                 OR images.folder_path LIKE ef.folder_path || '/%'
+            ) THEN 1 ELSE 0 END AS is_excluded
+     FROM images
      WHERE ${conditions.join(" AND ")}
-     GROUP BY folder_path
-     ORDER BY folder_path`,
+     GROUP BY images.folder_path
+     ORDER BY images.folder_path`,
     params,
   );
-  return rows.map((r) => ({ folderPath: r.folder_path, count: r.count }));
+  return rows.map((r) => ({ folderPath: r.folder_path, count: r.count, isExcluded: Boolean(r.is_excluded) }));
+}
+
+/** Mark a folder (and all its subfolders) as excluded from the Picker and Library default view. */
+export async function excludeFolder(folderPath: string) {
+  const db = await getDatabase();
+  await db.execute(
+    "INSERT OR REPLACE INTO excluded_folders (folder_path, excluded_at) VALUES ($1, $2)",
+    [folderPath, new Date().toISOString()],
+  );
+}
+
+/** Remove a folder from the excluded list. */
+export async function includeFolder(folderPath: string) {
+  const db = await getDatabase();
+  await db.execute("DELETE FROM excluded_folders WHERE folder_path = $1", [folderPath]);
+}
+
+/** Returns the set of all currently excluded folder paths. */
+export async function listExcludedFolderPaths(): Promise<Set<string>> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<{ folder_path: string }>>("SELECT folder_path FROM excluded_folders");
+  return new Set(rows.map((r) => r.folder_path));
 }

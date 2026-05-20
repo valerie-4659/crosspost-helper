@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Archive, Check, ChevronRight, Download, Folder, RefreshCcw, RotateCcw, Send, Trash2, X } from "lucide-vue-next";
+import { Archive, Check, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Send, Trash2, X } from "lucide-vue-next";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import ImageLightbox from "@/components/ImageLightbox.vue";
@@ -46,9 +46,10 @@ async function deleteSingleFromLightbox(imageId: string) {
   if (previewImage.value?.id === imageId) previewImage.value = null;
 }
 
-// Reload images whenever a filter changes.
+// Reload images whenever a filter or showExcludedFolders changes.
 onMounted(() => imageStore.load());
 watch(() => imageStore.filters, () => imageStore.load(), { deep: true });
+watch(() => imageStore.showExcludedFolders, () => imageStore.load());
 
 const activeTargetName = computed(
   () => targetStore.targets.find((target) => target.id === imageStore.filters.targetId)?.name ?? "",
@@ -96,20 +97,27 @@ const currentDir = ref("");
 /** Resolved directory we're currently browsing. */
 const browsePath = computed(() => currentDir.value || rootDir.value);
 
-/** Immediate subdirectories of browsePath, with accumulated image counts. */
+/** Immediate subdirectories of browsePath, with accumulated image counts and excluded state. */
 const childFolders = computed(() => {
   const base = browsePath.value;
   if (!base) return [];
-  const children = new Map<string, number>();
+  const children = new Map<string, { count: number; isExcluded: boolean }>();
   for (const f of imageStore.folders) {
     if (f.folderPath === base || !f.folderPath.startsWith(base + "/")) continue;
+    // Skip excluded folders unless showExcludedFolders is on.
+    if (f.isExcluded && !imageStore.showExcludedFolders) continue;
     const remaining = f.folderPath.slice(base.length + 1);
     const nextSeg = remaining.split("/")[0];
     const childPath = base + "/" + nextSeg;
-    children.set(childPath, (children.get(childPath) ?? 0) + f.count);
+    const existing = children.get(childPath);
+    children.set(childPath, {
+      count: (existing?.count ?? 0) + f.count,
+      // A child folder card is excluded if ALL its sub-entries are excluded.
+      isExcluded: existing ? (existing.isExcluded && f.isExcluded) : f.isExcluded,
+    });
   }
   return [...children.entries()]
-    .map(([path, count]) => ({ path, name: path.split("/").pop()!, count }))
+    .map(([path, { count, isExcluded }]) => ({ path, name: path.split("/").pop()!, count, isExcluded }))
     .sort((a, b) => a.name.localeCompare(b.name));
 });
 
@@ -213,10 +221,22 @@ function lightboxNavigate(image: ImageWithPostState) {
           Pick manually, drag or copy the image, then mark the network you posted to.
         </p>
       </div>
-      <button class="button" @click="imageStore.load">
-        <RefreshCcw class="h-4 w-4" />
-        Refresh
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          class="button gap-1.5"
+          :class="imageStore.showExcludedFolders ? 'border-amber-500/60 bg-amber-500/10 text-amber-400' : ''"
+          :title="imageStore.showExcludedFolders ? 'Hide excluded folders' : 'Show excluded folders'"
+          @click="imageStore.showExcludedFolders = !imageStore.showExcludedFolders"
+        >
+          <Eye v-if="imageStore.showExcludedFolders" class="h-4 w-4" />
+          <EyeOff v-else class="h-4 w-4" />
+          {{ imageStore.showExcludedFolders ? "Excluded visible" : "Show excluded" }}
+        </button>
+        <button class="button" @click="imageStore.load">
+          <RefreshCcw class="h-4 w-4" />
+          Refresh
+        </button>
+      </div>
     </header>
 
     <!-- ── Breadcrumb navigation ────────────────────────────────────── -->
@@ -258,18 +278,51 @@ function lightboxNavigate(image: ImageWithPostState) {
         <div
           v-for="folder in childFolders"
           :key="folder.path"
-          class="group relative flex flex-col items-center gap-3 rounded-xl border border-line bg-panel p-6 text-center transition hover:border-accent hover:bg-panelSoft"
+          class="group relative flex flex-col items-center gap-3 rounded-xl border p-6 text-center transition"
+          :class="folder.isExcluded
+            ? 'border-amber-500/30 bg-amber-500/5 opacity-60 hover:opacity-90'
+            : 'border-line bg-panel hover:border-accent hover:bg-panelSoft'"
         >
+          <!-- Excluded badge -->
+          <span
+            v-if="folder.isExcluded"
+            class="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-400"
+          >
+            <FolderX class="h-3 w-3" />Done
+          </span>
+
           <button class="flex w-full flex-col items-center gap-3" :title="folder.path" @click="navigateTo(folder.path)">
-            <Folder class="h-12 w-12 text-slate-500 transition group-hover:text-accent" />
+            <Folder
+              class="h-12 w-12 transition"
+              :class="folder.isExcluded ? 'text-amber-500/50' : 'text-slate-500 group-hover:text-accent'"
+            />
             <div class="w-full">
-              <p class="truncate font-medium text-white">{{ folder.name }}</p>
+              <p class="truncate font-medium" :class="folder.isExcluded ? 'text-slate-400' : 'text-white'">{{ folder.name }}</p>
               <p class="mt-0.5 text-xs text-slate-500">{{ folder.count }} images</p>
             </div>
           </button>
 
-          <!-- Folder delete (two-step) -->
+          <!-- Bottom action row: exclude/include + delete -->
           <div class="flex shrink-0 items-center gap-1">
+            <!-- Exclude / Re-include toggle -->
+            <button
+              v-if="!folder.isExcluded"
+              class="button h-7 gap-1 px-2 text-xs opacity-0 transition group-hover:opacity-100 hover:border-amber-500/60 hover:text-amber-400"
+              title="Mark folder as done — excluded from Picker"
+              @click.stop="imageStore.excludeFolderFromLibrary(folder.path)"
+            >
+              <EyeOff class="h-3.5 w-3.5" />Exclude
+            </button>
+            <button
+              v-else
+              class="button h-7 gap-1 border-amber-500/40 bg-amber-500/10 px-2 text-xs text-amber-400 hover:bg-amber-500/20"
+              title="Re-include folder in Picker"
+              @click.stop="imageStore.includeFolderInLibrary(folder.path)"
+            >
+              <Eye class="h-3.5 w-3.5" />Re-include
+            </button>
+
+            <!-- Delete (two-step) -->
             <template v-if="confirmingDeleteFolder !== folder.path">
               <button
                 class="button h-7 w-7 p-0 opacity-0 transition group-hover:opacity-100 hover:border-rose/60 hover:text-rose"

@@ -16,6 +16,7 @@ export const usePickerStore = defineStore("picker", () => {
     includeSkipped: false,
     includeArchived: false,
     excludePostedAnywhere: false,
+    includeExcludedFolders: false,
     rating: "all",
   });
 
