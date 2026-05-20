@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.16 - 2026-05-20
+
+- fix: X injection — use getter override + always fire native change event
+- feat: sticky compact action toolbar in Library — no more scrolling to post
+- feat: show per-network post counts on folder cards in Library
+- feat: auto-scroll to last visited folder on back-navigation
+- feat: library grid 3→6 columns responsive (3/4/5/6)
+
+
 ## v0.2.15 - 2026-05-20
 
 - feat: show full image in library grid (natural aspect ratio, no crop)

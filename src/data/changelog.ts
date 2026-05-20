@@ -6,6 +6,17 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.16",
+    date: "2026-05-20",
+    items: [
+      "fix: X injection — use getter override + always fire native change event",
+      "feat: sticky compact action toolbar in Library — no more scrolling to post",
+      "feat: show per-network post counts on folder cards in Library",
+      "feat: auto-scroll to last visited folder on back-navigation",
+      "feat: library grid 3→6 columns responsive (3/4/5/6)",
+    ],
+  },
+  {
     version: "0.2.15",
     date: "2026-05-20",
     items: [
