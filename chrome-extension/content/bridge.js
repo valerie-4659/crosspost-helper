@@ -70,19 +70,34 @@ window.CrosspostBridge = {
 
   // Core helper: sets files on a file input and notifies the owning framework.
   //
-  // React 17+ changed event delegation from `document` to the React root element,
-  // so a plain dispatchEvent('change') on the input is never seen by React's
-  // synthetic event system.  The reliable fix is to read the internal
-  // __reactProps* key that React attaches to every DOM node and call its
-  // onChange handler directly, passing a synthetic-event-shaped object.
+  // Strategy A — native event delegation (React 17/18):
+  //   React 17+ delegates events to the React root container, NOT document.
+  //   A native `change` event dispatched on the input bubbles to the root and
+  //   is caught by React's synthetic event system normally — no hacks needed.
+  //   We override `files` with an accessor (getter) so even if React internally
+  //   reads `HTMLInputElement.prototype.files.get.call(el)` it still gets our list.
   //
-  // If the element has no React props (plain HTML or Vue) we fall back to the
-  // standard DOM event approach which still works for those frameworks.
+  // Strategy B — direct React props call (fallback / belt-and-suspenders):
+  //   We also call __reactProps.onChange directly in case the element is not
+  //   inside the React root or event bubbling is blocked.
+  //
+  // Strategy C — plain DOM events (Vue / non-React pages).
   _injectFilesCore(inputEl, dataTransfer) {
-    // Override the read-only `files` getter so our DataTransfer is visible.
-    Object.defineProperty(inputEl, "files", { value: dataTransfer.files, configurable: true, writable: true });
+    // Override `files` as a getter accessor on the instance.
+    // Using a getter (not a value property) ensures that even code which goes
+    // through the HTMLInputElement prototype chain still gets our FileList.
+    Object.defineProperty(inputEl, "files", {
+      get() { return dataTransfer.files; },
+      configurable: true,
+    });
 
-    // --- React 17 / 18 path ---
+    // Strategy A: native change event — bubbles to React 17/18 root.
+    // This is the primary reliable path; dispatch it unconditionally.
+    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+    inputEl.dispatchEvent(new InputEvent("input", { bubbles: true }));
+
+    // Strategy B: also call __reactProps.onChange directly if present
+    // (belt-and-suspenders in case the native event gets swallowed).
     const propsKey = Object.keys(inputEl).find((k) => k.startsWith("__reactProps"));
     if (propsKey && typeof inputEl[propsKey]?.onChange === "function") {
       const nativeEvent = new Event("change", { bubbles: true });
@@ -99,12 +114,7 @@ window.CrosspostBridge = {
         stopPropagation: () => {},
         persist: () => {},
       });
-      return;
     }
-
-    // --- Fallback: plain DOM events (works for Vue / non-React pages) ---
-    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
-    inputEl.dispatchEvent(new InputEvent("input", { bubbles: true }));
   },
 
   // Injects a single Blob into a file <input>.

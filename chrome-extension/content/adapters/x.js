@@ -26,16 +26,30 @@ window.CrosspostBridge._currentAdapter = {
         return null;
       }
 
+      // Give the dialog a moment to finish rendering before we search for the input.
+      await new Promise((r) => setTimeout(r, 300));
+
       // ── 2. Find the file input ────────────────────────────────────────────
       // Walk up from the textarea to the compose dialog root, then look for the
       // fileInput *within that subtree* so we don't accidentally hit a file input
       // from a background reply box.
       const dialogRoot = textarea.closest('[role="dialog"]') ?? document.body;
 
-      // Wait up to 1 s for the input to appear in case the dialog is still animating.
-      let input = dialogRoot.querySelector('input[data-testid="fileInput"]');
+      // Try several selectors — X has changed these in the past.
+      const inputSelectors = [
+        'input[data-testid="fileInput"]',
+        'input[type="file"][accept]',
+        'input[type="file"]',
+      ];
+      let input = null;
+      for (const sel of inputSelectors) {
+        input = dialogRoot.querySelector(sel) ?? document.body.querySelector(sel);
+        if (input) break;
+      }
+      // Last resort: wait up to 1.5 s for the input to appear.
       if (!input) {
-        input = await bridge.waitForElement('input[data-testid="fileInput"]', 1000);
+        input = await bridge.waitForElement('input[data-testid="fileInput"]', 1500)
+               ?? await bridge.waitForElement('input[type="file"]', 500);
       }
       if (!input) {
         bridge.notify("Could not find the media upload input", "error");
@@ -66,6 +80,8 @@ window.CrosspostBridge._currentAdapter = {
       );
 
       await bridge.injectMultipleFilesIntoInput(input, files);
+      // Give React a tick to process the change event before we report success.
+      await new Promise((r) => setTimeout(r, 150));
 
       const resolvedTargetId = targetId ?? toInject[0]?.targetId;
       const imageIds = toInject.map((i) => i.id);
