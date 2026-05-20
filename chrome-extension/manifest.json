@@ -10,6 +10,7 @@
     "https://x.com/*",
     "https://bsky.app/*",
     "https://www.deviantart.com/*",
+    "https://deviantart.com/*",
     "https://civitai.com/*",
     "https://civitai.red/*",
     "https://www.civitai.red/*"
@@ -29,7 +30,7 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://www.deviantart.com/*"],
+      "matches": ["https://www.deviantart.com/*", "https://deviantart.com/*"],
       "js": ["content/bridge.js", "content/adapters/deviantart.js"],
       "run_at": "document_idle"
     },
