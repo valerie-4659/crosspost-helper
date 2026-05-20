@@ -74,8 +74,8 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
     @dragstart="handleDragStart"
   >
     <div
-      class="relative aspect-[4/3] cursor-grab bg-black/40 active:cursor-grabbing"
-      :class="{ 'animate-pulse': imageUrl && !imageLoaded }"
+      class="relative cursor-grab bg-black/40 active:cursor-grabbing"
+      :class="{ 'min-h-32 animate-pulse': imageUrl && !imageLoaded }"
       @dblclick="emit('preview', image)"
     >
       <img
@@ -85,7 +85,7 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
         :alt="image.filename"
         loading="lazy"
         decoding="async"
-        class="h-full w-full object-cover transition-opacity duration-500"
+        class="w-full transition-opacity duration-500"
         :class="imageLoaded ? 'opacity-100' : 'opacity-0'"
         @load="imageLoaded = true"
         @error="imageLoaded = true"
