@@ -6,6 +6,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.19",
+    date: "2026-05-20",
+    items: [
+      "feat: Collections — named image sets across folders, queue for any network",
+      "fix: DeviantArt adapter — use getQueuedImages, return imageIds[], add non-www manifest entry",
+      "fix: add www.civitai.red to manifest content_scripts and popup PLATFORMS",
+    ],
+  },
+  {
     version: "0.2.18",
     date: "2026-05-20",
     items: [

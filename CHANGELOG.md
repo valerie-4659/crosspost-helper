@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.19 - 2026-05-20
+
+- feat: Collections — named image sets across folders, queue for any network
+- fix: DeviantArt adapter — use getQueuedImages, return imageIds[], add non-www manifest entry
+- fix: add www.civitai.red to manifest content_scripts and popup PLATFORMS
+
+
 ## v0.2.18 - 2026-05-20
 
 - fix: X injection — click media button first to init React handler, then CDP setFileInputFiles
