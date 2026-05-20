@@ -7,6 +7,7 @@ const PLATFORMS = {
   "deviantart.com": "deviantart",
   "civitai.com": "civitai",
   "civitai.red": "civitai",
+  "www.civitai.red": "civitai",
 };
 
 const PLATFORM_LABELS = {

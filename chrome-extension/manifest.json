@@ -11,7 +11,8 @@
     "https://bsky.app/*",
     "https://www.deviantart.com/*",
     "https://civitai.com/*",
-    "https://civitai.red/*"
+    "https://civitai.red/*",
+    "https://www.civitai.red/*"
   ],
   "background": {
     "service_worker": "background/worker.js"
@@ -33,7 +34,7 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://civitai.com/*", "https://civitai.red/*"],
+      "matches": ["https://civitai.com/*", "https://civitai.red/*", "https://www.civitai.red/*"],
       "js": ["content/bridge.js", "content/adapters/civitai.js"],
       "run_at": "document_idle"
     }
