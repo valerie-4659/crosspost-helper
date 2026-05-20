@@ -310,6 +310,86 @@ function lightboxNavigate(image: ImageWithPostState) {
       </template>
     </nav>
 
+    <!-- ── Sticky action toolbar (only when viewing images) ──────── -->
+    <section
+      v-if="isLeafDir || hasDirImages"
+      class="shrink-0 border-b border-line bg-panel px-4 py-2"
+    >
+      <!-- Row 1: selection actions -->
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="mr-1 text-xs font-medium text-white">{{ selectedCount }} selected</span>
+        <button class="button h-7 px-2 text-xs" @click="imageStore.selectVisible">Select visible</button>
+        <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" @click="imageStore.clearSelection">
+          <X class="h-3 w-3" />Clear
+        </button>
+        <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" @click="imageStore.excludeSelected">
+          <Archive class="h-3 w-3" />Exclude
+        </button>
+        <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" @click="imageStore.restoreSelected">
+          <RotateCcw class="h-3 w-3" />Restore
+        </button>
+        <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" @click="exportSelected">
+          <Download class="h-3 w-3" />Download
+        </button>
+        <template v-if="!confirmingDeleteSelected">
+          <button
+            class="button h-7 px-2 text-xs hover:border-rose/60 hover:text-rose"
+            :disabled="selectedCount === 0"
+            @click="requestDeleteSelected"
+          ><Trash2 class="h-3 w-3" />Delete</button>
+        </template>
+        <template v-else>
+          <span class="text-xs text-rose">Remove {{ selectedCount }} image(s)?</span>
+          <button class="button h-7 border-rose/60 bg-rose/10 px-2 text-xs text-rose hover:bg-rose/20" @click="confirmDeleteSelected">Confirm</button>
+          <button class="button h-7 px-2 text-xs" @click="cancelDeleteSelected">Cancel</button>
+        </template>
+      </div>
+
+      <!-- Row 2: mark as posted -->
+      <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <span class="mr-1 shrink-0 text-xs text-slate-400">Mark as posted on</span>
+        <label
+          v-for="target in targetStore.enabledTargets"
+          :key="target.id"
+          class="flex shrink-0 cursor-pointer items-center gap-1.5 rounded border px-2 py-1 text-xs transition"
+          :class="selectedTargetIds.includes(target.id) ? 'border-accent bg-accent/10 text-accent' : 'border-line bg-ink text-slate-300'"
+        >
+          <input v-model="selectedTargetIds" type="checkbox" class="h-3 w-3 accent-accent" :value="target.id" />
+          {{ target.name }}
+        </label>
+        <button
+          class="button-primary h-7 shrink-0 whitespace-nowrap px-3 text-xs"
+          :disabled="selectedCount === 0 || selectedTargetIds.length === 0"
+          @click="markSelected"
+        ><Check class="h-3 w-3" />Mark as posted</button>
+      </div>
+
+      <!-- Row 3: queue for Chrome Extension -->
+      <div v-if="extensionTargets.length" class="mt-1.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-1.5">
+        <span class="mr-1 shrink-0 text-xs text-slate-400">Queue for Extension</span>
+        <button
+          v-for="target in extensionTargets"
+          :key="target.id"
+          class="button h-7 shrink-0 whitespace-nowrap px-2 text-xs"
+          :disabled="selectedCount === 0"
+          :title="`Queue up to ${PLATFORM_LIMITS[target.type] ?? 1} images for ${target.name}`"
+          @click="queueForExtension(target.type)"
+        >
+          <Send class="h-3 w-3" />
+          {{ target.name }}
+          <span class="ml-0.5 text-[10px] text-slate-500">(max {{ PLATFORM_LIMITS[target.type] ?? 1 }})</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Message / error banners (sticky, below toolbar) -->
+    <div v-if="imageStore.message" class="shrink-0 border-b border-mint/30 bg-mint/10 px-4 py-1.5 text-xs text-mint">
+      {{ imageStore.message }}
+    </div>
+    <div v-if="imageStore.error" class="shrink-0 border-b border-rose/40 bg-rose/10 px-4 py-1.5 text-xs text-rose">
+      {{ imageStore.error }}
+    </div>
+
     <!-- ── Scrollable body ──────────────────────────────────────────── -->
     <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5 pt-3">
 
@@ -419,86 +499,6 @@ function lightboxNavigate(image: ImageWithPostState) {
 
       <!-- ── IMAGE VIEW (leaf folder OR mixed folder with direct images) -->
       <template v-if="isLeafDir || hasDirImages">
-        <!-- Action toolbar -->
-        <section class="surface shrink-0 rounded-lg p-3">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="mr-2 text-sm font-medium text-white">{{ selectedCount }} selected</span>
-            <button class="button" @click="imageStore.selectVisible">Select visible</button>
-            <button class="button" :disabled="selectedCount === 0" @click="imageStore.clearSelection">
-              <X class="h-4 w-4" />Clear
-            </button>
-            <button class="button" :disabled="selectedCount === 0" @click="imageStore.excludeSelected">
-              <Archive class="h-4 w-4" />Exclude
-            </button>
-            <button class="button" :disabled="selectedCount === 0" @click="imageStore.restoreSelected">
-              <RotateCcw class="h-4 w-4" />Restore
-            </button>
-            <button class="button" :disabled="selectedCount === 0" @click="exportSelected">
-              <Download class="h-4 w-4" />Download
-            </button>
-
-            <!-- Delete selected (two-step) -->
-            <template v-if="!confirmingDeleteSelected">
-              <button
-                class="button hover:border-rose/60 hover:text-rose"
-                :disabled="selectedCount === 0"
-                title="Remove selected images from the library index"
-                @click="requestDeleteSelected"
-              >
-                <Trash2 class="h-4 w-4" />Delete
-              </button>
-            </template>
-            <template v-else>
-              <span class="text-sm text-rose">Remove {{ selectedCount }} image(s)?</span>
-              <button class="button border-rose/60 bg-rose/10 px-3 text-rose hover:bg-rose/20" @click="confirmDeleteSelected">Confirm</button>
-              <button class="button px-3" @click="cancelDeleteSelected">Cancel</button>
-            </template>
-          </div>
-          <div class="mt-3 flex flex-wrap items-center gap-2">
-            <span class="mr-2 shrink-0 text-sm text-slate-400">Mark selected as posted on</span>
-            <label
-              v-for="target in targetStore.enabledTargets"
-              :key="target.id"
-              class="flex shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition"
-              :class="selectedTargetIds.includes(target.id) ? 'border-accent bg-accent/10 text-accent' : 'border-line bg-ink text-slate-300'"
-            >
-              <input v-model="selectedTargetIds" type="checkbox" class="accent-accent" :value="target.id" />
-              {{ target.name }}
-            </label>
-            <button
-              class="button-primary shrink-0 whitespace-nowrap rounded-md px-5"
-              :disabled="selectedCount === 0 || selectedTargetIds.length === 0"
-              @click="markSelected"
-            >
-              <Check class="h-4 w-4" />Mark as posted
-            </button>
-          </div>
-
-          <!-- Queue for Chrome Extension -->
-          <div v-if="extensionTargets.length" class="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-            <span class="mr-2 shrink-0 text-sm text-slate-400">Queue for Extension</span>
-            <button
-              v-for="target in extensionTargets"
-              :key="target.id"
-              class="button shrink-0 whitespace-nowrap"
-              :disabled="selectedCount === 0"
-              :title="`Queue up to ${PLATFORM_LIMITS[target.type] ?? 1} images for ${target.name}`"
-              @click="queueForExtension(target.type)"
-            >
-              <Send class="h-4 w-4" />
-              {{ target.name }}
-              <span class="ml-1 text-xs text-slate-500">(max {{ PLATFORM_LIMITS[target.type] ?? 1 }})</span>
-            </button>
-          </div>
-        </section>
-
-        <div v-if="imageStore.message" class="rounded-md border border-mint/30 bg-mint/10 px-3 py-2 text-sm text-mint">
-          {{ imageStore.message }}
-        </div>
-        <div v-if="imageStore.error" class="rounded-md border border-rose/40 bg-rose/10 px-3 py-2 text-sm text-rose">
-          {{ imageStore.error }}
-        </div>
-
         <ImageGrid
           :images="imageStore.images"
           :targets="targetStore.targets"
