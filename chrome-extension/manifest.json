@@ -3,7 +3,7 @@
   "name": "Crosspost Helper Bridge",
   "version": "0.1.0",
   "description": "Post images from Crosspost Helper to X, Bluesky, DeviantArt, and CivitAI without an API.",
-  "permissions": ["activeTab", "storage"],
+  "permissions": ["activeTab", "storage", "debugger"],
   "host_permissions": [
     "http://127.0.0.1:27842/*",
     "https://twitter.com/*",

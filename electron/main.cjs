@@ -510,6 +510,23 @@ async function handleBridge(req, res) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/image-paths") {
+    const ids = url.searchParams.get("ids");
+    if (!ids) { bridgeSendJson(res, { error: "ids required" }, 400); return; }
+    const paths = {};
+    for (const id of ids.split(",").filter(Boolean)) {
+      const stmt = db.prepare("SELECT local_path FROM images WHERE id = ? LIMIT 1");
+      stmt.bind([id]);
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        if (row.local_path) paths[id] = row.local_path;
+      }
+      stmt.free();
+    }
+    bridgeSendJson(res, { paths });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/image-file") {
     const imageId = url.searchParams.get("id");
     if (!imageId) { bridgeSendJson(res, { error: "id required" }, 400); return; }
