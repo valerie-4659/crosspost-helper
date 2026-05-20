@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.17",
+    date: "2026-05-20",
+    items: [
+      "fix: X image injection via CDP DOM.setFileInputFiles — trusted native change event",
+      "fix: X injection — drag-drop primary, revert native-event regression",
+    ],
+  },
+  {
     version: "0.2.16",
     date: "2026-05-20",
     items: [

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.17 - 2026-05-20
+
+- fix: X image injection via CDP DOM.setFileInputFiles — trusted native change event
+- fix: X injection — drag-drop primary, revert native-event regression
+
+
 ## v0.2.16 - 2026-05-20
 
 - fix: X injection — use getter override + always fire native change event
