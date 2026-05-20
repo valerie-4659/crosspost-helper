@@ -41,14 +41,40 @@ async function cdpInjectFiles(tabId, imageIds) {
   const filePaths = imageIds.map((id) => paths[id]).filter(Boolean);
   if (!filePaths.length) throw new Error("No local file paths found for the queued images.");
 
-  // 2. Attach debugger (briefly — we detach right after).
+  // 2. Attach debugger.
   await cdpAttach(tabId);
   try {
     await cdpSend(tabId, "DOM.enable");
 
-    // 3. Find the file input inside the page.
+    // 3. Click X's media/photo button so React wires up its onChange handler
+    //    on the file input.  We suppress input.click() to prevent the OS picker
+    //    from actually opening — we only need the React state that gets set up
+    //    in the button's onClick.
+    await cdpSend(tabId, "Runtime.evaluate", {
+      expression: `(function() {
+        const origClick = HTMLInputElement.prototype.click;
+        HTMLInputElement.prototype.click = function() {};        // no-op → no OS picker
+        try {
+          const dialog = document.querySelector('[role="dialog"]') || document.body;
+          const btn =
+            dialog.querySelector('[aria-label="Add photos or video"]') ||
+            dialog.querySelector('[data-testid="fileInput"]')?.closest('label') ||
+            dialog.querySelector('label[for]');
+          if (btn) btn.click();
+        } finally {
+          HTMLInputElement.prototype.click = origClick;
+        }
+      })()`,
+      returnByValue: false,
+    });
+
+    // Give React a moment to reconcile.
+    await new Promise((r) => setTimeout(r, 200));
+
+    // 4. Find the file input (scoped to the active compose dialog).
     const { result } = await cdpSend(tabId, "Runtime.evaluate", {
       expression: `(
+        document.querySelector('[role="dialog"] input[data-testid="fileInput"]') ||
         document.querySelector('input[data-testid="fileInput"]') ||
         document.querySelector('input[type="file"]')
       )`,
@@ -56,15 +82,10 @@ async function cdpInjectFiles(tabId, imageIds) {
     });
     if (!result?.objectId) throw new Error("File input not found on the X page.");
 
-    // 4. Resolve its DOM node ID.
-    const { node } = await cdpSend(tabId, "DOM.describeNode", {
-      objectId: result.objectId,
-      depth: 0,
-    });
-
-    // 5. Set files at the browser/C++ level → fires a trusted native change event.
+    // 5. Set files at the C++ level using objectId directly.
+    //    This fires a trusted native change event → React handles it normally.
     await cdpSend(tabId, "DOM.setFileInputFiles", {
-      nodeId: node.nodeId,
+      objectId: result.objectId,
       files: filePaths,
     });
   } finally {
