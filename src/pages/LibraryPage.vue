@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { Archive, Check, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Send, Trash2, X } from "lucide-vue-next";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
@@ -96,6 +96,21 @@ const currentDir = ref("");
 
 /** The last folder the user navigated out of — highlighted in the parent view. */
 const lastVisitedDir = ref("");
+
+// DOM refs for folder cards — keyed by folder path so we can scroll to the highlighted one.
+const folderCardRefs = new Map<string, HTMLElement>();
+function setFolderCardRef(el: unknown, path: string) {
+  if (el instanceof HTMLElement) folderCardRefs.set(path, el);
+  else folderCardRefs.delete(path);
+}
+
+// After navigating back, scroll the highlighted card into view.
+watch(lastVisitedDir, async (path) => {
+  if (!path) return;
+  await nextTick();
+  const target = childFolders.value.find((f) => f.isLastVisited);
+  if (target) folderCardRefs.get(target.path)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+});
 
 /** Resolved directory we're currently browsing. */
 const browsePath = computed(() => currentDir.value || rootDir.value);
@@ -295,6 +310,7 @@ function lightboxNavigate(image: ImageWithPostState) {
         <div
           v-for="folder in childFolders"
           :key="folder.path"
+          :ref="(el) => setFolderCardRef(el, folder.path)"
           class="group relative flex flex-col items-center gap-3 rounded-xl border p-6 text-center transition"
           :class="folder.isExcluded
             ? 'border-amber-500/30 bg-amber-500/5 opacity-60 hover:opacity-90'
