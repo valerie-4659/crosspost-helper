@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.21",
+    date: "2026-05-21",
+    items: [
+      "fix: use convertFileSrc for multi-pick slot images (Windows path fix)",
+    ],
+  },
+  {
     version: "0.2.20",
     date: "2026-05-21",
     items: [

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.21 - 2026-05-21
+
+- fix: use convertFileSrc for multi-pick slot images (Windows path fix)
+
+
 ## v0.2.20 - 2026-05-21
 
 - feat: Multi-Pick mode in Picker — folder selection, N random slots, fill/remove, queue for extension
