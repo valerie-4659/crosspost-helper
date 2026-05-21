@@ -2,6 +2,8 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { copyImagePath, copyImageToClipboard, revealImage } from "@/services/imageActionService";
 import { markImagePosted, markImageSkipped, pickRandomUnpostedImage } from "@/services/pickerService";
+import { pickRandomImages } from "@/repositories/imageRepository";
+import { upsertPostRecord } from "@/repositories/postRecordRepository";
 import { useTargetStore } from "./targetStore";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
 
@@ -74,6 +76,105 @@ export const usePickerStore = defineStore("picker", () => {
     }
   }
 
+  // ── Multi-pick mode ───────────────────────────────────────────────────────
+  /** When true the multi-pick panel replaces the single-image picker. */
+  const multiPickMode = ref(false);
+  /** The N slots for the multi-pick; undefined = empty (needs a pick). */
+  const multiPickSlots = ref<Array<ImageWithPostState | undefined>>([]);
+  /** How many images the user wants per post. */
+  const multiPickCount = ref(3);
+  /** Folders selected as the random source; empty = all folders. */
+  const multiPickFolderPaths = ref<string[]>([]);
+  const multiPickError = ref("");
+  const multiPickMessage = ref("");
+
+  function setMultiPickMode(on: boolean) {
+    multiPickMode.value = on;
+    multiPickSlots.value = Array(multiPickCount.value).fill(undefined);
+    multiPickError.value = "";
+    multiPickMessage.value = "";
+  }
+
+  function setMultiPickCount(n: number) {
+    multiPickCount.value = n;
+    // Trim or grow the slots array.
+    const current = multiPickSlots.value.slice(0, n);
+    while (current.length < n) current.push(undefined);
+    multiPickSlots.value = current;
+  }
+
+  function toggleMultiPickFolder(folderPath: string) {
+    const idx = multiPickFolderPaths.value.indexOf(folderPath);
+    if (idx === -1) multiPickFolderPaths.value.push(folderPath);
+    else multiPickFolderPaths.value.splice(idx, 1);
+  }
+
+  /** Fill only the empty slots with new random images. */
+  async function fillMultiPickSlots() {
+    multiPickError.value = "";
+    multiPickMessage.value = "";
+    const emptyCount = multiPickSlots.value.filter((s) => !s).length;
+    if (emptyCount === 0) return;
+
+    loading.value = true;
+    try {
+      const filledIds = multiPickSlots.value.filter(Boolean).map((s) => s!.id);
+      const picked = await pickRandomImages(
+        { ...filters.value, targetId: targetStore.activeTargetId },
+        emptyCount,
+        filledIds,
+        multiPickFolderPaths.value,
+      );
+      if (!picked.length) {
+        multiPickError.value = "No unposted images found for the selected folders/filters.";
+        return;
+      }
+      // Place picked images into empty slots in order.
+      let pi = 0;
+      multiPickSlots.value = multiPickSlots.value.map((slot) =>
+        slot ? slot : picked[pi++],
+      );
+      if (pi < picked.length) {
+        // More were needed than available — already handled via emptyCount.
+      }
+      const stillEmpty = multiPickSlots.value.filter((s) => !s).length;
+      if (stillEmpty > 0) {
+        multiPickError.value = `Only ${multiPickCount.value - stillEmpty} images found — not enough to fill all ${multiPickCount.value} slots.`;
+      }
+    } catch (e) {
+      multiPickError.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /** Remove a specific image from the multi-pick set (clears its slot). */
+  function removeMultiPickSlot(imageId: string) {
+    multiPickSlots.value = multiPickSlots.value.map((s) =>
+      s?.id === imageId ? undefined : s,
+    );
+  }
+
+  /** Queue all filled multi-pick slots for the Chrome Extension. */
+  async function queueMultiPickForExtension(targetType: string) {
+    const ids = multiPickSlots.value.filter(Boolean).map((s) => s!.id);
+    if (!ids.length) return;
+    await window.desktop.bridge.setQueue(targetType, ids);
+    multiPickMessage.value = `✓ ${ids.length} image(s) queued for ${targetType}. Open the Chrome Extension to inject.`;
+  }
+
+  /** Mark all filled slots as posted on the active target, then clear the set. */
+  async function markMultiPickPosted() {
+    const targetId = targetStore.activeTargetId;
+    if (!targetId) return;
+    const filled = multiPickSlots.value.filter(Boolean) as ImageWithPostState[];
+    for (const img of filled) {
+      await upsertPostRecord({ imageId: img.id, targetId, status: "posted" });
+    }
+    multiPickMessage.value = `Marked ${filled.length} image(s) as posted.`;
+    multiPickSlots.value = Array(multiPickCount.value).fill(undefined);
+  }
+
   return {
     currentImage,
     filters,
@@ -88,5 +189,19 @@ export const usePickerStore = defineStore("picker", () => {
     openCurrentImage,
     copyPath,
     copyImage,
+    // Multi-pick
+    multiPickMode,
+    multiPickSlots,
+    multiPickCount,
+    multiPickFolderPaths,
+    multiPickError,
+    multiPickMessage,
+    setMultiPickMode,
+    setMultiPickCount,
+    toggleMultiPickFolder,
+    fillMultiPickSlots,
+    removeMultiPickSlot,
+    queueMultiPickForExtension,
+    markMultiPickPosted,
   };
 });

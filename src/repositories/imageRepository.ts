@@ -300,6 +300,91 @@ export async function pickRandomImage(filters: ImageFilters): Promise<ImageWithP
   return rows[0] ? mapImageWithState(rows[0]) : null;
 }
 
+/**
+ * Pick up to `count` random images for multi-pick mode.
+ *
+ * @param filters   Standard image filters (target, rating, skipped, etc.)
+ * @param count     How many images to return (≥ 1)
+ * @param excludeIds  Image IDs already in the pick — won't be returned again
+ * @param folderPaths If non-empty, only images inside these folders (or their
+ *                    subfolders) are considered.  An empty array means "all folders".
+ */
+export async function pickRandomImages(
+  filters: ImageFilters,
+  count: number,
+  excludeIds: string[],
+  folderPaths: string[],
+): Promise<ImageWithPostState[]> {
+  if (count <= 0) return [];
+  const db = await getDatabase();
+  const params: unknown[] = [];
+  const conditions = ["images.is_archived = 0"];
+
+  // ── Folder restriction ─────────────────────────────────────────────────
+  if (folderPaths.length > 0) {
+    const folderClauses = folderPaths.map((fp) => {
+      params.push(fp, fp);
+      return `(images.folder_path = $${params.length - 1} OR images.folder_path LIKE $${params.length} || '/%')`;
+    });
+    conditions.push(`(${folderClauses.join(" OR ")})`);
+  }
+
+  // ── Exclude already-picked images ──────────────────────────────────────
+  if (excludeIds.length > 0) {
+    const placeholders = excludeIds.map((_, i) => `$${params.length + i + 1}`).join(",");
+    conditions.push(`images.id NOT IN (${placeholders})`);
+    params.push(...excludeIds);
+  }
+
+  // ── Standard filters (same logic as pickRandomImage) ─────────────────
+  if (filters.sourceId) {
+    params.push(filters.sourceId);
+    conditions.push(`images.source_id = $${params.length}`);
+  }
+  if (filters.rating && filters.rating !== "all") {
+    params.push(filters.rating);
+    conditions.push(`images.rating = $${params.length}`);
+  }
+  if (filters.targetId) {
+    params.push(filters.targetId);
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM post_records pr2
+      WHERE pr2.image_id = images.id AND pr2.target_id = $${params.length} AND pr2.status = 'posted'
+    )`);
+  }
+  if (filters.excludePostedAnywhere) {
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM post_records pr3
+      WHERE pr3.image_id = images.id AND pr3.status = 'posted'
+    )`);
+  }
+  if (!filters.includeSkipped) {
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM post_records pr4
+      WHERE pr4.image_id = images.id AND pr4.status = 'skipped'
+    )`);
+  }
+  conditions.push(`NOT EXISTS (
+    SELECT 1 FROM excluded_folders ef
+    WHERE images.folder_path = ef.folder_path OR images.folder_path LIKE ef.folder_path || '/%'
+  )`);
+
+  params.push(count);
+  const rows = await db.select<ImageListRow[]>(
+    `SELECT images.*, image_sources.name AS source_name, image_sources.type AS source_type,
+      GROUP_CONCAT(post_records.target_id || ':' || post_records.status, '|') AS post_states
+     FROM images
+     JOIN image_sources ON image_sources.id = images.source_id
+     LEFT JOIN post_records ON post_records.image_id = images.id
+     WHERE ${conditions.join(" AND ")}
+     GROUP BY images.id
+     ORDER BY RANDOM()
+     LIMIT $${params.length}`,
+    params,
+  );
+  return rows.map(mapImageWithState);
+}
+
 export async function setImageArchived(imageId: string, archived: boolean) {
   const db = await getDatabase();
   await db.execute("UPDATE images SET is_archived = $1 WHERE id = $2", [archived ? 1 : 0, imageId]);
