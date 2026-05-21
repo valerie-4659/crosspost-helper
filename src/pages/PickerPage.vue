@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { Check, Clipboard, Copy, FolderOpen, Layers, Send, SkipForward, Shuffle, X } from "lucide-vue-next";
+import { convertFileSrc } from "@/electron-shims/core";
 import FilterBar from "@/components/FilterBar.vue";
 import ImagePreview from "@/components/ImagePreview.vue";
 import { useImageStore } from "@/stores/imageStore";
@@ -178,7 +179,7 @@ onMounted(async () => {
             <!-- Filled slot -->
             <template v-if="slot">
               <img
-                :src="`localfile://${slot.localPath}`"
+                :src="slot.localPath ? convertFileSrc(slot.localPath) : (slot.thumbnailUrl ?? '')"
                 :alt="slot.filename"
                 class="w-full object-contain"
                 loading="lazy"
