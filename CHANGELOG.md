@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.20 - 2026-05-21
+
+- feat: Multi-Pick mode in Picker — folder selection, N random slots, fill/remove, queue for extension
+
+
 ## v0.2.19 - 2026-05-20
 
 - feat: Collections — named image sets across folders, queue for any network

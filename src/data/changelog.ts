@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.20",
+    date: "2026-05-21",
+    items: [
+      "feat: Multi-Pick mode in Picker — folder selection, N random slots, fill/remove, queue for extension",
+    ],
+  },
+  {
     version: "0.2.19",
     date: "2026-05-20",
     items: [
