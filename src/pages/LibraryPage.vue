@@ -10,8 +10,11 @@ import { useAiStore } from "@/stores/aiStore";
 import { useImageStore } from "@/stores/imageStore";
 import { useSourceStore } from "@/stores/sourceStore";
 import { useTargetStore } from "@/stores/targetStore";
+import { useQueueStore } from "@/stores/queueStore";
+import { listSlots, getSlotImageData } from "@/repositories/queueRepository";
 import type { ImageWithPostState } from "@/types/image";
 import type { PostingTargetType } from "@/types/postingTarget";
+import type { QueueSlot } from "@/types/queue";
 
 // All platform types — queue buttons show for all of them.
 const EXTENSION_TYPES = new Set<PostingTargetType>(["x", "bluesky", "deviantart", "civitai", "instagram", "facebook", "tumblr"]);
@@ -346,23 +349,62 @@ async function markCollection() {
   clearCollection();
 }
 
-/** Queue collected images for the active extension adapter. */
-async function queueCollection() {
-  if (!libActiveTargetType.value) return;
-  const ids = collectionArray.value
-    .map((img) => img.id)
-    .slice(0, PLATFORM_LIMITS[libActiveTargetType.value] ?? 1);
-  if (!ids.length) return;
-  try {
-    await window.desktop.bridge.setQueue(libActiveTargetType.value, ids);
-    imageStore.message = `✓ ${ids.length} image(s) queued for ${libActiveTargetName.value}. Open Chrome Extension to inject.`;
-  } catch (err) {
-    imageStore.error = err instanceof Error ? err.message : String(err);
+// Auto-open when first image is added.
+watch(collectionCount, (n, old) => {
+  if (old === 0 && n > 0) showCollection.value = true;
+});
+
+// ── Fill Queue Slots from collection ────────────────────────────────────────
+const queueStore = useQueueStore();
+const showQueueFill = ref(false);
+const queueFillId = ref("");
+const queueFillSlots = ref<QueueSlot[]>([]);
+const queueFillImages = ref<Record<string, import("@/types/queue").SlotImageData[]>>({});
+
+watch(queueFillId, async (id) => {
+  queueFillSlots.value = id ? await listSlots(id) : [];
+  queueFillImages.value = {};
+  for (const slot of queueFillSlots.value) {
+    queueFillImages.value[slot.id] = slot.imageIds.length
+      ? await getSlotImageData(slot.imageIds)
+      : [];
   }
+});
+
+async function openQueueFill() {
+  if (!queueStore.queues.length) await queueStore.load();
+  queueFillId.value = queueStore.queues[0]?.id ?? "";
+  showQueueFill.value = true;
 }
 
-// Auto-open collection sidebar when first image is added.
-watch(collectionCount, (n, old) => { if (old === 0 && n > 0) showCollection.value = true; });
+async function fillSlot(slotId: string) {
+  if (!collectionArray.value.length) return;
+  const ids = collectionArray.value.map((i) => i.id);
+
+  // setSlotImages already calls setSlotImagesExclusive — deduplication is handled there.
+  // It returns the changed-slots map via the store, so we sync the fill-panel's local state too.
+  await queueStore.setSlotImages(slotId, ids);
+
+  // Reflect all changes (target + any slots that lost images) in the fill panel immediately.
+  const imageIdSet = new Set(ids);
+  for (const slot of queueFillSlots.value) {
+    if (slot.id === slotId) {
+      queueFillImages.value[slotId] = await getSlotImageData(ids);
+      queueFillSlots.value[queueFillSlots.value.indexOf(slot)] = { ...slot, imageIds: ids };
+    } else {
+      // Remove the assigned IDs from every other slot's local state
+      const remaining = slot.imageIds.filter((id) => !imageIdSet.has(id));
+      if (remaining.length !== slot.imageIds.length) {
+        queueFillImages.value[slot.id] = remaining.length ? await getSlotImageData(remaining) : [];
+        queueFillSlots.value[queueFillSlots.value.indexOf(slot)] = { ...slot, imageIds: remaining };
+      }
+    }
+  }
+
+  const idx = queueFillSlots.value.findIndex((s) => s.id === slotId);
+  const slotPos = (queueFillSlots.value[idx]?.position ?? 0) + 1;
+  imageStore.message = `✓ ${ids.length} image(s) → Slot ${slotPos}`;
+}
 </script>
 
 <template>
@@ -693,67 +735,32 @@ watch(collectionCount, (n, old) => { if (old === 0 && n > 0) showCollection.valu
   >
     <aside
       v-if="collectionCount > 0 && showCollection"
-      class="absolute bottom-0 right-0 top-0 z-20 flex w-64 flex-col overflow-hidden border-l border-line bg-panel shadow-2xl"
+      class="absolute bottom-0 right-0 top-0 z-20 flex w-72 flex-col overflow-hidden border-l border-line bg-panel shadow-2xl"
     >
-      <!-- Tray header -->
+      <!-- ── Header ─────────────────────────────────────────────────── -->
       <div class="flex shrink-0 items-center justify-between border-b border-line px-3 py-2">
         <span class="text-sm font-semibold text-white">
           Collection
           <span class="ml-1.5 rounded bg-accent/20 px-1.5 py-0.5 text-xs text-accent">{{ collectionCount }}</span>
         </span>
         <div class="flex items-center gap-1">
-          <button class="button h-6 px-2 text-xs hover:border-rose/60 hover:text-rose" title="Clear collection" @click="clearCollection">
-            <X class="h-3 w-3" />Clear
-          </button>
+          <select v-model="targetStore.activeTargetId" class="field h-6 py-0 text-xs" title="Active network">
+            <option v-for="t in targetStore.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
+          </select>
           <button class="button h-6 w-6 p-0" title="Close tray" @click="showCollection = false">
             <X class="h-3 w-3" />
           </button>
         </div>
       </div>
 
-      <!-- Action buttons -->
-      <div class="flex shrink-0 flex-col gap-1.5 border-b border-line px-3 py-2">
-        <button
-          class="button-primary h-8 w-full text-xs"
-          :disabled="!targetStore.activeTargetId"
-          :title="`Mark all ${collectionCount} collected images as posted on ${libActiveTargetName}`"
-          @click="markCollection"
-        >
-          <Check class="h-3.5 w-3.5" />Mark {{ libActiveTargetName }}
-        </button>
-        <button
-          class="button h-8 w-full gap-1.5 text-xs"
-          :disabled="!libActiveTargetType || !EXTENSION_TYPES.has(libActiveTargetType as any)"
-          :title="EXTENSION_TYPES.has(libActiveTargetType as any) ? `Queue for ${libActiveTargetName}` : `${libActiveTargetName} has no extension adapter`"
-          @click="queueCollection"
-        >
-          <PlatformIcon v-if="libActiveTargetType" :type="libActiveTargetType" :size="13" />
-          Queue
-        </button>
-        <button
-          class="button h-8 w-full gap-1.5 text-xs"
-          :class="showAiPanel ? 'border-accent bg-accent/10 text-accent' : ''"
-          :disabled="!targetStore.activeTargetId"
-          title="Generate AI post for the first collected image"
-          @click="showAiPanel = !showAiPanel; if (!showAiPanel) ai.clearGeneratedPost()"
-        >
-          <Sparkles class="h-3.5 w-3.5" />AI Post
-        </button>
-      </div>
-
-      <!-- Image list -->
+      <!-- ── Collected image list ───────────────────────────────────── -->
       <div class="flex-1 overflow-y-auto">
         <div
           v-for="img in collectionArray"
           :key="img.id"
           class="group flex items-center gap-2 border-b border-line px-2 py-1.5 hover:bg-panelSoft"
         >
-          <img
-            v-if="img.thumbnailUrl"
-            :src="img.thumbnailUrl"
-            class="h-10 w-10 shrink-0 rounded object-cover"
-            loading="lazy"
-          />
+          <img v-if="img.thumbnailUrl" :src="img.thumbnailUrl" :alt="img.filename" class="h-10 w-10 shrink-0 rounded object-cover" loading="lazy" />
           <div v-else class="h-10 w-10 shrink-0 rounded bg-panelSoft" />
           <div class="min-w-0 flex-1">
             <p class="truncate text-xs text-white">{{ img.filename }}</p>
@@ -763,11 +770,85 @@ watch(collectionCount, (n, old) => { if (old === 0 && n > 0) showCollection.valu
             class="h-6 w-6 shrink-0 rounded p-0 opacity-0 transition hover:bg-rose/20 hover:text-rose group-hover:opacity-100"
             title="Remove from collection"
             @click="removeFromCollection(img.id)"
-          >
-            <X class="h-3 w-3" />
-          </button>
+          ><X class="h-3 w-3" /></button>
         </div>
       </div>
+
+      <!-- ── Actions (bottom) ─────────────────────────────────────── -->
+      <div class="flex shrink-0 flex-col gap-2 border-t border-line p-3">
+        <button
+          class="button h-7 w-full text-xs"
+          :disabled="!targetStore.activeTargetId"
+          @click="markCollection"
+        ><Check class="h-3 w-3" />Mark as Posted</button>
+
+        <!-- ── Fill Queue Slot panel ──────────────────────────────────── -->
+        <div v-if="showQueueFill" class="rounded-lg border border-line bg-panelSoft overflow-hidden">
+          <!-- Panel header: queue selector + close -->
+          <div class="flex items-center gap-1.5 border-b border-line px-2 py-1.5">
+            <span class="text-[10px] font-semibold uppercase tracking-wide text-slate-400 shrink-0">Queue</span>
+            <select v-model="queueFillId" aria-label="Select queue" class="input h-6 flex-1 text-xs min-w-0">
+              <option v-if="!queueStore.queues.length" value="" disabled>No queues</option>
+              <option v-for="q in queueStore.queues" :key="q.id" :value="q.id">{{ q.name }}</option>
+            </select>
+            <button class="button h-6 w-6 shrink-0 p-0" @click="showQueueFill = false"><X class="h-3 w-3" /></button>
+          </div>
+
+          <!-- Slot cards -->
+          <div class="flex flex-col divide-y divide-line/60 max-h-56 overflow-y-auto">
+            <div v-if="!queueFillSlots.length" class="px-3 py-4 text-xs text-slate-500 text-center">
+              No slots — add slots in Job Queue.
+            </div>
+            <div
+              v-for="slot in queueFillSlots" :key="slot.id"
+              class="flex flex-col gap-1 px-2 py-1.5"
+              :class="slot.posted ? 'opacity-40' : ''"
+            >
+              <!-- Slot row: label + status + fill button -->
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-medium text-slate-300">Slot {{ slot.position + 1 }}</span>
+                <span
+                  class="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                  :class="slot.posted
+                    ? 'bg-mint/15 text-mint'
+                    : queueFillImages[slot.id]?.length
+                      ? 'bg-accent/15 text-accent'
+                      : 'bg-slate-700/60 text-slate-500'"
+                >
+                  {{ slot.posted ? '✓ posted' : queueFillImages[slot.id]?.length ? `${queueFillImages[slot.id].length} img` : 'empty' }}
+                </span>
+                <button
+                  class="button-primary ml-auto h-6 px-2 text-[11px]"
+                  :disabled="!collectionCount || slot.posted"
+                  @click="fillSlot(slot.id)"
+                >Fill {{ collectionCount }} →</button>
+              </div>
+              <!-- Thumbnail strip -->
+              <div v-if="queueFillImages[slot.id]?.length" class="flex gap-1">
+                <img
+                  v-for="img in queueFillImages[slot.id].slice(0, 5)"
+                  :key="img.id"
+                  :src="img.thumbnailUrl ?? ''"
+                  :alt="img.filename"
+                  class="h-9 w-9 rounded object-cover border border-line"
+                />
+                <div
+                  v-if="queueFillImages[slot.id].length > 5"
+                  class="flex h-9 w-9 items-center justify-center rounded border border-line text-[10px] text-slate-400"
+                >+{{ queueFillImages[slot.id].length - 5 }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button v-else class="button h-7 w-full gap-1 text-xs" @click="openQueueFill">
+          → Fill Queue Slot
+        </button>
+
+        <button class="button h-6 w-full text-xs hover:border-rose/60 hover:text-rose" @click="clearCollection">
+          <X class="h-3 w-3" />Clear collection
+        </button>
+      </div>
+
     </aside>
   </Transition>
 

@@ -63,7 +63,36 @@ window.CrosspostBridge._currentAdapter = {
       const resolvedTargetId = targetId ?? toInject[0]?.targetId;
       const imageIds = toInject.map((i) => i.id);
 
-      bridge.notify(`✓ ${toInject.length} image(s) added — ready to post`, "success");
+      // ── 5. Fill AI post text if available ────────────────────────────────
+      // Wait for Bluesky to process the injected files and re-render.
+      await new Promise((r) => setTimeout(r, 300));
+
+      const postContent = await bridge.getPostContent("bluesky").catch(() => null);
+      let textFilled = false;
+      if (postContent) {
+        // Re-query in case the composer re-rendered after file injection.
+        const freshComposer = document.querySelector('[data-testid="composer"]') ?? composer;
+        const textarea =
+          freshComposer.querySelector('[data-testid="composeTextInput"]') ??
+          freshComposer.querySelector('[contenteditable="true"]') ??
+          freshComposer.querySelector("textarea");
+        if (textarea) {
+          const tags = (postContent.tags ?? [])
+            .map((t) => (t.startsWith("#") ? t : "#" + t))
+            .join(" ");
+          const text = [postContent.description, tags].filter(Boolean).join("\n\n");
+          if (text) {
+            textFilled = await bridge.fillTextField(textarea, text);
+            if (!textFilled) {
+              await navigator.clipboard.writeText(text).catch(() => {});
+              bridge.notify(`✓ ${toInject.length} image(s) added — AI text copied to clipboard, paste with Ctrl+V`, "success");
+              return { imageIds, targetId: resolvedTargetId, filename: toInject.map((i) => i.filename).join(", ") };
+            }
+          }
+        }
+      }
+
+      bridge.notify(`✓ ${toInject.length} image(s) added${textFilled ? " + text filled" : ""} — ready to post`, "success");
       return { imageIds, targetId: resolvedTargetId, filename: toInject.map((i) => i.filename).join(", ") };
     } catch (err) {
       bridge.notify(err.message, "error");

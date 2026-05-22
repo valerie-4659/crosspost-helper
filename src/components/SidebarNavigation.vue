@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Images, Moon, Puzzle, Search, Settings, Shuffle, Sun } from "lucide-vue-next";
+import { Images, ListChecks, Moon, Puzzle, Search, Settings, Shuffle, Sun } from "lucide-vue-next";
 import { useSettingsStore } from "@/stores/settingsStore";
 
-export type AppPage = "picker" | "library" | "scan" | "settings" | "extension" | "about";
+export type AppPage = "picker" | "library" | "queue" | "scan" | "settings" | "extension" | "about";
 
 const page = defineModel<AppPage>("page", { required: true });
 const settingsStore = useSettingsStore();
@@ -11,6 +11,7 @@ const version = __APP_VERSION__;
 const items = [
   { id: "picker",    label: "Picker",           icon: Shuffle },
   { id: "library",   label: "Library",           icon: Images },
+  { id: "queue",     label: "Job Queue",         icon: ListChecks },
   { id: "scan",      label: "Scan",              icon: Search },
   { id: "settings",  label: "Settings",          icon: Settings },
   { id: "extension", label: "Browser Extension", icon: Puzzle },

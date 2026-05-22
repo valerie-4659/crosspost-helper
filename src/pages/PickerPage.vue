@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { Check, Clipboard, Copy, FolderOpen, Layers, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
 import { convertFileSrc } from "@/electron-shims/core";
 import FilterBar from "@/components/FilterBar.vue";
@@ -10,7 +10,10 @@ import { useImageStore } from "@/stores/imageStore";
 import { usePickerStore } from "@/stores/pickerStore";
 import { useSourceStore } from "@/stores/sourceStore";
 import { useTargetStore } from "@/stores/targetStore";
+import { useQueueStore } from "@/stores/queueStore";
+import { listSlots } from "@/repositories/queueRepository";
 import type { PostingTargetType } from "@/types/postingTarget";
+import type { QueueSlot } from "@/types/queue";
 
 const picker = usePickerStore();
 const sources = useSourceStore();
@@ -28,20 +31,76 @@ const extensionTargets = computed(() =>
   targets.enabledTargets.filter((t) => EXTENSION_TYPES.has(t.type)),
 );
 
-// ── Single-mode queue ─────────────────────────────────────────────────────
+// ── Send to Extension (queue + optional AI text in one step) ─────────────
 const queueMsg = ref("");
 const queueErr = ref("");
 
-async function queueCurrentForExtension(targetType: string) {
-  if (!picker.currentImage) return;
+async function sendToExtension() {
+  if (!picker.currentImage || !targets.activeTarget) return;
+  const targetType = targets.activeTarget.type;
   queueMsg.value = "";
   queueErr.value = "";
   try {
+    // Always push the image queue.
     await window.desktop.bridge.setQueue(targetType, [picker.currentImage.id]);
-    queueMsg.value = `✓ Queued for ${targetType}. Open the Chrome Extension to inject.`;
+    // Also push AI post content if it was generated.
+    if (ai.generatedPost) {
+      await window.desktop.bridge.setPostContent(targetType, {
+        title:       ai.generatedPost.title       ?? "",
+        description: ai.generatedPost.description ?? "",
+        tags:        [...(ai.generatedPost.tags   ?? [])],
+      });
+    }
+    const extra = ai.generatedPost ? " + AI text" : "";
+    queueMsg.value = `✓ Queued for ${targetType}${extra}. Open the Chrome Extension to inject.`;
   } catch (err) {
     queueErr.value = err instanceof Error ? err.message : String(err);
   }
+}
+
+// ── Assign to Queue Slot ──────────────────────────────────────────────────
+const queueStore = useQueueStore();
+const showAssignPanel = ref(false);
+const assignQueueId = ref("");
+const assignSlots = ref<QueueSlot[]>([]);
+const assignSlotId = ref("");
+
+watch(assignQueueId, async (id) => {
+  assignSlotId.value = "";
+  assignSlots.value = id ? await listSlots(id) : [];
+  if (assignSlots.value.length) assignSlotId.value = assignSlots.value[0].id;
+});
+
+async function openPickerAssignPanel() {
+  if (!queueStore.queues.length) await queueStore.load();
+  assignQueueId.value = queueStore.queues[0]?.id ?? "";
+  showAssignPanel.value = true;
+}
+
+async function confirmPickerAssign() {
+  const imageId = picker.currentImage?.id;
+  if (!imageId || !assignSlotId.value) return;
+  await queueStore.setSlotImages(assignSlotId.value, [imageId]);
+  const slotPos = (assignSlots.value.find((s) => s.id === assignSlotId.value)?.position ?? 0) + 1;
+  const qName = queueStore.queues.find((q) => q.id === assignQueueId.value)?.name ?? "";
+  queueMsg.value = `✓ Assigned to "${qName}" · Slot ${slotPos}.`;
+  showAssignPanel.value = false;
+}
+
+// ── Multi-pick: send all slots to Extension + optional AI text ───────────
+async function sendMultiPickToExtension(targetType: string) {
+  const ids = picker.multiPickSlots.filter(Boolean).map((s) => s!.id);
+  if (!ids.length) return;
+  await window.desktop.bridge.setQueue(targetType, ids);
+  if (ai.generatedPost) {
+    await window.desktop.bridge.setPostContent(targetType, {
+      title:       ai.generatedPost.title       ?? "",
+      description: ai.generatedPost.description ?? "",
+      tags:        [...(ai.generatedPost.tags   ?? [])],
+    });
+  }
+  const extra = ai.generatedPost ? " + AI text" : "";
+  picker.multiPickMessage = `✓ ${ids.length} image(s) queued${extra} for ${targetType}. Open the Chrome Extension.`;
 }
 
 // ── Multi-pick mode ───────────────────────────────────────────────────────
@@ -82,10 +141,6 @@ async function generateAiPost() {
   await ai.generatePost([paths[0]], network);
 }
 
-async function applyAiPost() {
-  const network = targets.activeTarget?.type ?? "x";
-  await ai.pushPostContentToExtension(network);
-}
 
 onMounted(async () => {
   if (!imageStore.folders.length) await imageStore.loadFolders();
@@ -241,15 +296,18 @@ onMounted(async () => {
           <Check class="h-4 w-4" />Mark {{ activeTargetName }} as posted
         </button>
         <template v-if="extensionTargets.length">
-          <span class="text-xs text-slate-500">Queue:</span>
           <button
             v-for="target in extensionTargets"
             :key="target.id"
-            class="button flex h-8 w-8 items-center justify-center p-0"
+            class="button h-8 gap-1.5 px-3 text-xs"
+            :class="ai.generatedPost ? 'border-accent/50 bg-accent/5' : ''"
             :disabled="picker.multiPickSlots.every(s => !s)"
-            :title="`Queue for ${target.name}`"
-            @click="picker.queueMultiPickForExtension(target.type)"
-          ><PlatformIcon :type="target.type" :size="15" /></button>
+            :title="`Queue${ai.generatedPost ? ' + AI text' : ''} for ${target.name}`"
+            @click="sendMultiPickToExtension(target.type)"
+          >
+            <PlatformIcon :type="target.type" :size="13" />
+            Send{{ ai.generatedPost ? ' + AI' : '' }}
+          </button>
         </template>
 
         <!-- AI toggle -->
@@ -283,9 +341,10 @@ onMounted(async () => {
           <div v-if="ai.generatedPost.title"><p class="mb-1 font-semibold text-slate-400">Title</p><p class="text-white">{{ ai.generatedPost.title }}</p></div>
           <div><p class="mb-1 font-semibold text-slate-400">Description</p><p class="whitespace-pre-wrap text-white">{{ ai.generatedPost.description }}</p></div>
           <div v-if="ai.generatedPost.tags?.length"><p class="mb-1 font-semibold text-slate-400">Tags</p><p class="text-slate-300">{{ ai.generatedPost.tags.join(' ') }}</p></div>
-          <div class="flex gap-2 pt-1">
-            <button class="button-primary h-7 flex-1 px-2 text-xs" :disabled="!extensionTargets.length" @click="applyAiPost"><Check class="h-3 w-3" />Push to Extension</button>
-            <button class="button h-7 px-2 text-xs" @click="ai.clearGeneratedPost"><X class="h-3 w-3" /></button>
+          <!-- Hint: "Send + AI" button above includes AI text automatically. -->
+          <div class="flex items-center justify-between pt-1">
+            <p class="text-[10px] text-slate-500">↑ Use "Send + AI" to queue with text.</p>
+            <button class="button h-6 px-2 text-xs" @click="ai.clearGeneratedPost"><X class="h-3 w-3" />Discard</button>
           </div>
         </div>
       </div>
@@ -325,19 +384,42 @@ onMounted(async () => {
           Mark {{ activeTargetName }}
         </button>
 
-        <!-- Queue current image for active target -->
+        <!-- Send to Extension — queues image + AI text (if generated) in one step -->
         <div class="border-t border-line pt-3">
           <button
             class="button w-full gap-2"
+            :class="ai.generatedPost ? 'border-accent/50 bg-accent/5' : ''"
             :disabled="!picker.currentImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
-            :title="targets.activeTarget && EXTENSION_TYPES.has(targets.activeTarget.type) ? `Queue for ${activeTargetName}` : `${activeTargetName} has no extension adapter`"
-            @click="targets.activeTarget && queueCurrentForExtension(targets.activeTarget.type)"
+            :title="targets.activeTarget && EXTENSION_TYPES.has(targets.activeTarget.type) ? `Queue image${ai.generatedPost ? ' + AI text' : ''} for ${activeTargetName}` : `${activeTargetName} has no extension adapter`"
+            @click="sendToExtension"
           >
             <PlatformIcon v-if="targets.activeTarget" :type="targets.activeTarget.type" :size="14" />
-            Queue for Extension
+            Send to Extension{{ ai.generatedPost ? ' + AI' : '' }}
           </button>
           <p v-if="queueMsg" class="mt-1 text-xs text-mint">{{ queueMsg }}</p>
           <p v-if="queueErr" class="mt-1 text-xs text-rose">{{ queueErr }}</p>
+
+          <!-- Assign to Queue Slot -->
+          <div v-if="showAssignPanel" class="mt-2 rounded-lg border border-line bg-panelSoft p-2 space-y-1.5">
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Assign to Queue Slot</p>
+            <select v-model="assignQueueId" aria-label="Queue" class="input h-7 w-full text-xs">
+              <option v-if="!queueStore.queues.length" value="" disabled>No queues — create one first</option>
+              <option v-for="q in queueStore.queues" :key="q.id" :value="q.id">{{ q.name }} ({{ q.targetName }})</option>
+            </select>
+            <select v-model="assignSlotId" aria-label="Slot" class="input h-7 w-full text-xs" :disabled="!assignSlots.length">
+              <option v-if="!assignSlots.length" value="" disabled>No slots</option>
+              <option v-for="s in assignSlots" :key="s.id" :value="s.id">Slot {{ s.position + 1 }}{{ s.posted ? ' ✓' : '' }}</option>
+            </select>
+            <div class="flex gap-1.5">
+              <button class="button h-7 flex-1 text-xs" @click="showAssignPanel = false">Cancel</button>
+              <button class="button-primary h-7 flex-1 text-xs" :disabled="!assignSlotId || !picker.currentImage" @click="confirmPickerAssign">
+                Assign →
+              </button>
+            </div>
+          </div>
+          <button v-else class="mt-2 button w-full gap-1 text-xs" :disabled="!picker.currentImage" @click="openPickerAssignPanel">
+            → Add to Queue Slot
+          </button>
         </div>
 
         <!-- ── AI Post Generator ─────────────────────────────────────── -->
@@ -380,17 +462,11 @@ onMounted(async () => {
                 <p class="mb-1 font-semibold text-slate-400">Tags</p>
                 <p class="text-slate-300">{{ ai.generatedPost.tags.join(' ') }}</p>
               </div>
-              <div class="flex gap-2 pt-1">
-                <button
-                  class="button-primary h-7 flex-1 px-2 text-xs"
-                  :disabled="!extensionTargets.length"
-                  :title="extensionTargets.length ? 'Push to Chrome Extension bridge' : 'No extension targets configured'"
-                  @click="applyAiPost"
-                >
-                  <Check class="h-3 w-3" />Push to Extension
-                </button>
-                <button class="button h-7 px-2 text-xs" title="Discard result" @click="ai.clearGeneratedPost">
-                  <X class="h-3 w-3" />
+              <!-- Hint: the "Send to Extension" button above now includes the AI text automatically. -->
+              <p class="pt-1 text-[10px] text-slate-500">↑ Click "Send to Extension + AI" to queue image and text together.</p>
+              <div class="flex justify-end pt-0.5">
+                <button class="button h-6 px-2 text-xs" title="Discard result" @click="ai.clearGeneratedPost">
+                  <X class="h-3 w-3" />Discard
                 </button>
               </div>
             </div>

@@ -66,6 +66,54 @@ window.CrosspostBridge = {
     });
   },
 
+  // ── AI post content ──────────────────────────────────────────────────────
+
+  // Returns { title?, description, tags[] } if the app pushed AI content, or null.
+  async getPostContent(target) {
+    const res = await fetch(`${BRIDGE_URL}/post-content?target=${encodeURIComponent(target)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.ok ? data.content : null;
+  },
+
+  // Fill a text field. Handles both contenteditable divs (X/Twitter, Bluesky)
+  // and regular <input>/<textarea> elements.
+  // Returns true if the field was filled, false if injection failed.
+  async fillTextField(element, text) {
+    if (!element) return false;
+    try {
+      element.focus();
+      // Brief pause so the browser registers the focus before execCommand.
+      await new Promise((r) => setTimeout(r, 80));
+
+      if (element.isContentEditable) {
+        // Select all existing text, then replace with new text via execCommand.
+        const ok = document.execCommand("selectAll", false, null)
+          && document.execCommand("insertText", false, text);
+        if (ok) return true;
+        // execCommand fallback: set innerText and fire synthetic input event.
+        element.innerText = text;
+        element.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: text, inputType: "insertText" }));
+        return !!element.innerText;
+      }
+
+      // Regular input / textarea — use native setter so React picks up the change.
+      const proto = element.tagName === "TEXTAREA"
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
+      const nativeSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      if (nativeSetter) {
+        nativeSetter.call(element, text);
+        element.dispatchEvent(new Event("input",  { bubbles: true }));
+        element.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  },
+
   // ── File injection ───────────────────────────────────────────────────────
 
   // Core helper: sets files on a file input and notifies the owning framework.

@@ -55,6 +55,7 @@ function migrationSql() {
     "001_initial.sql",
     "002_collections.sql",
     "003_ai_config.sql",
+    "004_post_queues.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
