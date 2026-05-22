@@ -185,10 +185,30 @@ function execSkip() {
   else execMode.value = false;
 }
 
+// ── Debug helper ─────────────────────────────────────────────────────────────
+async function debugSlotData() {
+  const queueId = queueStore.activeQueueId;
+  if (!queueId) { console.warn("[Debug] No active queue"); return; }
+  const rows = await (window as any).desktop.core.invoke("debug_queue_slots", { queueId });
+  console.table(rows.map((r: any) => ({
+    id: r.id,
+    stored: (r._stored_ids ?? []).length,
+    found: (r._found_ids ?? []).length,
+    missing: (r._missing_ids ?? []).join(", ") || "—",
+    aiTitle: r.ai_title ?? "",
+    posted: r.posted,
+  })));
+  console.log("[Debug] Full rows:", rows);
+}
+
 onMounted(async () => {
   await queueStore.load();
   if (!newTargetId.value && targetStore.enabledTargets.length)
     newTargetId.value = targetStore.enabledTargets[0].id;
+  // Auto-open the sole queue (or previously-active queue) so images reload from DB.
+  const target = queueStore.activeQueueId
+    ?? (queueStore.queues.length === 1 ? queueStore.queues[0].id : null);
+  if (target && !queueStore.activeQueueId) await queueStore.openQueue(target);
 });
 </script>
 
@@ -255,6 +275,11 @@ onMounted(async () => {
             <h2 class="font-semibold text-white truncate">{{ queueStore.activeQueue.name }}</h2>
             <p class="text-xs text-slate-400">{{ queueStore.activeQueue.targetName }} · {{ queueStore.activeQueue.pendingCount }} pending</p>
           </div>
+          <button
+            class="button h-7 px-2 text-xs text-slate-500 hover:text-slate-300"
+            title="Debug: log slot image data to console"
+            @click="debugSlotData"
+          >🔍</button>
           <button
             class="button-primary h-8 gap-1.5 px-3 text-xs"
             :disabled="!pendingSlots.length"

@@ -916,6 +916,37 @@ app.whenReady().then(() => {
       const r = db.exec("SELECT COUNT(*) FROM images");
       return r[0]?.values?.[0]?.[0] ?? 0;
     });
+    if (command === "debug_queue_slots") return getDatabase().then((db) => {
+      // Returns raw slot rows for a queue so the frontend can diagnose missing images.
+      const queueId = args.queueId;
+      if (!queueId) throw new Error("queueId required");
+      const stmt = db.prepare("SELECT id, image_ids, ai_title, posted FROM queue_slots WHERE queue_id = ? ORDER BY position");
+      stmt.bind([queueId]);
+      const rows = [];
+      while (stmt.step()) rows.push(stmt.getAsObject());
+      stmt.free();
+      // For each slot, count how many stored image IDs actually exist in the images table
+      for (const row of rows) {
+        const ids = JSON.parse(row.image_ids || "[]");
+        if (ids.length) {
+          const placeholders = ids.map(() => "?").join(",");
+          const chk = db.prepare(`SELECT id FROM images WHERE id IN (${placeholders})`);
+          chk.bind(ids);
+          const found = [];
+          while (chk.step()) found.push(chk.getAsObject().id);
+          chk.free();
+          row._stored_ids = ids;
+          row._found_ids = found;
+          row._missing_ids = ids.filter((id) => !found.includes(id));
+        } else {
+          row._stored_ids = [];
+          row._found_ids = [];
+          row._missing_ids = [];
+        }
+      }
+      console.log("[debug_queue_slots]", JSON.stringify(rows, null, 2));
+      return rows;
+    });
     throw new Error(`Unknown command: ${command}`);
   });
 

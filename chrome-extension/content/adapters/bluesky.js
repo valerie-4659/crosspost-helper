@@ -80,7 +80,7 @@ window.CrosspostBridge._currentAdapter = {
           const tags = (postContent.tags ?? [])
             .map((t) => (t.startsWith("#") ? t : "#" + t))
             .join(" ");
-          const text = [postContent.description, tags].filter(Boolean).join("\n\n");
+          const text = [postContent.description, tags].filter(Boolean).join("\n");
           if (text) {
             textFilled = await bridge.fillTextField(textarea, text);
             if (!textFilled) {

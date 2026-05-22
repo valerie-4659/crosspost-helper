@@ -88,13 +88,20 @@ window.CrosspostBridge = {
 
       if (element.isContentEditable) {
         // Select all existing text, then replace with new text via execCommand.
-        const ok = document.execCommand("selectAll", false, null)
-          && document.execCommand("insertText", false, text);
-        if (ok) return true;
-        // execCommand fallback: set innerText and fire synthetic input event.
+        document.execCommand("selectAll", false, null);
+        document.execCommand("insertText", false, text);
+        // Verify the text was actually inserted (don't trust the return value —
+        // React/ProseMirror editors often return false even on success).
+        if ((element.textContent ?? "").trim()) return true;
+
+        // Fallback: set innerText directly.
+        // IMPORTANT: do NOT dispatch InputEvent with data+inputType="insertText" —
+        // React editors re-process the `data` field and insert the text a second
+        // time, causing duplicated content. A plain "input" event is enough to
+        // tell React to re-sync its virtual state from the DOM.
         element.innerText = text;
-        element.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true, data: text, inputType: "insertText" }));
-        return !!element.innerText;
+        element.dispatchEvent(new Event("input", { bubbles: true }));
+        return !!(element.innerText || element.textContent);
       }
 
       // Regular input / textarea — use native setter so React picks up the change.

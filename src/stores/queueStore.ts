@@ -49,7 +49,18 @@ export const useQueueStore = defineStore("queues", () => {
   async function resolveSlotImages() {
     for (const slot of slots.value) {
       if (slot.imageIds.length) {
-        slotImages.value[slot.id] = await getSlotImageData(slot.imageIds);
+        const images = await getSlotImageData(slot.imageIds);
+        if (images.length < slot.imageIds.length) {
+          const foundIds = new Set(images.map((i) => i.id));
+          const missing = slot.imageIds.filter((id) => !foundIds.has(id));
+          console.warn(
+            `[Queue] Slot ${slot.id}: ${slot.imageIds.length} id(s) stored, ` +
+            `but only ${images.length} found in DB. Missing: ${missing.join(", ")}`,
+          );
+        }
+        slotImages.value[slot.id] = images;
+      } else {
+        slotImages.value[slot.id] = [];
       }
     }
   }

@@ -80,7 +80,9 @@ window.CrosspostBridge._currentAdapter = {
         const tags = (postContent.tags ?? [])
           .map((t) => (t.startsWith("#") ? t : "#" + t))
           .join(" ");
-        const text = [postContent.description, tags].filter(Boolean).join("\n\n");
+        // Use single newline — \n\n triggers a paragraph break in X's ProseMirror
+        // editor which can split description and tags into separate tweet blocks.
+        const text = [postContent.description, tags].filter(Boolean).join("\n");
         if (text) {
           // Re-query in case React remounted the element after file injection.
           const freshTextarea = document.querySelector('[data-testid="tweetTextarea_0"]') || textarea;
