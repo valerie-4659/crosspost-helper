@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.23 - 2026-05-22
+
+- Release v0.2.23
+
+
+## v0.2.22 - 2026-05-22
+
+- Release v0.2.22
+
+
 ## v0.2.21 - 2026-05-21
 
 - fix: use convertFileSrc for multi-pick slot images (Windows path fix)
