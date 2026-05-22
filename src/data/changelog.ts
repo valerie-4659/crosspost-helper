@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.24",
+    date: "2026-05-22",
+    items: [
+      "feat: cross-folder collection tray, folder preview thumbnails, AI post generator, multi-network queue",
+    ],
+  },
+  {
     version: "0.2.23",
     date: "2026-05-22",
     items: [
