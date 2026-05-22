@@ -15,6 +15,9 @@ const DEFAULT_TARGETS: PostingTargetInput[] = [
   { name: "Bluesky", type: "bluesky" },
   { name: "DeviantArt", type: "deviantart" },
   { name: "Civitai", type: "civitai" },
+  { name: "Instagram", type: "instagram" },
+  { name: "Facebook", type: "facebook" },
+  { name: "Tumblr", type: "tumblr" },
   { name: "SocialDiff", type: "socialdiff" },
 ];
 

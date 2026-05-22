@@ -2,7 +2,6 @@
 import { onMounted, ref } from "vue";
 import PickerPage from "@/pages/PickerPage.vue";
 import LibraryPage from "@/pages/LibraryPage.vue";
-import CollectionsPage from "@/pages/CollectionsPage.vue";
 import ScanPage from "@/pages/ScanPage.vue";
 import SettingsPage from "@/pages/SettingsPage.vue";
 import AboutPage from "@/pages/AboutPage.vue";
@@ -34,7 +33,6 @@ onMounted(async () => {
     <main class="min-w-0 flex-1 overflow-hidden">
       <PickerPage v-if="currentPage === 'picker'" />
       <LibraryPage v-else-if="currentPage === 'library'" />
-      <CollectionsPage v-else-if="currentPage === 'collections'" />
       <ScanPage v-else-if="currentPage === 'scan'" />
       <SettingsPage v-else-if="currentPage === 'settings'" />
       <BrowserExtensionPage v-else-if="currentPage === 'extension'" />

@@ -3,6 +3,9 @@ export type PostingTargetType =
   | "bluesky"
   | "deviantart"
   | "civitai"
+  | "instagram"
+  | "facebook"
+  | "tumblr"
   | "socialdiff"
   | "custom";
 

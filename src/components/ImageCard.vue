@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { Archive, Check, Clipboard, Copy, Expand, FolderOpen, RotateCcw } from "lucide-vue-next";
 import { setImagesDragData } from "@/services/imageActionService";
+import PlatformIcon from "@/components/PlatformIcon.vue";
 
 function handleDragStart(event: DragEvent) {
   const localPaths = dragImages.value
@@ -109,7 +110,7 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
         <button
           v-for="target in targets"
           :key="target.id"
-          class="rounded-md border px-2 py-1 text-xs transition"
+          class="flex h-7 w-7 items-center justify-center rounded-md border transition"
           :class="{
             'border-mint/50 bg-mint/10 text-mint': image.postStates[target.id] === 'posted',
             'border-gold/50 bg-gold/10 text-gold': image.postStates[target.id] === 'planned',
@@ -121,7 +122,7 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
           :disabled="image.postStates[target.id] === 'posted'"
           @click="emit('markPosted', image.id, target.id)"
         >
-          {{ target.name }}
+          <PlatformIcon :type="target.type" :size="14" />
         </button>
       </div>
       <button

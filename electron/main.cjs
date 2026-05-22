@@ -54,6 +54,7 @@ function migrationSql() {
   return [
     "001_initial.sql",
     "002_collections.sql",
+    "003_ai_config.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
@@ -120,6 +121,29 @@ async function getDatabase() {
         WHERE thumbnail_url LIKE 'localfile://%'
           AND thumbnail_url NOT LIKE 'localfile:///%'
       `);
+
+      // Step 4: Recreate posting_targets without the restrictive CHECK constraint
+      // so that new types (instagram, facebook, tumblr) can be inserted.
+      // Only runs once — guarded by checking for 'tumblr' in the CREATE TABLE SQL.
+      const tblSql = database.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='posting_targets'");
+      const existingCreate = tblSql[0]?.values?.[0]?.[0] ?? "";
+      if (existingCreate && !existingCreate.includes("tumblr")) {
+        database.run(`
+          PRAGMA foreign_keys = OFF;
+          CREATE TABLE posting_targets_new (
+            id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          INSERT INTO posting_targets_new SELECT * FROM posting_targets;
+          DROP TABLE posting_targets;
+          ALTER TABLE posting_targets_new RENAME TO posting_targets;
+          PRAGMA foreign_keys = ON;
+        `);
+      }
 
       persistDatabase();
       return database;
@@ -378,11 +402,15 @@ async function upsertPostRecord(imageId, targetId) {
 }
 
 // Per-platform image limits for multi-image posting.
-const PLATFORM_LIMITS = { civitai: 20, x: 4, bluesky: 4, deviantart: 1 };
+const PLATFORM_LIMITS = { civitai: 20, x: 4, bluesky: 4, deviantart: 1, instagram: 10, facebook: 1, tumblr: 1 };
 
 // In-memory selection queue: { [target]: string[] } — set by the Electron app,
 // consumed by the Chrome extension.  Lives only in RAM (no DB persistence).
 const selectionQueue = new Map(); // target → string[] of imageIds
+
+// In-memory post-content store: { [target]: { title?, description, tags[] } }
+// Set by the app's AI generator; consumed by the Chrome extension's text-fill logic.
+const postContentStore = new Map();
 
 function bridgeSendJson(res, data, status = 200) {
   const body = JSON.stringify(data);
@@ -601,8 +629,165 @@ async function handleBridge(req, res) {
     return;
   }
 
+  // ── GET /post-content?target=x ───────────────────────────────────────────
+  // Returns the AI-generated post content for a platform (title, description, tags).
+  if (req.method === "GET" && url.pathname === "/post-content") {
+    const targetType = url.searchParams.get("target");
+    if (!targetType) { bridgeSendJson(res, { error: "target required" }, 400); return; }
+    const content = postContentStore.get(targetType);
+    if (!content) { bridgeSendJson(res, { ok: false, content: null }); return; }
+    bridgeSendJson(res, { ok: true, content });
+    return;
+  }
+
   bridgeSendJson(res, { error: "Not found" }, 404);
 }
+
+// ─── AI Post Generation ───────────────────────────────────────────────────────
+
+const https = require("node:https");
+
+const NETWORK_POST_CONFIGS = {
+  x:          { descMax: 180,  tagCount: 5,  titleNeeded: false, tagHasHash: true,  notes: "Punchy, engagement-first. Max 180 chars for text (leaves room for hashtags in the 280 limit)." },
+  bluesky:    { descMax: 250,  tagCount: 5,  titleNeeded: false, tagHasHash: true,  notes: "Friendly, concise. Use # in tags." },
+  deviantart: { descMax: 1000, tagCount: 20, titleNeeded: true,  tagHasHash: false, notes: "Artistic. Tags WITHOUT # — DA has a separate tag field. Max 20 tags." },
+  civitai:    { descMax: 2000, tagCount: 30, titleNeeded: true,  tagHasHash: false, notes: "Detailed AI art description. Include style, technique, mood. Tags WITHOUT #." },
+  instagram:  { descMax: 400,  tagCount: 30, titleNeeded: false, tagHasHash: true,  notes: "Engaging caption. Up to 30 hashtags WITH # symbol." },
+  tumblr:     { descMax: 500,  tagCount: 20, titleNeeded: true,  tagHasHash: false, notes: "Creative. Tags WITHOUT # — Tumblr uses a separate tag input." },
+  facebook:   { descMax: 500,  tagCount: 10, titleNeeded: false, tagHasHash: true,  notes: "Conversational, engaging. A few hashtags WITH # symbol." },
+};
+
+function httpsPost(hostname, path_, headers, body) {
+  return new Promise((resolve, reject) => {
+    const bodyStr = JSON.stringify(body);
+    const req = https.request({ hostname, path: path_, method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(bodyStr), ...headers } },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => { data += c; });
+        res.on("end", () => {
+          try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
+          catch { resolve({ status: res.statusCode, body: data }); }
+        });
+      });
+    req.on("error", reject);
+    req.write(bodyStr);
+    req.end();
+  });
+}
+
+function imageMime(p) {
+  const ext = path.extname(p).toLowerCase();
+  return { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+           ".webp": "image/webp", ".gif": "image/gif" }[ext] ?? "image/jpeg";
+}
+
+async function generateAiPost(imagePaths, network) {
+  const db = await getDatabase();
+  // Read AI config from DB
+  const rows = db.exec("SELECT key, value FROM ai_config");
+  const cfg = {};
+  for (const row of (rows[0]?.values ?? [])) cfg[row[0]] = row[1];
+  const provider = cfg["provider"] || "openai";
+  const apiKey   = cfg["api_key"]  || "";
+
+  // Valid current models per provider — retired/invalid names fall back to the default.
+  const VALID_MODELS = {
+    openai:    ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"],
+    grok:      ["grok-latest", "grok-4.3", "grok-4.20"],   // all support image input
+    anthropic: ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-7"],
+    gemini:    ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+  };
+  const DEFAULT_MODELS = { openai: "gpt-4o-mini", grok: "grok-latest", anthropic: "claude-haiku-4-5", gemini: "gemini-2.0-flash" };
+  const storedModel = cfg["model"] || "";
+  const validList   = VALID_MODELS[provider] ?? [];
+  const model       = validList.includes(storedModel) ? storedModel : (DEFAULT_MODELS[provider] ?? validList[0] ?? storedModel);
+  if (!apiKey) throw new Error("No AI API key configured. Go to Settings → AI to add one.");
+
+  // Read network tags from DB
+  const tagRows = db.exec(`SELECT tag FROM network_tags WHERE network = '${network.replace(/'/g, "''")}'`);
+  const tags = (tagRows[0]?.values ?? []).map((r) => r[0]);
+
+  // Downscale images to max 1024px and encode as JPEG before sending to the AI.
+  // Sending full-resolution files as base64 easily exceeds API payload limits (→ 400/502).
+  const validPaths = (imagePaths ?? []).filter((p) => p && fs.existsSync(p)).slice(0, 1);
+  const imageData = [];
+  for (const p of validPaths) {
+    try {
+      const img = await nativeImage.createThumbnailFromPath(p, { width: 1024, height: 1024 });
+      if (!img.isEmpty()) {
+        imageData.push({ mime: "image/jpeg", b64: img.toJPEG(85).toString("base64") });
+      } else {
+        // Fallback: read raw file (small images like icons)
+        imageData.push({ mime: imageMime(p), b64: fs.readFileSync(p).toString("base64") });
+      }
+    } catch {
+      imageData.push({ mime: imageMime(p), b64: fs.readFileSync(p).toString("base64") });
+    }
+  }
+
+  const nc = NETWORK_POST_CONFIGS[network] ?? NETWORK_POST_CONFIGS["x"];
+  const tagInstruction = tags.length
+    ? `Pick up to ${nc.tagCount} relevant tags from this list (add new ones if better): ${tags.join(", ")}.`
+    : `Generate up to ${nc.tagCount} relevant tags.`;
+  const tagNote = nc.tagHasHash ? "Include the # symbol in each tag." : "Do NOT include # symbol in tags.";
+
+  const prompt = `You are a social media content creator. Analyze the image(s) and write a post for ${network}.
+Rules:
+- Write in English.
+- Description: max ${nc.descMax} characters. ${nc.notes}
+- Tags: ${tagInstruction} ${tagNote}
+${nc.titleNeeded ? "- Title: short, catchy, max 80 chars." : ""}
+Respond with ONLY valid JSON, no markdown fences:
+{${nc.titleNeeded ? '"title":"...","' : ""}"description":"...","tags":["tag1","tag2"]}`;
+
+  let result;
+  function apiError(provider, r) {
+    const msg = r.body?.error?.message
+      || (typeof r.body === "string" ? r.body.slice(0, 200) : null)
+      || JSON.stringify(r.body)?.slice(0, 200)
+      || `HTTP ${r.status}`;
+    return new Error(`${provider} API error ${r.status}: ${msg}`);
+  }
+
+  if (provider === "openai" || provider === "grok") {
+    const hostname = provider === "grok" ? "api.x.ai" : "api.openai.com";
+    const content = [{ type: "text", text: prompt },
+      ...imageData.map((d) => ({ type: "image_url", image_url: { url: `data:${d.mime};base64,${d.b64}` } }))];
+    const r = await httpsPost(hostname, "/v1/chat/completions",
+      { "Authorization": `Bearer ${apiKey}` },
+      { model, max_tokens: 600, messages: [{ role: "user", content }] });
+    if (r.status !== 200) throw apiError(provider, r);
+    result = r.body.choices?.[0]?.message?.content ?? "";
+
+  } else if (provider === "anthropic") {
+    const content = [...imageData.map((d) => ({ type: "image", source: { type: "base64", media_type: d.mime, data: d.b64 } })),
+      { type: "text", text: prompt }];
+    const r = await httpsPost("api.anthropic.com", "/v1/messages",
+      { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      { model, max_tokens: 600, messages: [{ role: "user", content }] });
+    if (r.status !== 200) throw apiError("anthropic", r);
+    result = r.body.content?.[0]?.text ?? "";
+
+  } else if (provider === "gemini") {
+    const parts = [{ text: prompt },
+      ...imageData.map((d) => ({ inline_data: { mime_type: d.mime, data: d.b64 } }))];
+    const r = await httpsPost("generativelanguage.googleapis.com",
+      `/v1beta/models/${model}:generateContent?key=${apiKey}`, {},
+      { contents: [{ parts }], generationConfig: { responseMimeType: "application/json" } });
+    if (r.status !== 200) throw apiError("gemini", r);
+    result = r.body.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  } else {
+    throw new Error(`Unknown AI provider: ${provider}`);
+  }
+
+  // Parse JSON response (strip markdown fences if present)
+  const jsonStr = result.replace(/^```json?\s*/i, "").replace(/\s*```$/, "").trim();
+  const parsed = JSON.parse(jsonStr);
+  return { title: parsed.title ?? "", description: parsed.description ?? "", tags: parsed.tags ?? [] };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function startBridgeServer() {
   bridgeServer = http.createServer(handleBridge);
@@ -679,6 +864,14 @@ app.whenReady().then(() => {
   ipcMain.handle("bridge:get-queue", (_event, target) => {
     return { imageIds: selectionQueue.get(target) ?? [], limit: PLATFORM_LIMITS[target] ?? 1 };
   });
+  ipcMain.handle("bridge:set-post-content", (_event, target, content) => {
+    postContentStore.set(target, content);
+    return { ok: true };
+  });
+  ipcMain.handle("bridge:clear-post-content", (_event, target) => {
+    postContentStore.delete(target);
+    return { ok: true };
+  });
 
   // Native OS file drag — attaches real files to the active drag so external
   // apps (Finder, Discord, browsers) receive them on drop.
@@ -732,6 +925,11 @@ app.whenReady().then(() => {
     if (app.isPackaged) return path.join(process.resourcesPath, "chrome-extension");
     return path.join(__dirname, "..", "chrome-extension");
   }
+
+  // ── AI post generation ─────────────────────────────────────────────────────
+  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network) => {
+    return generateAiPost(imagePaths, network);
+  });
 
   ipcMain.handle("extension:open-chrome", () => {
     shell.showItemInFolder(path.join(extensionDir(), "manifest.json"));

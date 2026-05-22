@@ -40,6 +40,14 @@ declare global {
         clearQueue(target: string): Promise<{ ok: boolean }>;
         /** Read back the current queue for a target platform. */
         getQueue(target: string): Promise<{ imageIds: string[]; limit: number }>;
+        /** Store AI-generated post content for the Chrome extension to fill. */
+        setPostContent(target: string, content: { title?: string; description: string; tags: string[] }): Promise<{ ok: boolean }>;
+        /** Clear the AI post content for a target platform. */
+        clearPostContent(target: string): Promise<{ ok: boolean }>;
+      };
+      ai: {
+        /** Ask main process to generate a post for the given network via the configured AI provider. */
+        generatePost(imagePaths: string[], network: string): Promise<{ title: string; description: string; tags: string[] }>;
       };
       scan: {
         /**

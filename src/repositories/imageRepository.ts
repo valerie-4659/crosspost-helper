@@ -478,6 +478,18 @@ export async function listDistinctFolders(sourceId?: string): Promise<FolderEntr
   return rows.map((r) => ({ folderPath: r.folder_path, count: r.count, isExcluded: Boolean(r.is_excluded) }));
 }
 
+/** Returns the first available thumbnail URL per folder path (for folder card previews). */
+export async function listFolderThumbnails(): Promise<Map<string, string>> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<{ folder_path: string; thumbnail_url: string }>>(
+    `SELECT folder_path, MIN(thumbnail_url) AS thumbnail_url
+     FROM images
+     WHERE thumbnail_url IS NOT NULL AND is_archived = 0
+     GROUP BY folder_path`,
+  );
+  return new Map(rows.map((r) => [r.folder_path, r.thumbnail_url]));
+}
+
 /** Returns posted-image counts grouped by (folder_path, target_id). */
 export async function listFolderPostStats(): Promise<Array<{ folderPath: string; targetId: string; postedCount: number }>> {
   const db = await getDatabase();

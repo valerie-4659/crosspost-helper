@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { deleteAllImages, deleteImages, deleteImagesInFolder, excludeFolder, includeFolder, listDistinctFolders, listFolderPostStats, listImages, setImageArchived } from "@/repositories/imageRepository";
+import { deleteAllImages, deleteImages, deleteImagesInFolder, excludeFolder, includeFolder, listDistinctFolders, listFolderPostStats, listFolderThumbnails, listImages, setImageArchived } from "@/repositories/imageRepository";
 import { upsertPostRecord } from "@/repositories/postRecordRepository";
 import type { FolderEntry } from "@/repositories/imageRepository";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
@@ -32,17 +32,24 @@ export const useImageStore = defineStore("images", () => {
    * Holds how many images in each folder have been posted to each target.
    */
   const folderPostStats = ref(new Map<string, Map<string, number>>());
+  /** First thumbnail URL per exact folder path — used for folder card previews. */
+  const folderThumbnails = ref(new Map<string, string>());
 
   async function loadFolders() {
     try {
-      folders.value = await listDistinctFolders(filters.value.sourceId);
-      const stats = await listFolderPostStats();
+      const [entries, stats, thumbs] = await Promise.all([
+        listDistinctFolders(filters.value.sourceId),
+        listFolderPostStats(),
+        listFolderThumbnails(),
+      ]);
+      folders.value = entries;
       const map = new Map<string, Map<string, number>>();
       for (const { folderPath, targetId, postedCount } of stats) {
         if (!map.has(folderPath)) map.set(folderPath, new Map());
         map.get(folderPath)!.set(targetId, postedCount);
       }
       folderPostStats.value = map;
+      folderThumbnails.value = thumbs;
     } catch {
       // non-critical — sidebar just stays empty
     }
@@ -220,6 +227,7 @@ export const useImageStore = defineStore("images", () => {
     images,
     folders,
     folderPostStats,
+    folderThumbnails,
     loading,
     filters,
     message,

@@ -1,30 +1,38 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { Archive, Check, ChevronRight, Download, Eye, EyeOff, Folder, FolderHeart, FolderX, Plus, RefreshCcw, RotateCcw, Send, Trash2, X } from "lucide-vue-next";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { Archive, Check, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import ImageLightbox from "@/components/ImageLightbox.vue";
+import PlatformIcon from "@/components/PlatformIcon.vue";
 import { copyImagePath, copyImageToClipboard, exportImagesToFolder, revealImage } from "@/services/imageActionService";
-import { useCollectionStore } from "@/stores/collectionStore";
+import { useAiStore } from "@/stores/aiStore";
 import { useImageStore } from "@/stores/imageStore";
 import { useSourceStore } from "@/stores/sourceStore";
 import { useTargetStore } from "@/stores/targetStore";
 import type { ImageWithPostState } from "@/types/image";
 import type { PostingTargetType } from "@/types/postingTarget";
 
-// Platform types that have a Chrome Extension adapter.
-const EXTENSION_TYPES = new Set<PostingTargetType>(["x", "bluesky", "deviantart", "civitai"]);
-const PLATFORM_LIMITS: Record<string, number> = { civitai: 20, x: 4, bluesky: 4, deviantart: 1 };
+// All platform types — queue buttons show for all of them.
+const EXTENSION_TYPES = new Set<PostingTargetType>(["x", "bluesky", "deviantart", "civitai", "instagram", "facebook", "tumblr"]);
+const PLATFORM_LIMITS: Record<string, number> = { civitai: 20, x: 4, bluesky: 4, deviantart: 1, instagram: 10, facebook: 10, tumblr: 10 };
+
+const ai = useAiStore();
+const showAiPanel = ref(false);
+const showCollection = ref(false);
 
 // Network stat badge styling per platform type.
 const TARGET_BADGE_STYLE: Record<PostingTargetType | "default", { bg: string; text: string; label: string }> = {
-  x:          { bg: "bg-slate-700",      text: "text-slate-200",  label: "𝕏"  },
-  bluesky:    { bg: "bg-sky-900/70",     text: "text-sky-300",    label: "Bsky" },
-  deviantart: { bg: "bg-green-900/70",   text: "text-green-300",  label: "DA"  },
-  civitai:    { bg: "bg-teal-900/70",    text: "text-teal-300",   label: "Civ" },
-  socialdiff: { bg: "bg-violet-900/70",  text: "text-violet-300", label: "SD"  },
-  custom:     { bg: "bg-slate-700/60",   text: "text-slate-300",  label: "?"   },
-  default:    { bg: "bg-slate-700/60",   text: "text-slate-300",  label: "?"   },
+  x:          { bg: "bg-slate-700",      text: "text-slate-200",  label: "𝕏"    },
+  bluesky:    { bg: "bg-sky-900/70",     text: "text-sky-300",    label: "Bsky"  },
+  deviantart: { bg: "bg-green-900/70",   text: "text-green-300",  label: "DA"    },
+  civitai:    { bg: "bg-teal-900/70",    text: "text-teal-300",   label: "Civ"   },
+  instagram:  { bg: "bg-pink-900/70",    text: "text-pink-300",   label: "IG"    },
+  facebook:   { bg: "bg-blue-900/70",    text: "text-blue-300",   label: "FB"    },
+  tumblr:     { bg: "bg-indigo-900/70",  text: "text-indigo-300", label: "Tmblr" },
+  socialdiff: { bg: "bg-violet-900/70",  text: "text-violet-300", label: "SD"    },
+  custom:     { bg: "bg-slate-700/60",   text: "text-slate-300",  label: "?"     },
+  default:    { bg: "bg-slate-700/60",   text: "text-slate-300",  label: "?"     },
 };
 
 function targetBadge(targetId: string) {
@@ -32,47 +40,11 @@ function targetBadge(targetId: string) {
   return TARGET_BADGE_STYLE[t?.type ?? "default"] ?? TARGET_BADGE_STYLE.default;
 }
 
-const collectionStore = useCollectionStore();
+
 const imageStore = useImageStore();
 const sourceStore = useSourceStore();
 const targetStore = useTargetStore();
 const previewImage = ref<ImageWithPostState | null>(null);
-const selectedTargetIds = ref<string[]>([]);
-
-// ── Add-to-collection modal ─────────────────────────────────────────────────
-const showCollectionModal = ref(false);
-const newCollectionName = ref("");
-const collectionModalError = ref("");
-
-async function openCollectionModal() {
-  collectionModalError.value = "";
-  newCollectionName.value = "";
-  await collectionStore.load();
-  showCollectionModal.value = true;
-}
-
-async function addToCollection(collectionId: string) {
-  const ids = [...imageStore.selectedImageIds];
-  if (!ids.length) return;
-  try {
-    await collectionStore.addImages(collectionId, ids);
-    showCollectionModal.value = false;
-    imageStore.message = collectionStore.message;
-  } catch (e) {
-    collectionModalError.value = e instanceof Error ? e.message : String(e);
-  }
-}
-
-async function createAndAdd() {
-  const name = newCollectionName.value.trim();
-  if (!name) { collectionModalError.value = "Please enter a name."; return; }
-  try {
-    const col = await collectionStore.create({ name });
-    await addToCollection(col.id);
-  } catch (e) {
-    collectionModalError.value = e instanceof Error ? e.message : String(e);
-  }
-}
 
 // ── Double opt-in delete ────────────────────────────────────────────────────
 const confirmingDeleteSelected = ref(false);
@@ -104,6 +76,11 @@ onMounted(() => imageStore.load());
 watch(() => imageStore.filters, () => imageStore.load(), { deep: true });
 watch(() => imageStore.showExcludedFolders, () => imageStore.load());
 
+// Active network for toolbar actions (mark / queue / AI) — shared with picker store.
+const libActiveTarget = computed(() => targetStore.enabledTargets.find((t) => t.id === targetStore.activeTargetId) ?? null);
+const libActiveTargetName = computed(() => libActiveTarget.value?.name ?? "");
+const libActiveTargetType = computed(() => libActiveTarget.value?.type ?? "");
+
 const activeTargetName = computed(
   () => targetStore.targets.find((target) => target.id === imageStore.filters.targetId)?.name ?? "",
 );
@@ -126,6 +103,18 @@ async function queueForExtension(targetType: string) {
   } catch (err) {
     imageStore.error = err instanceof Error ? err.message : String(err);
   }
+}
+
+async function generateAiPost(network: string) {
+  // Use the first collected image; fall back to first selected image in current view.
+  const firstPath =
+    (collectionArray.value[0] ?? imageStore.selectedImages[0])?.localPath ?? null;
+  if (!firstPath) return;
+  await ai.generatePost([firstPath], network);
+}
+
+async function applyAiPost(network: string) {
+  await ai.pushPostContentToExtension(network);
 }
 
 // ── Folder navigation ──────────────────────────────────────────────────────────
@@ -195,14 +184,22 @@ const childFolders = computed(() => {
     });
   }
   return [...children.entries()]
-    .map(([path, { count, isExcluded, postStats }]) => ({
-      path,
-      name: path.split("/").pop()!,
-      count,
-      isExcluded,
-      postStats,
-      isLastVisited: lastVisitedDir.value !== "" && lastVisitedDir.value.startsWith(path),
-    }))
+    .map(([path, { count, isExcluded, postStats }]) => {
+      // Pick the first available thumbnail from any sub-folder of this child path.
+      let thumbnail: string | undefined;
+      for (const [fp, url] of imageStore.folderThumbnails) {
+        if (fp === path || fp.startsWith(path + "/")) { thumbnail = url; break; }
+      }
+      return {
+        path,
+        name: path.split("/").pop()!,
+        count,
+        isExcluded,
+        postStats,
+        thumbnail,
+        isLastVisited: lastVisitedDir.value !== "" && lastVisitedDir.value.startsWith(path),
+      };
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
 });
 
@@ -294,17 +291,82 @@ async function exportSelected() {
 }
 
 async function markSelected() {
-  await imageStore.markSelectedPosted(selectedTargetIds.value);
-  selectedTargetIds.value = [];
+  if (!targetStore.activeTargetId) return;
+  await imageStore.markSelectedPosted([targetStore.activeTargetId]);
+}
+
+async function queueActiveForExtension() {
+  if (libActiveTargetType.value) await queueForExtension(libActiveTargetType.value);
 }
 
 function lightboxNavigate(image: ImageWithPostState) {
   previewImage.value = image;
 }
+
+// ── Cross-folder Collection ─────────────────────────────────────────────────
+/** Persists across folder navigation. Key = image.id. */
+const collectionImages = reactive(new Map<string, ImageWithPostState>());
+const collectionArray = computed(() => [...collectionImages.values()]);
+const collectionCount = computed(() => collectionImages.size);
+
+/** Toggle a single image in/out of the collection and keep store selection in sync. */
+function toggleCollection(imageId: string) {
+  imageStore.toggleSelected(imageId);
+  const img = imageStore.images.find((i) => i.id === imageId);
+  if (!img) return;
+  if (collectionImages.has(imageId)) collectionImages.delete(imageId);
+  else collectionImages.set(imageId, img);
+}
+
+/** Add all currently-visible images to the collection (also selects them). */
+function addVisibleToCollection() {
+  imageStore.selectVisible();
+  for (const img of imageStore.images) collectionImages.set(img.id, img);
+}
+
+/** Remove a single image from the collection (also deselects if visible). */
+function removeFromCollection(imageId: string) {
+  collectionImages.delete(imageId);
+  if (imageStore.selectedImageIds.has(imageId)) imageStore.toggleSelected(imageId);
+}
+
+/** Clear the entire collection + selection. */
+function clearCollection() {
+  collectionImages.clear();
+  imageStore.clearSelection();
+}
+
+/** Mark every collected image as posted on the active network. */
+async function markCollection() {
+  if (!targetStore.activeTargetId) return;
+  for (const img of collectionArray.value) {
+    await imageStore.markPosted(img.id, targetStore.activeTargetId);
+  }
+  imageStore.message = `Marked ${collectionCount.value} image(s) as posted on ${libActiveTargetName.value}.`;
+  clearCollection();
+}
+
+/** Queue collected images for the active extension adapter. */
+async function queueCollection() {
+  if (!libActiveTargetType.value) return;
+  const ids = collectionArray.value
+    .map((img) => img.id)
+    .slice(0, PLATFORM_LIMITS[libActiveTargetType.value] ?? 1);
+  if (!ids.length) return;
+  try {
+    await window.desktop.bridge.setQueue(libActiveTargetType.value, ids);
+    imageStore.message = `✓ ${ids.length} image(s) queued for ${libActiveTargetName.value}. Open Chrome Extension to inject.`;
+  } catch (err) {
+    imageStore.error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+// Auto-open collection sidebar when first image is added.
+watch(collectionCount, (n, old) => { if (old === 0 && n > 0) showCollection.value = true; });
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden">
+  <div class="relative flex h-full flex-col overflow-hidden">
 
     <!-- ── Header ──────────────────────────────────────────────────── -->
     <header class="flex shrink-0 items-center justify-between px-5 pt-5">
@@ -315,6 +377,18 @@ function lightboxNavigate(image: ImageWithPostState) {
         </p>
       </div>
       <div class="flex items-center gap-2">
+        <!-- Collection toggle -->
+        <button
+          v-if="collectionCount > 0"
+          class="button relative gap-1.5"
+          :class="showCollection ? 'border-accent bg-accent/10 text-accent' : ''"
+          title="Toggle collection tray"
+          @click="showCollection = !showCollection"
+        >
+          <Archive class="h-4 w-4" />
+          Collection
+          <span class="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-ink">{{ collectionCount }}</span>
+        </button>
         <button
           class="button gap-1.5"
           :class="imageStore.showExcludedFolders ? 'border-amber-500/60 bg-amber-500/10 text-amber-400' : ''"
@@ -352,11 +426,17 @@ function lightboxNavigate(image: ImageWithPostState) {
       v-if="isLeafDir || hasDirImages"
       class="shrink-0 border-b border-line bg-panel px-4 py-2"
     >
-      <!-- Row 1: selection actions -->
+      <!-- Row 1: network selector + selection actions -->
       <div class="flex flex-wrap items-center gap-1.5">
+        <select v-model="targetStore.activeTargetId" class="field h-7 py-0 text-xs" title="Active network for all actions">
+          <option v-for="t in targetStore.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
+        </select>
+        <span class="mx-1 text-xs text-slate-500">|</span>
         <span class="mr-1 text-xs font-medium text-white">{{ selectedCount }} selected</span>
-        <button class="button h-7 px-2 text-xs" @click="imageStore.selectVisible">Select visible</button>
-        <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" @click="imageStore.clearSelection">
+        <button class="button h-7 gap-1 px-2 text-xs" title="Add all visible images to the collection" @click="addVisibleToCollection">
+          + Add visible
+        </button>
+        <button class="button h-7 px-2 text-xs" :disabled="collectionCount === 0" @click="clearCollection">
           <X class="h-3 w-3" />Clear
         </button>
         <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" @click="imageStore.excludeSelected">
@@ -368,15 +448,10 @@ function lightboxNavigate(image: ImageWithPostState) {
         <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" @click="exportSelected">
           <Download class="h-3 w-3" />Download
         </button>
-        <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" @click="openCollectionModal">
-          <FolderHeart class="h-3 w-3" />Add to Collection
-        </button>
         <template v-if="!confirmingDeleteSelected">
-          <button
-            class="button h-7 px-2 text-xs hover:border-rose/60 hover:text-rose"
-            :disabled="selectedCount === 0"
-            @click="requestDeleteSelected"
-          ><Trash2 class="h-3 w-3" />Delete</button>
+          <button class="button h-7 px-2 text-xs hover:border-rose/60 hover:text-rose" :disabled="selectedCount === 0" @click="requestDeleteSelected">
+            <Trash2 class="h-3 w-3" />Delete
+          </button>
         </template>
         <template v-else>
           <span class="text-xs text-rose">Remove {{ selectedCount }} image(s)?</span>
@@ -385,40 +460,60 @@ function lightboxNavigate(image: ImageWithPostState) {
         </template>
       </div>
 
-      <!-- Row 2: mark as posted -->
-      <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
-        <span class="mr-1 shrink-0 text-xs text-slate-400">Mark as posted on</span>
-        <label
-          v-for="target in targetStore.enabledTargets"
-          :key="target.id"
-          class="flex shrink-0 cursor-pointer items-center gap-1.5 rounded border px-2 py-1 text-xs transition"
-          :class="selectedTargetIds.includes(target.id) ? 'border-accent bg-accent/10 text-accent' : 'border-line bg-ink text-slate-300'"
-        >
-          <input v-model="selectedTargetIds" type="checkbox" class="h-3 w-3 accent-accent" :value="target.id" />
-          {{ target.name }}
-        </label>
+      <!-- Row 2: mark + queue + AI for active network -->
+      <div class="mt-1.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-1.5">
         <button
-          class="button-primary h-7 shrink-0 whitespace-nowrap px-3 text-xs"
-          :disabled="selectedCount === 0 || selectedTargetIds.length === 0"
+          class="button-primary h-7 shrink-0 px-3 text-xs"
+          :disabled="selectedCount === 0 || !targetStore.activeTargetId"
+          :title="`Mark selected as posted on ${libActiveTargetName}`"
           @click="markSelected"
-        ><Check class="h-3 w-3" />Mark as posted</button>
+        ><Check class="h-3 w-3" />Mark {{ libActiveTargetName }}</button>
+
+        <button
+          class="button h-7 shrink-0 gap-1.5 px-3 text-xs"
+          :disabled="selectedCount === 0 || !libActiveTargetType || !EXTENSION_TYPES.has(libActiveTargetType as any)"
+          :title="EXTENSION_TYPES.has(libActiveTargetType as any) ? `Queue for ${libActiveTargetName} (max ${PLATFORM_LIMITS[libActiveTargetType] ?? 1})` : `${libActiveTargetName} has no extension adapter`"
+          @click="queueActiveForExtension"
+        >
+          <PlatformIcon v-if="libActiveTargetType" :type="libActiveTargetType" :size="13" />
+          Queue
+        </button>
+
+        <button
+          class="button h-7 gap-1.5 px-2 text-xs"
+          :class="showAiPanel ? 'border-accent bg-accent/10 text-accent' : ''"
+          :disabled="selectedCount === 0 || !targetStore.activeTargetId"
+          title="Generate AI post text for selected images"
+          @click="showAiPanel = !showAiPanel; if (!showAiPanel) ai.clearGeneratedPost()"
+        >
+          <Sparkles class="h-3.5 w-3.5" />AI Post
+        </button>
       </div>
 
-      <!-- Row 3: queue for Chrome Extension -->
-      <div v-if="extensionTargets.length" class="mt-1.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-1.5">
-        <span class="mr-1 shrink-0 text-xs text-slate-400">Queue for Extension</span>
+      <!-- Row 3: AI panel (collapsible) -->
+      <div v-if="showAiPanel" class="mt-2 rounded-xl border border-accent/30 bg-panelSoft p-3">
+        <div class="mb-2 flex items-center justify-between">
+          <p class="text-xs font-semibold text-white">AI Post — {{ libActiveTargetName }}</p>
+          <button class="button h-6 w-6 p-0" @click="showAiPanel = false; ai.clearGeneratedPost()"><X class="h-3 w-3" /></button>
+        </div>
         <button
-          v-for="target in extensionTargets"
-          :key="target.id"
-          class="button h-7 shrink-0 whitespace-nowrap px-2 text-xs"
-          :disabled="selectedCount === 0"
-          :title="`Queue up to ${PLATFORM_LIMITS[target.type] ?? 1} images for ${target.name}`"
-          @click="queueForExtension(target.type)"
+          class="button-primary w-full rounded-md text-sm"
+          :disabled="ai.generating"
+          @click="generateAiPost(libActiveTargetType)"
         >
-          <Send class="h-3 w-3" />
-          {{ target.name }}
-          <span class="ml-0.5 text-[10px] text-slate-500">(max {{ PLATFORM_LIMITS[target.type] ?? 1 }})</span>
+          <Sparkles class="h-4 w-4" />
+          {{ ai.generating ? 'Generating…' : `Generate for ${libActiveTargetName}` }}
         </button>
+        <div v-if="ai.generateError" class="mt-2 rounded-md border border-rose/40 bg-rose/10 p-2 text-xs text-rose">{{ ai.generateError }}</div>
+        <div v-if="ai.generatedPost" class="mt-2 space-y-1.5 rounded-xl border border-line bg-panel p-3 text-xs">
+          <div v-if="ai.generatedPost.title"><p class="font-semibold text-slate-400">Title</p><p class="text-white">{{ ai.generatedPost.title }}</p></div>
+          <div><p class="font-semibold text-slate-400">Description</p><p class="whitespace-pre-wrap text-white">{{ ai.generatedPost.description }}</p></div>
+          <div v-if="ai.generatedPost.tags?.length"><p class="font-semibold text-slate-400">Tags</p><p class="text-slate-300">{{ ai.generatedPost.tags.join(' ') }}</p></div>
+          <div class="flex gap-2 pt-1">
+            <button class="button-primary h-7 flex-1 px-2 text-xs" @click="applyAiPost(ai.generatedPost!.network)"><Check class="h-3 w-3" />Push to Extension</button>
+            <button class="button h-7 px-2 text-xs" @click="ai.clearGeneratedPost()"><X class="h-3 w-3" /></button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -455,7 +550,7 @@ function lightboxNavigate(image: ImageWithPostState) {
           v-for="folder in childFolders"
           :key="folder.path"
           :ref="(el) => setFolderCardRef(el, folder.path)"
-          class="group relative flex flex-col items-center gap-3 rounded-xl border p-6 text-center transition"
+          class="group relative flex flex-col overflow-hidden rounded-xl border transition"
           :class="folder.isExcluded
             ? 'border-amber-500/30 bg-amber-500/5 opacity-60 hover:opacity-90'
             : folder.isLastVisited
@@ -465,21 +560,33 @@ function lightboxNavigate(image: ImageWithPostState) {
           <!-- Excluded badge -->
           <span
             v-if="folder.isExcluded"
-            class="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-400"
+            class="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-400"
           >
             <FolderX class="h-3 w-3" />Done
           </span>
 
-          <button class="flex w-full flex-col items-center gap-3" :title="folder.path" @click="navigateTo(folder.path)">
-            <Folder
-              class="h-12 w-12 transition"
-              :class="folder.isExcluded ? 'text-amber-500/50' : 'text-slate-500 group-hover:text-accent'"
-            />
-            <div class="w-full">
-              <p class="truncate font-medium" :class="folder.isExcluded ? 'text-slate-400' : 'text-white'">{{ folder.name }}</p>
+          <button class="flex w-full flex-col text-left" :title="folder.path" @click="navigateTo(folder.path)">
+            <!-- Thumbnail / icon area -->
+            <div class="relative aspect-[4/3] w-full overflow-hidden bg-panelSoft">
+              <img
+                v-if="folder.thumbnail"
+                :src="folder.thumbnail"
+                class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                loading="lazy"
+              />
+              <div v-else class="flex h-full items-center justify-center">
+                <Folder
+                  class="h-12 w-12 transition"
+                  :class="folder.isExcluded ? 'text-amber-500/50' : 'text-slate-500 group-hover:text-accent'"
+                />
+              </div>
+            </div>
+            <!-- Text info -->
+            <div class="w-full px-3 py-2">
+              <p class="truncate text-sm font-medium" :class="folder.isExcluded ? 'text-slate-400' : 'text-white'">{{ folder.name }}</p>
               <p class="mt-0.5 text-xs text-slate-500">{{ folder.count }} images</p>
               <!-- Network post stats chips -->
-              <div v-if="folder.postStats.size > 0" class="mt-1.5 flex flex-wrap justify-center gap-1">
+              <div v-if="folder.postStats.size > 0" class="mt-1.5 flex flex-wrap gap-1">
                 <span
                   v-for="[targetId, cnt] in folder.postStats"
                   :key="targetId"
@@ -492,7 +599,7 @@ function lightboxNavigate(image: ImageWithPostState) {
           </button>
 
           <!-- Bottom action row: exclude/include + delete -->
-          <div class="flex shrink-0 items-center gap-1">
+          <div class="flex shrink-0 items-center gap-1 border-t border-line px-2 py-1.5">
             <!-- Exclude / Re-include toggle -->
             <button
               v-if="!folder.isExcluded"
@@ -545,7 +652,7 @@ function lightboxNavigate(image: ImageWithPostState) {
           :active-target-id="imageStore.filters.targetId"
           :selected-image-ids="imageStore.selectedImageIds"
           :selected-images="imageStore.selectedImages"
-          @toggle-selected="imageStore.toggleSelected"
+          @toggle-selected="toggleCollection"
           @preview="previewImage = $event"
           @archive="imageStore.archive"
           @reveal="(image: ImageWithPostState) => runAction(() => revealImage(image), 'Opened in Finder.')"
@@ -571,60 +678,98 @@ function lightboxNavigate(image: ImageWithPostState) {
       :selected-image-ids="imageStore.selectedImageIds"
       @close="previewImage = null"
       @navigate="lightboxNavigate"
-      @toggle-selected="imageStore.toggleSelected"
+      @toggle-selected="toggleCollection"
       @delete="deleteSingleFromLightbox"
     />
 
-  <!-- ── Add-to-Collection modal ──────────────────────────────────────── -->
-  <Teleport to="body">
-    <div
-      v-if="showCollectionModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      @click.self="showCollectionModal = false"
+  <!-- ── Collection overlay tray (slides in over content) ─────────── -->
+  <Transition
+    enter-active-class="transition-transform duration-200 ease-out"
+    enter-from-class="translate-x-full"
+    enter-to-class="translate-x-0"
+    leave-active-class="transition-transform duration-150 ease-in"
+    leave-from-class="translate-x-0"
+    leave-to-class="translate-x-full"
+  >
+    <aside
+      v-if="collectionCount > 0 && showCollection"
+      class="absolute bottom-0 right-0 top-0 z-20 flex w-64 flex-col overflow-hidden border-l border-line bg-panel shadow-2xl"
     >
-      <div class="w-full max-w-md rounded-xl border border-line bg-panel p-6 shadow-2xl">
-        <div class="mb-4 flex items-center justify-between">
-          <h2 class="text-base font-semibold text-white">Add {{ selectedCount }} image(s) to Collection</h2>
-          <button class="button h-7 w-7 p-0" @click="showCollectionModal = false"><X class="h-4 w-4" /></button>
-        </div>
-
-        <!-- Error -->
-        <p v-if="collectionModalError" class="mb-3 rounded border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">
-          {{ collectionModalError }}
-        </p>
-
-        <!-- Existing collections -->
-        <div v-if="collectionStore.collections.length" class="mb-4 max-h-52 overflow-y-auto space-y-1">
-          <p class="mb-1.5 text-xs text-slate-400">Add to existing collection:</p>
-          <button
-            v-for="col in collectionStore.collections"
-            :key="col.id"
-            class="flex w-full items-center justify-between rounded-lg border border-line bg-ink px-3 py-2 text-left text-sm transition hover:border-accent hover:bg-accent/10"
-            @click="addToCollection(col.id)"
-          >
-            <span class="font-medium text-white">{{ col.name }}</span>
-            <span class="text-xs text-slate-500">{{ col.imageCount ?? 0 }} images</span>
+      <!-- Tray header -->
+      <div class="flex shrink-0 items-center justify-between border-b border-line px-3 py-2">
+        <span class="text-sm font-semibold text-white">
+          Collection
+          <span class="ml-1.5 rounded bg-accent/20 px-1.5 py-0.5 text-xs text-accent">{{ collectionCount }}</span>
+        </span>
+        <div class="flex items-center gap-1">
+          <button class="button h-6 px-2 text-xs hover:border-rose/60 hover:text-rose" title="Clear collection" @click="clearCollection">
+            <X class="h-3 w-3" />Clear
+          </button>
+          <button class="button h-6 w-6 p-0" title="Close tray" @click="showCollection = false">
+            <X class="h-3 w-3" />
           </button>
         </div>
+      </div>
 
-        <!-- Create new -->
-        <div class="border-t border-line pt-4">
-          <p class="mb-2 text-xs text-slate-400">Or create a new collection:</p>
-          <div class="flex gap-2">
-            <input
-              v-model="newCollectionName"
-              type="text"
-              placeholder="Collection name…"
-              class="flex-1 rounded-lg border border-line bg-ink px-3 py-1.5 text-sm text-white placeholder-slate-500 focus:border-accent focus:outline-none"
-              @keyup.enter="createAndAdd"
-            />
-            <button class="button-primary h-8 px-3 text-sm" @click="createAndAdd">
-              <Plus class="h-3.5 w-3.5" />Create
-            </button>
+      <!-- Action buttons -->
+      <div class="flex shrink-0 flex-col gap-1.5 border-b border-line px-3 py-2">
+        <button
+          class="button-primary h-8 w-full text-xs"
+          :disabled="!targetStore.activeTargetId"
+          :title="`Mark all ${collectionCount} collected images as posted on ${libActiveTargetName}`"
+          @click="markCollection"
+        >
+          <Check class="h-3.5 w-3.5" />Mark {{ libActiveTargetName }}
+        </button>
+        <button
+          class="button h-8 w-full gap-1.5 text-xs"
+          :disabled="!libActiveTargetType || !EXTENSION_TYPES.has(libActiveTargetType as any)"
+          :title="EXTENSION_TYPES.has(libActiveTargetType as any) ? `Queue for ${libActiveTargetName}` : `${libActiveTargetName} has no extension adapter`"
+          @click="queueCollection"
+        >
+          <PlatformIcon v-if="libActiveTargetType" :type="libActiveTargetType" :size="13" />
+          Queue
+        </button>
+        <button
+          class="button h-8 w-full gap-1.5 text-xs"
+          :class="showAiPanel ? 'border-accent bg-accent/10 text-accent' : ''"
+          :disabled="!targetStore.activeTargetId"
+          title="Generate AI post for the first collected image"
+          @click="showAiPanel = !showAiPanel; if (!showAiPanel) ai.clearGeneratedPost()"
+        >
+          <Sparkles class="h-3.5 w-3.5" />AI Post
+        </button>
+      </div>
+
+      <!-- Image list -->
+      <div class="flex-1 overflow-y-auto">
+        <div
+          v-for="img in collectionArray"
+          :key="img.id"
+          class="group flex items-center gap-2 border-b border-line px-2 py-1.5 hover:bg-panelSoft"
+        >
+          <img
+            v-if="img.thumbnailUrl"
+            :src="img.thumbnailUrl"
+            class="h-10 w-10 shrink-0 rounded object-cover"
+            loading="lazy"
+          />
+          <div v-else class="h-10 w-10 shrink-0 rounded bg-panelSoft" />
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-xs text-white">{{ img.filename }}</p>
+            <p class="truncate text-[10px] text-slate-500">{{ img.folderPath.split('/').pop() }}</p>
           </div>
+          <button
+            class="h-6 w-6 shrink-0 rounded p-0 opacity-0 transition hover:bg-rose/20 hover:text-rose group-hover:opacity-100"
+            title="Remove from collection"
+            @click="removeFromCollection(img.id)"
+          >
+            <X class="h-3 w-3" />
+          </button>
         </div>
       </div>
-    </div>
-  </Teleport>
-  </div>
+    </aside>
+  </Transition>
+
+  </div><!-- end outer -->
 </template>

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { Check, Clipboard, Copy, FolderOpen, Layers, Send, SkipForward, Shuffle, X } from "lucide-vue-next";
+import { Check, Clipboard, Copy, FolderOpen, Layers, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
 import { convertFileSrc } from "@/electron-shims/core";
 import FilterBar from "@/components/FilterBar.vue";
 import ImagePreview from "@/components/ImagePreview.vue";
+import PlatformIcon from "@/components/PlatformIcon.vue";
+import { useAiStore } from "@/stores/aiStore";
 import { useImageStore } from "@/stores/imageStore";
 import { usePickerStore } from "@/stores/pickerStore";
 import { useSourceStore } from "@/stores/sourceStore";
@@ -14,11 +16,13 @@ const picker = usePickerStore();
 const sources = useSourceStore();
 const targets = useTargetStore();
 const imageStore = useImageStore();
+const ai = useAiStore();
 
 const activeTargetName = computed(() => targets.activeTarget?.name ?? "target");
 
-const EXTENSION_TYPES = new Set<PostingTargetType>(["x", "bluesky", "deviantart", "civitai"]);
-const PLATFORM_LIMITS: Record<string, number> = { civitai: 20, x: 4, bluesky: 4, deviantart: 1 };
+const EXTENSION_TYPES = new Set<PostingTargetType>(["x", "bluesky", "deviantart", "civitai", "instagram", "facebook", "tumblr"]);
+const PLATFORM_LIMITS: Record<string, number> = { civitai: 20, x: 4, bluesky: 4, deviantart: 1, instagram: 10, facebook: 10, tumblr: 10 };
+
 
 const extensionTargets = computed(() =>
   targets.enabledTargets.filter((t) => EXTENSION_TYPES.has(t.type)),
@@ -57,6 +61,30 @@ function activateMultiPick() {
 function deactivateMultiPick() {
   picker.setMultiPickMode(false);
   showFolderPanel.value = false;
+}
+
+// ── AI panel ──────────────────────────────────────────────────────────────────
+const showAiPanel = ref(false);
+
+/** Collect current image paths for AI analysis. */
+function currentImagePaths(): string[] {
+  if (picker.multiPickMode) {
+    return picker.multiPickSlots.filter(Boolean).map((s) => s!.localPath).filter(Boolean) as string[];
+  }
+  return picker.currentImage?.localPath ? [picker.currentImage.localPath] : [];
+}
+
+async function generateAiPost() {
+  const paths = currentImagePaths();
+  if (!paths.length) return;
+  const network = targets.activeTarget?.type ?? "x";
+  // Always send only the first image — multiple base64 images cause payload errors.
+  await ai.generatePost([paths[0]], network);
+}
+
+async function applyAiPost() {
+  const network = targets.activeTarget?.type ?? "x";
+  await ai.pushPostContentToExtension(network);
 }
 
 onMounted(async () => {
@@ -213,15 +241,53 @@ onMounted(async () => {
           <Check class="h-4 w-4" />Mark {{ activeTargetName }} as posted
         </button>
         <template v-if="extensionTargets.length">
-          <span class="text-xs text-slate-500">Queue for Extension:</span>
+          <span class="text-xs text-slate-500">Queue:</span>
           <button
             v-for="target in extensionTargets"
             :key="target.id"
-            class="button h-8 px-3 text-sm"
+            class="button flex h-8 w-8 items-center justify-center p-0"
             :disabled="picker.multiPickSlots.every(s => !s)"
+            :title="`Queue for ${target.name}`"
             @click="picker.queueMultiPickForExtension(target.type)"
-          ><Send class="h-3.5 w-3.5" />{{ target.name }}</button>
+          ><PlatformIcon :type="target.type" :size="15" /></button>
         </template>
+
+        <!-- AI toggle -->
+        <button
+          class="button ml-auto h-8 gap-1.5 px-3 text-xs"
+          :class="showAiPanel ? 'border-accent bg-accent/10 text-accent' : ''"
+          :disabled="picker.multiPickSlots.every(s => !s)"
+          title="Generate AI post text"
+          @click="showAiPanel = !showAiPanel"
+        >
+          <Sparkles class="h-3.5 w-3.5" />AI Post
+        </button>
+      </div>
+
+      <!-- AI panel (multi-pick) -->
+      <div v-if="showAiPanel" class="shrink-0 space-y-2 rounded-xl border border-accent/30 bg-panel p-4">
+        <div class="flex items-center justify-between">
+          <p class="text-sm font-semibold text-white">AI Post Generator</p>
+          <button class="button h-6 w-6 p-0 text-xs" @click="showAiPanel = false; ai.clearGeneratedPost()"><X class="h-3 w-3" /></button>
+        </div>
+        <button
+          class="button-primary w-full rounded-md"
+          :disabled="ai.generating"
+          @click="generateAiPost"
+        >
+          <Sparkles class="h-4 w-4" />
+          {{ ai.generating ? 'Generating…' : `Generate for ${activeTargetName || 'selected network'}` }}
+        </button>
+        <div v-if="ai.generateError" class="rounded-md border border-rose/40 bg-rose/10 p-2 text-xs text-rose">{{ ai.generateError }}</div>
+        <div v-if="ai.generatedPost" class="space-y-2 rounded-xl border border-line bg-panelSoft p-3 text-xs">
+          <div v-if="ai.generatedPost.title"><p class="mb-1 font-semibold text-slate-400">Title</p><p class="text-white">{{ ai.generatedPost.title }}</p></div>
+          <div><p class="mb-1 font-semibold text-slate-400">Description</p><p class="whitespace-pre-wrap text-white">{{ ai.generatedPost.description }}</p></div>
+          <div v-if="ai.generatedPost.tags?.length"><p class="mb-1 font-semibold text-slate-400">Tags</p><p class="text-slate-300">{{ ai.generatedPost.tags.join(' ') }}</p></div>
+          <div class="flex gap-2 pt-1">
+            <button class="button-primary h-7 flex-1 px-2 text-xs" :disabled="!extensionTargets.length" @click="applyAiPost"><Check class="h-3 w-3" />Push to Extension</button>
+            <button class="button h-7 px-2 text-xs" @click="ai.clearGeneratedPost"><X class="h-3 w-3" /></button>
+          </div>
+        </div>
       </div>
     </template>
 
@@ -229,28 +295,10 @@ onMounted(async () => {
     <div v-else class="flex min-h-0 flex-1 gap-4">
       <ImagePreview :image="picker.currentImage" />
 
-      <aside class="surface flex w-96 shrink-0 flex-col gap-4 rounded-lg p-4">
+      <aside class="surface flex w-96 shrink-0 flex-col gap-4 overflow-y-auto rounded-lg p-4">
         <div>
           <h2 class="text-base font-semibold text-white">Use image</h2>
           <p class="mt-1 text-sm text-slate-400">Drag from Finder, copy the image, or reveal the file. Then mark the network.</p>
-        </div>
-
-        <div v-if="picker.currentImage" class="flex flex-wrap gap-2">
-          <button
-            v-for="target in targets.targets"
-            :key="target.id"
-            class="rounded-md border px-2 py-1 text-xs transition"
-            :class="{
-              'border-mint/50 bg-mint/10 text-mint': picker.currentImage.postStates[target.id] === 'posted',
-              'border-gold/50 bg-gold/10 text-gold': picker.currentImage.postStates[target.id] === 'planned',
-              'border-rose/50 bg-rose/10 text-rose': picker.currentImage.postStates[target.id] === 'skipped',
-              'border-line bg-panelSoft text-slate-400 hover:border-accent hover:text-accent': !picker.currentImage.postStates[target.id],
-            }"
-            :disabled="picker.currentImage.postStates[target.id] === 'posted'"
-            @click="picker.markTargetPosted(target.id)"
-          >
-            {{ picker.currentImage.postStates[target.id] === "posted" ? `${target.name}: posted` : `Mark ${target.name}` }}
-          </button>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
@@ -277,22 +325,76 @@ onMounted(async () => {
           Mark {{ activeTargetName }}
         </button>
 
-        <!-- Queue current image for Chrome Extension -->
-        <div v-if="extensionTargets.length" class="border-t border-line pt-3">
-          <p class="mb-2 text-xs text-slate-500">Queue for Chrome Extension</p>
-          <div class="flex flex-wrap gap-2">
+        <!-- Queue current image for active target -->
+        <div class="border-t border-line pt-3">
+          <button
+            class="button w-full gap-2"
+            :disabled="!picker.currentImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
+            :title="targets.activeTarget && EXTENSION_TYPES.has(targets.activeTarget.type) ? `Queue for ${activeTargetName}` : `${activeTargetName} has no extension adapter`"
+            @click="targets.activeTarget && queueCurrentForExtension(targets.activeTarget.type)"
+          >
+            <PlatformIcon v-if="targets.activeTarget" :type="targets.activeTarget.type" :size="14" />
+            Queue for Extension
+          </button>
+          <p v-if="queueMsg" class="mt-1 text-xs text-mint">{{ queueMsg }}</p>
+          <p v-if="queueErr" class="mt-1 text-xs text-rose">{{ queueErr }}</p>
+        </div>
+
+        <!-- ── AI Post Generator ─────────────────────────────────────── -->
+        <div class="border-t border-line pt-3">
+          <button
+            class="button w-full gap-2"
+            :class="showAiPanel ? 'border-accent bg-accent/10 text-accent' : ''"
+            :disabled="!picker.currentImage"
+            title="Generate AI post text for the selected network"
+            @click="showAiPanel = !showAiPanel"
+          >
+            <Sparkles class="h-4 w-4" />
+            AI Post Generator
+          </button>
+
+          <div v-if="showAiPanel" class="mt-3 space-y-3">
             <button
-              v-for="target in extensionTargets"
-              :key="target.id"
-              class="button shrink-0 text-sm"
-              :disabled="!picker.currentImage"
-              @click="queueCurrentForExtension(target.type)"
+              class="button-primary w-full rounded-md"
+              :disabled="ai.generating || !picker.currentImage"
+              @click="generateAiPost"
             >
-              <Send class="h-3.5 w-3.5" />{{ target.name }}
+              <Sparkles class="h-4 w-4" />
+              {{ ai.generating ? 'Generating…' : `Generate for ${activeTargetName || 'selected network'}` }}
             </button>
+
+            <div v-if="ai.generateError" class="rounded-md border border-rose/40 bg-rose/10 p-2 text-xs text-rose">
+              {{ ai.generateError }}
+            </div>
+
+            <div v-if="ai.generatedPost" class="space-y-2 rounded-xl border border-line bg-panelSoft p-3 text-xs">
+              <div v-if="ai.generatedPost.title">
+                <p class="mb-1 font-semibold text-slate-400">Title</p>
+                <p class="text-white">{{ ai.generatedPost.title }}</p>
+              </div>
+              <div>
+                <p class="mb-1 font-semibold text-slate-400">Description</p>
+                <p class="whitespace-pre-wrap text-white">{{ ai.generatedPost.description }}</p>
+              </div>
+              <div v-if="ai.generatedPost.tags?.length">
+                <p class="mb-1 font-semibold text-slate-400">Tags</p>
+                <p class="text-slate-300">{{ ai.generatedPost.tags.join(' ') }}</p>
+              </div>
+              <div class="flex gap-2 pt-1">
+                <button
+                  class="button-primary h-7 flex-1 px-2 text-xs"
+                  :disabled="!extensionTargets.length"
+                  :title="extensionTargets.length ? 'Push to Chrome Extension bridge' : 'No extension targets configured'"
+                  @click="applyAiPost"
+                >
+                  <Check class="h-3 w-3" />Push to Extension
+                </button>
+                <button class="button h-7 px-2 text-xs" title="Discard result" @click="ai.clearGeneratedPost">
+                  <X class="h-3 w-3" />
+                </button>
+              </div>
+            </div>
           </div>
-          <p v-if="queueMsg" class="mt-2 text-xs text-mint">{{ queueMsg }}</p>
-          <p v-if="queueErr" class="mt-2 text-xs text-rose">{{ queueErr }}</p>
         </div>
 
         <div v-if="picker.error" class="rounded-md border border-gold/40 bg-gold/10 p-3 text-sm text-gold">

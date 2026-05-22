@@ -45,6 +45,14 @@ contextBridge.exposeInMainWorld("desktop", {
     setQueue: (target, imageIds) => ipcRenderer.invoke("bridge:set-queue", target, imageIds),
     clearQueue: (target) => ipcRenderer.invoke("bridge:clear-queue", target),
     getQueue: (target) => ipcRenderer.invoke("bridge:get-queue", target),
+    // Push AI-generated post content so the extension can fill text fields.
+    setPostContent: (target, content) => ipcRenderer.invoke("bridge:set-post-content", target, content),
+    clearPostContent: (target) => ipcRenderer.invoke("bridge:clear-post-content", target),
+  },
+  ai: {
+    // Generate a post for the given network. imagePaths = absolute local paths.
+    // Returns { title?, description, tags[] } or throws on error.
+    generatePost: (imagePaths, network) => ipcRenderer.invoke("ai:generate-post", imagePaths, network),
   },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),
