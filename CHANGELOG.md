@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.25 - 2026-05-22
+
+- Release v0.2.25
+
+
 ## v0.2.24 - 2026-05-22
 
 - feat: cross-folder collection tray, folder preview thumbnails, AI post generator, multi-network queue
