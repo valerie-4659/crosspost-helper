@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.26 - 2026-05-22
+
+- feat: Job Queue system + unified Send-to-Extension flow
+
+
 ## v0.2.25 - 2026-05-22
 
 - Release v0.2.25
