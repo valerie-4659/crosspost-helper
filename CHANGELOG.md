@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.28 - 2026-05-23
+
+- Release v0.2.28
+
+
 ## v0.2.27 - 2026-05-23
 
 - feat: AI hint input + full-res picker preview
