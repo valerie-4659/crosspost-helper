@@ -10,8 +10,11 @@ const props = defineProps<{
 
 const imageUrl = computed(() => {
   if (!props.image) return "";
-  if (props.image.thumbnailUrl) return props.image.thumbnailUrl;
+  // Prefer the full local file so the picker shows the real image at full
+  // resolution — the thumbnail (400 px JPEG) is only a fallback for cases
+  // where the local file is no longer accessible.
   if (props.image.localPath) return convertFileSrc(props.image.localPath);
+  if (props.image.thumbnailUrl) return props.image.thumbnailUrl;
   return "";
 });
 

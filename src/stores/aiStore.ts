@@ -63,12 +63,12 @@ export const useAiStore = defineStore("ai", () => {
    * @param imagePaths  Absolute local paths (max 4)
    * @param network     Target network type string
    */
-  async function generatePost(imagePaths: string[], network: string) {
+  async function generatePost(imagePaths: string[], network: string, hint?: string) {
     generating.value = true;
     generateError.value = "";
     generatedPost.value = null;
     try {
-      const result = await window.desktop.ai.generatePost(imagePaths, network);
+      const result = await window.desktop.ai.generatePost(imagePaths, network, hint ?? "");
       generatedPost.value = { ...result, network };
     } catch (err) {
       generateError.value = err instanceof Error ? err.message : String(err);

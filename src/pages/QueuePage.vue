@@ -26,6 +26,7 @@ async function submitCreate() {
 
 // ── AI generation per slot ────────────────────────────────────────────────────
 const generatingSlotId = ref<string | null>(null);
+const aiHint = ref("");
 
 async function generateAiForSlot(slot: QueueSlot) {
   const images = queueStore.slotImages[slot.id] ?? [];
@@ -34,7 +35,7 @@ async function generateAiForSlot(slot: QueueSlot) {
   generatingSlotId.value = slot.id;
   ai.clearGeneratedPost();
   const target = targetStore.targets.find((t) => t.id === queueStore.activeQueue?.targetId);
-  await ai.generatePost([localPath], target?.type ?? "x");
+  await ai.generatePost([localPath], target?.type ?? "x", aiHint.value.trim() || undefined);
   if (ai.generatedPost) {
     await queueStore.setSlotAi(
       slot.id,
@@ -131,7 +132,7 @@ async function execGenerateAI() {
   execAiError.value  = null;
   try {
     const target = targetStore.targets.find((t) => t.id === queueStore.activeQueue!.targetId);
-    await ai.generatePost([localPath], target?.type ?? "x");
+    await ai.generatePost([localPath], target?.type ?? "x", aiHint.value.trim() || undefined);
     if (ai.generatedPost) {
       execAiResult.value = {
         title:       ai.generatedPost.title       ?? "",
@@ -270,21 +271,29 @@ onMounted(async () => {
 
       <template v-else>
         <!-- Queue header -->
-        <div class="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3">
-          <div class="flex-1 min-w-0">
-            <h2 class="font-semibold text-white truncate">{{ queueStore.activeQueue.name }}</h2>
-            <p class="text-xs text-slate-400">{{ queueStore.activeQueue.targetName }} · {{ queueStore.activeQueue.pendingCount }} pending</p>
+        <div class="flex shrink-0 flex-col gap-2 border-b border-line px-4 py-3">
+          <div class="flex items-center gap-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="font-semibold text-white truncate">{{ queueStore.activeQueue.name }}</h2>
+              <p class="text-xs text-slate-400">{{ queueStore.activeQueue.targetName }} · {{ queueStore.activeQueue.pendingCount }} pending</p>
+            </div>
+            <button
+              class="button h-7 px-2 text-xs text-slate-500 hover:text-slate-300"
+              title="Debug: log slot image data to console"
+              @click="debugSlotData"
+            >🔍</button>
+            <button
+              class="button-primary h-8 gap-1.5 px-3 text-xs"
+              :disabled="!pendingSlots.length"
+              @click="startExecution"
+            ><Play class="h-3.5 w-3.5" />Execute</button>
           </div>
-          <button
-            class="button h-7 px-2 text-xs text-slate-500 hover:text-slate-300"
-            title="Debug: log slot image data to console"
-            @click="debugSlotData"
-          >🔍</button>
-          <button
-            class="button-primary h-8 gap-1.5 px-3 text-xs"
-            :disabled="!pendingSlots.length"
-            @click="startExecution"
-          ><Play class="h-3.5 w-3.5" />Execute</button>
+          <!-- AI hint input — shared across all slots and execute mode -->
+          <input
+            v-model="aiHint"
+            class="input h-7 w-full text-xs"
+            placeholder="AI context (optional) — e.g. this is a post for #FoxyFriday"
+          />
         </div>
 
         <!-- Slot list -->
@@ -419,24 +428,31 @@ onMounted(async () => {
         <!-- ── Exec actions footer — step-based ───────────────────────── -->
 
         <!-- Step: compose — ask about AI or send directly -->
-        <div v-if="execStep === 'compose' && execSlot" class="flex gap-3 border-t border-line px-6 py-4">
-          <button
-            class="button-primary h-10 gap-2 px-4"
-            :disabled="!(queueStore.slotImages[execSlot.id]?.length)"
-            @click="execGenerateAI"
-          >
-            <Sparkles class="h-4 w-4" />Generate AI Post
-          </button>
-          <button
-            class="button h-10 gap-2 px-4"
-            :disabled="!(queueStore.slotImages[execSlot.id]?.length)"
-            @click="execSend"
-          >
-            📤 Send to Extension
-          </button>
-          <button class="button h-10 gap-2 px-4 ml-auto" @click="execSkip">
-            <SkipForward class="h-4 w-4" />Skip
-          </button>
+        <div v-if="execStep === 'compose' && execSlot" class="flex flex-col gap-2 border-t border-line px-6 py-4">
+          <input
+            v-model="aiHint"
+            class="input h-7 w-full text-xs"
+            placeholder="AI context (optional) — e.g. this is a post for #FoxyFriday"
+          />
+          <div class="flex gap-3">
+            <button
+              class="button-primary h-10 gap-2 px-4"
+              :disabled="!(queueStore.slotImages[execSlot.id]?.length)"
+              @click="execGenerateAI"
+            >
+              <Sparkles class="h-4 w-4" />Generate AI Post
+            </button>
+            <button
+              class="button h-10 gap-2 px-4"
+              :disabled="!(queueStore.slotImages[execSlot.id]?.length)"
+              @click="execSend"
+            >
+              📤 Send to Extension
+            </button>
+            <button class="button h-10 gap-2 px-4 ml-auto" @click="execSkip">
+              <SkipForward class="h-4 w-4" />Skip
+            </button>
+          </div>
         </div>
 
         <!-- Step: generating — spinner -->

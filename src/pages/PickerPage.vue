@@ -124,6 +124,7 @@ function deactivateMultiPick() {
 
 // ── AI panel ──────────────────────────────────────────────────────────────────
 const showAiPanel = ref(false);
+const aiHint = ref("");
 
 /** Collect current image paths for AI analysis. */
 function currentImagePaths(): string[] {
@@ -138,7 +139,7 @@ async function generateAiPost() {
   if (!paths.length) return;
   const network = targets.activeTarget?.type ?? "x";
   // Always send only the first image — multiple base64 images cause payload errors.
-  await ai.generatePost([paths[0]], network);
+  await ai.generatePost([paths[0]], network, aiHint.value.trim() || undefined);
 }
 
 
@@ -328,6 +329,12 @@ onMounted(async () => {
           <p class="text-sm font-semibold text-white">AI Post Generator</p>
           <button class="button h-6 w-6 p-0 text-xs" @click="showAiPanel = false; ai.clearGeneratedPost()"><X class="h-3 w-3" /></button>
         </div>
+        <textarea
+          v-model="aiHint"
+          rows="2"
+          class="input w-full resize-none text-xs"
+          placeholder="Optional context… e.g. this is a post for #FoxyFriday"
+        />
         <button
           class="button-primary w-full rounded-md"
           :disabled="ai.generating"
@@ -436,6 +443,12 @@ onMounted(async () => {
           </button>
 
           <div v-if="showAiPanel" class="mt-3 space-y-3">
+            <textarea
+              v-model="aiHint"
+              rows="2"
+              class="input w-full resize-none text-xs"
+              placeholder="Optional context… e.g. this is a post for #FoxyFriday"
+            />
             <button
               class="button-primary w-full rounded-md"
               :disabled="ai.generating || !picker.currentImage"

@@ -47,7 +47,7 @@ declare global {
       };
       ai: {
         /** Ask main process to generate a post for the given network via the configured AI provider. */
-        generatePost(imagePaths: string[], network: string): Promise<{ title: string; description: string; tags: string[] }>;
+        generatePost(imagePaths: string[], network: string, hint?: string): Promise<{ title: string; description: string; tags: string[] }>;
       };
       scan: {
         /**

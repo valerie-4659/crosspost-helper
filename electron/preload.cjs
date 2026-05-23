@@ -52,7 +52,7 @@ contextBridge.exposeInMainWorld("desktop", {
   ai: {
     // Generate a post for the given network. imagePaths = absolute local paths.
     // Returns { title?, description, tags[] } or throws on error.
-    generatePost: (imagePaths, network) => ipcRenderer.invoke("ai:generate-post", imagePaths, network),
+    generatePost: (imagePaths, network, hint) => ipcRenderer.invoke("ai:generate-post", imagePaths, network, hint),
   },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),
