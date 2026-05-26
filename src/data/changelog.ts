@@ -6,6 +6,22 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.32",
+    date: "2026-05-26",
+    items: [
+      "feat: AI post modal in library, optional perspective, one-step queue",
+      "feat: library sorting (date/name/pick), folder history, fix text injection",
+    ],
+  },
+  {
+    version: "0.2.31",
+    date: "2026-05-26",
+    items: [
+      "feat: AI post modal in library, optional perspective, one-step queue",
+      "feat: library sorting (date/name/pick), folder history, fix text injection",
+    ],
+  },
+  {
     version: "0.2.30",
     date: "2026-05-26",
     items: [

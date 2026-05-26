@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.32 - 2026-05-26
+
+- feat: AI post modal in library, optional perspective, one-step queue
+- feat: library sorting (date/name/pick), folder history, fix text injection
+
+
+## v0.2.31 - 2026-05-26
+
+- feat: AI post modal in library, optional perspective, one-step queue
+- feat: library sorting (date/name/pick), folder history, fix text injection
+
+
 ## v0.2.30 - 2026-05-26
 
 - feat: shared AiPostPanel, post types, perspective, incremental scan, network hide filter, library sorting
