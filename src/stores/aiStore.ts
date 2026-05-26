@@ -62,13 +62,30 @@ export const useAiStore = defineStore("ai", () => {
    * Call the main-process AI handler to generate a post for the given network.
    * @param imagePaths  Absolute local paths (max 4)
    * @param network     Target network type string
+   * @param hint        Optional user hint / context
+   * @param postType    "engagement" | "qt" | "morning" | "goodnight" | "story"
+   * @param perspective "i" | "oc"
+   * @param ocName      OC display name (only used when perspective === "oc")
    */
-  async function generatePost(imagePaths: string[], network: string, hint?: string) {
+  async function generatePost(
+    imagePaths: string[],
+    network: string,
+    hint?: string,
+    postType?: string,
+    perspective?: string,
+    ocName?: string,
+  ) {
     generating.value = true;
     generateError.value = "";
     generatedPost.value = null;
     try {
-      const result = await window.desktop.ai.generatePost(imagePaths, network, hint ?? "");
+      const result = await window.desktop.ai.generatePost(
+        imagePaths, network,
+        hint ?? "",
+        postType ?? "engagement",
+        perspective ?? "i",
+        ocName ?? "",
+      );
       generatedPost.value = { ...result, network };
     } catch (err) {
       generateError.value = err instanceof Error ? err.message : String(err);

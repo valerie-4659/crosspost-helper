@@ -19,6 +19,7 @@ export const useImageStore = defineStore("images", () => {
     includeArchived: false,
     excludePostedAnywhere: false,
     rating: "all",
+    sortBy: "date_desc",
   });
   const selectedImages = computed(() =>
     images.value.filter((image) => selectedImageIds.value.has(image.id)),

@@ -3,6 +3,13 @@
 
 const BRIDGE_URL = "http://127.0.0.1:27842";
 
+// Guard: only register the message listener once per document lifetime.
+// X (and other SPAs) re-run content scripts on soft navigation which would
+// add a second (third, …) listener — each one calls inject() independently,
+// causing duplicate text insertion.
+const _bridgeFirstRun = !window.__crosspostBridgeListenerAttached;
+window.__crosspostBridgeListenerAttached = true;
+
 window.CrosspostBridge = {
   _currentAdapter: null,
 
@@ -87,14 +94,40 @@ window.CrosspostBridge = {
       await new Promise((r) => setTimeout(r, 80));
 
       if (element.isContentEditable) {
-        // Select all existing text, then replace with new text via execCommand.
-        document.execCommand("selectAll", false, null);
-        document.execCommand("insertText", false, text);
-        // Verify the text was actually inserted (don't trust the return value —
-        // React/ProseMirror editors often return false even on success).
-        if ((element.textContent ?? "").trim()) return true;
+        // ── Primary: synthetic ClipboardEvent paste ────────────────────────
+        // X's ProseMirror editor has a native "paste" handler that correctly
+        // inserts text into its own transaction system and updates React state.
+        // This is more reliable than execCommand which can fire React's own
+        // insertText handler a second time and produce duplicate output.
+        const dt = new DataTransfer();
+        dt.setData("text/plain", text);
+        const pasteEvent = new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: dt,
+        });
 
-        // Fallback: set innerText directly.
+        // First clear any existing content via selectAll + delete
+        document.execCommand("selectAll", false, null);
+        document.execCommand("delete", false, null);
+
+        element.dispatchEvent(pasteEvent);
+
+        // Give the editor a tick to process the paste event
+        await new Promise((r) => setTimeout(r, 50));
+
+        // Verify by checking our text is actually in there
+        const inserted = (element.textContent ?? "").replace(/\u200B/g, "").trim();
+        if (inserted) return true;
+
+        // ── Fallback: execCommand insertText ──────────────────────────────
+        document.execCommand("selectAll", false, null);
+        const ok = document.execCommand("insertText", false, text);
+        await new Promise((r) => setTimeout(r, 30));
+        const afterExec = (element.textContent ?? "").replace(/\u200B/g, "").trim();
+        if (afterExec) return true;
+
+        // ── Last resort: innerText + plain input event ────────────────────
         // IMPORTANT: do NOT dispatch InputEvent with data+inputType="insertText" —
         // React editors re-process the `data` field and insert the text a second
         // time, causing duplicated content. A plain "input" event is enough to
@@ -235,19 +268,22 @@ window.CrosspostBridge = {
 };
 
 // Listen for INJECT_IMAGE and MARK_POSTED messages from the popup.
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type === "INJECT_IMAGE") {
-    const adapter = window.CrosspostBridge._currentAdapter;
-    if (!adapter) { sendResponse({ ok: false, error: "No adapter for this page" }); return; }
-    adapter.inject(msg.target)
-      .then((result) => sendResponse(result ? { ok: true, ...result } : { ok: false, error: "Injection failed" }))
-      .catch((err) => sendResponse({ ok: false, error: err.message }));
-    return true; // async
-  }
-  if (msg.type === "MARK_POSTED") {
-    window.CrosspostBridge.markPosted(msg.imageId, msg.targetId)
-      .then(() => sendResponse({ ok: true }))
-      .catch((err) => sendResponse({ ok: false, error: err.message }));
-    return true;
-  }
-});
+// The guard above ensures this block runs only once per document lifetime.
+if (_bridgeFirstRun) {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg.type === "INJECT_IMAGE") {
+      const adapter = window.CrosspostBridge._currentAdapter;
+      if (!adapter) { sendResponse({ ok: false, error: "No adapter for this page" }); return; }
+      adapter.inject(msg.target)
+        .then((result) => sendResponse(result ? { ok: true, ...result } : { ok: false, error: "Injection failed" }))
+        .catch((err) => sendResponse({ ok: false, error: err.message }));
+      return true; // async
+    }
+    if (msg.type === "MARK_POSTED") {
+      window.CrosspostBridge.markPosted(msg.imageId, msg.targetId)
+        .then(() => sendResponse({ ok: true }))
+        .catch((err) => sendResponse({ ok: false, error: err.message }));
+      return true;
+    }
+  });
+}

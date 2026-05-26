@@ -20,6 +20,7 @@ export async function scanImageSource(source: ImageSource): Promise<ScanResult> 
         scanned: 0,
         indexed: 0,
         duplicates: 0,
+        removed: 0,
         errors: [error instanceof Error ? error.message : String(error)],
       };
     }
@@ -31,6 +32,7 @@ export async function scanImageSource(source: ImageSource): Promise<ScanResult> 
     scanned: 0,
     indexed: 0,
     duplicates: 0,
+    removed: 0,
     errors: [],
   };
 

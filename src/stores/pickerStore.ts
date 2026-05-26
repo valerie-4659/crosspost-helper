@@ -7,9 +7,12 @@ import { upsertPostRecord } from "@/repositories/postRecordRepository";
 import { useTargetStore } from "./targetStore";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
 
+const HISTORY_MAX = 10;
+
 export const usePickerStore = defineStore("picker", () => {
   const targetStore = useTargetStore();
   const currentImage = ref<ImageWithPostState | null>(null);
+  const history = ref<ImageWithPostState[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
   const message = ref("");
@@ -23,21 +26,36 @@ export const usePickerStore = defineStore("picker", () => {
   });
 
   const canPick = computed(() => Boolean(targetStore.activeTargetId));
+  const canGoBack = computed(() => history.value.length > 0);
 
   async function pickRandom() {
     loading.value = true;
     error.value = null;
     try {
       filters.value.targetId = targetStore.activeTargetId;
-      currentImage.value = await pickRandomUnpostedImage(filters.value);
-      if (!currentImage.value) {
+      const next = await pickRandomUnpostedImage(filters.value);
+      if (!next) {
         error.value = "No unposted image matched the current filters.";
+        return;
       }
+      // Push current image into history before replacing it
+      if (currentImage.value) {
+        history.value = [currentImage.value, ...history.value].slice(0, HISTORY_MAX);
+      }
+      currentImage.value = next;
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : String(caught);
     } finally {
       loading.value = false;
     }
+  }
+
+  function goBack() {
+    if (!history.value.length) return;
+    const [prev, ...rest] = history.value;
+    history.value = rest;
+    currentImage.value = prev;
+    error.value = null;
   }
 
   async function markPosted() {
@@ -177,12 +195,15 @@ export const usePickerStore = defineStore("picker", () => {
 
   return {
     currentImage,
+    history,
     filters,
     loading,
     error,
     message,
     canPick,
+    canGoBack,
     pickRandom,
+    goBack,
     markPosted,
     markTargetPosted,
     markSkipped,

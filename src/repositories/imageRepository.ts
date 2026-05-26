@@ -129,6 +129,19 @@ export async function listImages(filters: Partial<ImageFilters> = {}): Promise<I
          OR images.folder_path LIKE ef.folder_path || '/%'
     )`);
   }
+  if (filters.hidePostedForTargetId) {
+    params.push(filters.hidePostedForTargetId);
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM post_records hide_posted
+      WHERE hide_posted.image_id = images.id
+      AND hide_posted.target_id = $${params.length}
+      AND hide_posted.status = 'posted'
+    )`);
+  }
+
+  const orderBy = filters.sortBy === "date_asc"
+    ? "COALESCE(images.created_at, images.modified_at, images.indexed_at) ASC"
+    : "COALESCE(images.created_at, images.modified_at, images.indexed_at) DESC";
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const rows = await db.select<ImageListRow[]>(
@@ -139,7 +152,7 @@ export async function listImages(filters: Partial<ImageFilters> = {}): Promise<I
      LEFT JOIN post_records ON post_records.image_id = images.id
      ${where}
      GROUP BY images.id
-     ORDER BY COALESCE(images.created_at, images.modified_at, images.indexed_at) DESC
+     ORDER BY ${orderBy}
      LIMIT 500`,
     params,
   );

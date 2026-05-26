@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { Archive, Check, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
+import AiPostPanel from "@/components/AiPostPanel.vue";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import ImageLightbox from "@/components/ImageLightbox.vue";
@@ -79,6 +80,19 @@ onMounted(() => imageStore.load());
 watch(() => imageStore.filters, () => imageStore.load(), { deep: true });
 watch(() => imageStore.showExcludedFolders, () => imageStore.load());
 
+// ── Network hide-posted toggle ─────────────────────────────────────────────
+/** The target ID selected in the hide-posted dropdown (not yet applied). */
+const hidePostedNetworkId = ref("");
+
+function toggleHidePosted() {
+  if (imageStore.filters.hidePostedForTargetId) {
+    // Already active → turn off
+    imageStore.filters.hidePostedForTargetId = undefined;
+  } else {
+    imageStore.filters.hidePostedForTargetId = hidePostedNetworkId.value || undefined;
+  }
+}
+
 // Active network for toolbar actions (mark / queue / AI) — shared with picker store.
 const libActiveTarget = computed(() => targetStore.enabledTargets.find((t) => t.id === targetStore.activeTargetId) ?? null);
 const libActiveTargetName = computed(() => libActiveTarget.value?.name ?? "");
@@ -106,14 +120,6 @@ async function queueForExtension(targetType: string) {
   } catch (err) {
     imageStore.error = err instanceof Error ? err.message : String(err);
   }
-}
-
-async function generateAiPost(network: string) {
-  // Use the first collected image; fall back to first selected image in current view.
-  const firstPath =
-    (collectionArray.value[0] ?? imageStore.selectedImages[0])?.localPath ?? null;
-  if (!firstPath) return;
-  await ai.generatePost([firstPath], network);
 }
 
 async function applyAiPost(network: string) {
@@ -349,10 +355,7 @@ async function markCollection() {
   clearCollection();
 }
 
-// Auto-open when first image is added.
-watch(collectionCount, (n, old) => {
-  if (old === 0 && n > 0) showCollection.value = true;
-});
+// Collection tray stays closed until the user explicitly clicks the Collection button.
 
 // ── Fill Queue Slots from collection ────────────────────────────────────────
 const queueStore = useQueueStore();
@@ -431,6 +434,38 @@ async function fillSlot(slotId: string) {
           Collection
           <span class="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-ink">{{ collectionCount }}</span>
         </button>
+        <!-- Sort order toggle -->
+        <button
+          class="button gap-1.5"
+          :title="imageStore.filters.sortBy === 'date_asc' ? 'Sort: oldest first' : 'Sort: newest first'"
+          @click="imageStore.filters.sortBy = imageStore.filters.sortBy === 'date_asc' ? 'date_desc' : 'date_asc'"
+        >
+          <span class="text-sm">{{ imageStore.filters.sortBy === 'date_asc' ? '↑' : '↓' }}</span>
+          {{ imageStore.filters.sortBy === 'date_asc' ? 'Oldest' : 'Newest' }}
+        </button>
+
+        <!-- Hide-posted-for-network toggle -->
+        <div class="flex items-center gap-0.5">
+          <select
+            v-model="hidePostedNetworkId"
+            class="input h-8 rounded-r-none border-r-0 py-0 text-xs"
+            title="Select network to hide already-posted images"
+          >
+            <option value="">All images</option>
+            <option v-for="t in targetStore.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
+          </select>
+          <button
+            class="button h-8 rounded-l-none border-l-0 px-2 text-xs"
+            :class="imageStore.filters.hidePostedForTargetId ? 'border-rose/50 bg-rose/10 text-rose' : ''"
+            :title="imageStore.filters.hidePostedForTargetId ? 'Click to show posted images again' : 'Hide images already posted to selected network'"
+            :disabled="!hidePostedNetworkId"
+            @click="toggleHidePosted"
+          >
+            <EyeOff v-if="imageStore.filters.hidePostedForTargetId" class="h-3.5 w-3.5" />
+            <Eye v-else class="h-3.5 w-3.5" />
+          </button>
+        </div>
+
         <button
           class="button gap-1.5"
           :class="imageStore.showExcludedFolders ? 'border-amber-500/60 bg-amber-500/10 text-amber-400' : ''"
@@ -538,24 +573,14 @@ async function fillSlot(slotId: string) {
           <p class="text-xs font-semibold text-white">AI Post — {{ libActiveTargetName }}</p>
           <button class="button h-6 w-6 p-0" @click="showAiPanel = false; ai.clearGeneratedPost()"><X class="h-3 w-3" /></button>
         </div>
-        <button
-          class="button-primary w-full rounded-md text-sm"
-          :disabled="ai.generating"
-          @click="generateAiPost(libActiveTargetType)"
-        >
-          <Sparkles class="h-4 w-4" />
-          {{ ai.generating ? 'Generating…' : `Generate for ${libActiveTargetName}` }}
-        </button>
-        <div v-if="ai.generateError" class="mt-2 rounded-md border border-rose/40 bg-rose/10 p-2 text-xs text-rose">{{ ai.generateError }}</div>
-        <div v-if="ai.generatedPost" class="mt-2 space-y-1.5 rounded-xl border border-line bg-panel p-3 text-xs">
-          <div v-if="ai.generatedPost.title"><p class="font-semibold text-slate-400">Title</p><p class="text-white">{{ ai.generatedPost.title }}</p></div>
-          <div><p class="font-semibold text-slate-400">Description</p><p class="whitespace-pre-wrap text-white">{{ ai.generatedPost.description }}</p></div>
-          <div v-if="ai.generatedPost.tags?.length"><p class="font-semibold text-slate-400">Tags</p><p class="text-slate-300">{{ ai.generatedPost.tags.join(' ') }}</p></div>
-          <div class="flex gap-2 pt-1">
-            <button class="button-primary h-7 flex-1 px-2 text-xs" @click="applyAiPost(ai.generatedPost!.network)"><Check class="h-3 w-3" />Push to Extension</button>
-            <button class="button h-7 px-2 text-xs" @click="ai.clearGeneratedPost()"><X class="h-3 w-3" /></button>
-          </div>
-        </div>
+        <AiPostPanel
+          :image-paths="[(collectionArray[0] ?? imageStore.selectedImages[0])?.localPath ?? ''].filter(Boolean)"
+          :network="libActiveTargetType"
+          :network-name="libActiveTargetName"
+          :disabled="selectedCount === 0 && collectionArray.length === 0"
+          :show-push-button="true"
+          @push="applyAiPost"
+        />
       </div>
     </section>
 

@@ -61,6 +61,10 @@ export interface ImageFilters {
   excludePostedAnywhere: boolean;
   /** When true, images from excluded folders are included in results (Library "Show excluded" toggle). */
   includeExcludedFolders?: boolean;
+  /** Library toolbar: hide images already posted to this target ID (separate from the FilterBar targetId). */
+  hidePostedForTargetId?: string;
+  /** Library sort order for the image grid. */
+  sortBy?: "date_desc" | "date_asc" | "folder_used";
 }
 
 export interface DuplicateWarning {

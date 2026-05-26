@@ -18,5 +18,6 @@ export interface ScanResult {
   scanned: number;
   indexed: number;
   duplicates: number;
+  removed: number;
   errors: string[];
 }

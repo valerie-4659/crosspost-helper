@@ -98,9 +98,12 @@ async function addPlaceholder(type: "google_drive" | "dropbox") {
             </div>
 
             <p v-if="!sourceStore.scanningSourceId && sourceStore.lastScanResults[source.id]" class="mt-2 text-sm text-slate-300">
-              Scanned {{ sourceStore.lastScanResults[source.id].scanned }},
-              new {{ sourceStore.lastScanResults[source.id].indexed }},
-              existing {{ sourceStore.lastScanResults[source.id].duplicates }}
+              Scanned {{ sourceStore.lastScanResults[source.id].scanned.toLocaleString() }},
+              <span class="text-mint">+{{ sourceStore.lastScanResults[source.id].indexed.toLocaleString() }} new</span>,
+              {{ sourceStore.lastScanResults[source.id].duplicates.toLocaleString() }} unchanged
+              <template v-if="sourceStore.lastScanResults[source.id].removed > 0">
+                , <span class="text-amber-400">−{{ sourceStore.lastScanResults[source.id].removed.toLocaleString() }} removed</span>
+              </template>
             </p>
             <p v-if="sourceStore.lastScanResults[source.id]?.errors.length" class="mt-2 text-sm text-rose">
               {{ sourceStore.lastScanResults[source.id].errors.join(", ") }}

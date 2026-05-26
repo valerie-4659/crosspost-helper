@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Check, Clipboard, Copy, FolderOpen, Layers, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
+import { Check, ChevronLeft, Clipboard, Copy, FolderOpen, Layers, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
+import AiPostPanel from "@/components/AiPostPanel.vue";
 import { convertFileSrc } from "@/electron-shims/core";
 import FilterBar from "@/components/FilterBar.vue";
 import ImagePreview from "@/components/ImagePreview.vue";
@@ -11,7 +12,7 @@ import { usePickerStore } from "@/stores/pickerStore";
 import { useSourceStore } from "@/stores/sourceStore";
 import { useTargetStore } from "@/stores/targetStore";
 import { useQueueStore } from "@/stores/queueStore";
-import { listSlots } from "@/repositories/queueRepository";
+import { createSlot, listSlots } from "@/repositories/queueRepository";
 import type { PostingTargetType } from "@/types/postingTarget";
 import type { QueueSlot } from "@/types/queue";
 
@@ -64,6 +65,12 @@ const showAssignPanel = ref(false);
 const assignQueueId = ref("");
 const assignSlots = ref<QueueSlot[]>([]);
 const assignSlotId = ref("");
+const addingSlot = ref(false);
+
+// Inline "create new queue" form
+const showNewQueueForm = ref(false);
+const newQueueName = ref("");
+const newQueueTargetId = ref("");
 
 watch(assignQueueId, async (id) => {
   assignSlotId.value = "";
@@ -74,6 +81,7 @@ watch(assignQueueId, async (id) => {
 async function openPickerAssignPanel() {
   if (!queueStore.queues.length) await queueStore.load();
   assignQueueId.value = queueStore.queues[0]?.id ?? "";
+  showNewQueueForm.value = false;
   showAssignPanel.value = true;
 }
 
@@ -85,6 +93,30 @@ async function confirmPickerAssign() {
   const qName = queueStore.queues.find((q) => q.id === assignQueueId.value)?.name ?? "";
   queueMsg.value = `✓ Assigned to "${qName}" · Slot ${slotPos}.`;
   showAssignPanel.value = false;
+  showNewQueueForm.value = false;
+}
+
+// Create a new queue inline (no initial slots — we add slots on demand)
+async function createQueueInline() {
+  if (!newQueueName.value.trim() || !newQueueTargetId.value) return;
+  await queueStore.addQueue(newQueueName.value.trim(), newQueueTargetId.value, 0);
+  const created = queueStore.queues[queueStore.queues.length - 1];
+  newQueueName.value = "";
+  showNewQueueForm.value = false;
+  assignQueueId.value = created.id;
+}
+
+// Add a slot to the currently selected queue on the fly
+async function addSlotInline() {
+  if (!assignQueueId.value) return;
+  addingSlot.value = true;
+  try {
+    const newSlot = await createSlot(assignQueueId.value, assignSlots.value.length);
+    assignSlots.value = [...assignSlots.value, newSlot];
+    assignSlotId.value = newSlot.id;
+  } finally {
+    addingSlot.value = false;
+  }
 }
 
 // ── Multi-pick: send all slots to Extension + optional AI text ───────────
@@ -124,7 +156,6 @@ function deactivateMultiPick() {
 
 // ── AI panel ──────────────────────────────────────────────────────────────────
 const showAiPanel = ref(false);
-const aiHint = ref("");
 
 /** Collect current image paths for AI analysis. */
 function currentImagePaths(): string[] {
@@ -132,14 +163,6 @@ function currentImagePaths(): string[] {
     return picker.multiPickSlots.filter(Boolean).map((s) => s!.localPath).filter(Boolean) as string[];
   }
   return picker.currentImage?.localPath ? [picker.currentImage.localPath] : [];
-}
-
-async function generateAiPost() {
-  const paths = currentImagePaths();
-  if (!paths.length) return;
-  const network = targets.activeTarget?.type ?? "x";
-  // Always send only the first image — multiple base64 images cause payload errors.
-  await ai.generatePost([paths[0]], network, aiHint.value.trim() || undefined);
 }
 
 
@@ -171,14 +194,23 @@ onMounted(async () => {
           <Layers class="h-4 w-4" />
           Multi-Pick
         </button>
-        <button
-          v-if="!picker.multiPickMode"
-          class="button-primary rounded-md"
-          :disabled="picker.loading || !picker.canPick"
-          @click="picker.pickRandom"
-        >
-          <Shuffle class="h-4 w-4" />Pick random
-        </button>
+        <template v-if="!picker.multiPickMode">
+          <button
+            class="button rounded-md"
+            :disabled="!picker.canGoBack"
+            :title="picker.canGoBack ? `Go back (${picker.history.length} in history)` : 'No history yet'"
+            @click="picker.goBack"
+          >
+            <ChevronLeft class="h-4 w-4" />Back
+          </button>
+          <button
+            class="button-primary rounded-md"
+            :disabled="picker.loading || !picker.canPick"
+            @click="picker.pickRandom"
+          >
+            <Shuffle class="h-4 w-4" />Pick random
+          </button>
+        </template>
       </div>
     </header>
 
@@ -324,36 +356,18 @@ onMounted(async () => {
       </div>
 
       <!-- AI panel (multi-pick) -->
-      <div v-if="showAiPanel" class="shrink-0 space-y-2 rounded-xl border border-accent/30 bg-panel p-4">
-        <div class="flex items-center justify-between">
+      <div v-if="showAiPanel" class="shrink-0 rounded-xl border border-accent/30 bg-panel p-4">
+        <div class="mb-2 flex items-center justify-between">
           <p class="text-sm font-semibold text-white">AI Post Generator</p>
           <button class="button h-6 w-6 p-0 text-xs" @click="showAiPanel = false; ai.clearGeneratedPost()"><X class="h-3 w-3" /></button>
         </div>
-        <textarea
-          v-model="aiHint"
-          rows="2"
-          class="input w-full resize-none text-xs"
-          placeholder="Optional context… e.g. this is a post for #FoxyFriday"
+        <AiPostPanel
+          :image-paths="currentImagePaths()"
+          :network="targets.activeTarget?.type ?? 'x'"
+          :network-name="activeTargetName"
+          :disabled="picker.multiPickSlots.every(s => !s)"
         />
-        <button
-          class="button-primary w-full rounded-md"
-          :disabled="ai.generating"
-          @click="generateAiPost"
-        >
-          <Sparkles class="h-4 w-4" />
-          {{ ai.generating ? 'Generating…' : `Generate for ${activeTargetName || 'selected network'}` }}
-        </button>
-        <div v-if="ai.generateError" class="rounded-md border border-rose/40 bg-rose/10 p-2 text-xs text-rose">{{ ai.generateError }}</div>
-        <div v-if="ai.generatedPost" class="space-y-2 rounded-xl border border-line bg-panelSoft p-3 text-xs">
-          <div v-if="ai.generatedPost.title"><p class="mb-1 font-semibold text-slate-400">Title</p><p class="text-white">{{ ai.generatedPost.title }}</p></div>
-          <div><p class="mb-1 font-semibold text-slate-400">Description</p><p class="whitespace-pre-wrap text-white">{{ ai.generatedPost.description }}</p></div>
-          <div v-if="ai.generatedPost.tags?.length"><p class="mb-1 font-semibold text-slate-400">Tags</p><p class="text-slate-300">{{ ai.generatedPost.tags.join(' ') }}</p></div>
-          <!-- Hint: "Send + AI" button above includes AI text automatically. -->
-          <div class="flex items-center justify-between pt-1">
-            <p class="text-[10px] text-slate-500">↑ Use "Send + AI" to queue with text.</p>
-            <button class="button h-6 px-2 text-xs" @click="ai.clearGeneratedPost"><X class="h-3 w-3" />Discard</button>
-          </div>
-        </div>
+        <p class="mt-2 text-[10px] text-slate-500">↑ Use "Send + AI" to queue with text.</p>
       </div>
     </template>
 
@@ -409,16 +423,54 @@ onMounted(async () => {
           <!-- Assign to Queue Slot -->
           <div v-if="showAssignPanel" class="mt-2 rounded-lg border border-line bg-panelSoft p-2 space-y-1.5">
             <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Assign to Queue Slot</p>
-            <select v-model="assignQueueId" aria-label="Queue" class="input h-7 w-full text-xs">
-              <option v-if="!queueStore.queues.length" value="" disabled>No queues — create one first</option>
-              <option v-for="q in queueStore.queues" :key="q.id" :value="q.id">{{ q.name }} ({{ q.targetName }})</option>
-            </select>
-            <select v-model="assignSlotId" aria-label="Slot" class="input h-7 w-full text-xs" :disabled="!assignSlots.length">
-              <option v-if="!assignSlots.length" value="" disabled>No slots</option>
-              <option v-for="s in assignSlots" :key="s.id" :value="s.id">Slot {{ s.position + 1 }}{{ s.posted ? ' ✓' : '' }}</option>
-            </select>
+
+            <!-- Queue row: dropdown + "New Queue" toggle -->
+            <div class="flex gap-1">
+              <select v-model="assignQueueId" aria-label="Queue" class="input h-7 min-w-0 flex-1 text-xs">
+                <option v-if="!queueStore.queues.length" value="" disabled>No queues yet</option>
+                <option v-for="q in queueStore.queues" :key="q.id" :value="q.id">{{ q.name }} ({{ q.targetName }})</option>
+              </select>
+              <button
+                class="button h-7 w-7 shrink-0 p-0 text-xs"
+                :class="showNewQueueForm ? 'border-accent text-accent' : ''"
+                title="Create a new queue"
+                @click="showNewQueueForm = !showNewQueueForm; newQueueTargetId = targets.enabledTargets[0]?.id ?? ''"
+              >＋</button>
+            </div>
+
+            <!-- Inline "new queue" form -->
+            <div v-if="showNewQueueForm" class="rounded border border-line bg-panel p-1.5 space-y-1">
+              <input
+                v-model="newQueueName"
+                class="input h-6 w-full text-xs"
+                placeholder="Queue name"
+                @keydown.enter.prevent="createQueueInline"
+              />
+              <select v-model="newQueueTargetId" class="input h-6 w-full text-xs">
+                <option v-for="t in targets.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
+              </select>
+              <div class="flex gap-1">
+                <button class="button h-6 flex-1 text-xs" @click="showNewQueueForm = false">✕</button>
+                <button class="button-primary h-6 flex-1 text-xs" :disabled="!newQueueName.trim() || !newQueueTargetId" @click="createQueueInline">Create</button>
+              </div>
+            </div>
+
+            <!-- Slot row: dropdown + "Add Slot" button -->
+            <div class="flex gap-1">
+              <select v-model="assignSlotId" aria-label="Slot" class="input h-7 min-w-0 flex-1 text-xs" :disabled="!assignSlots.length && !assignQueueId">
+                <option v-if="!assignSlots.length" value="" disabled>No slots</option>
+                <option v-for="s in assignSlots" :key="s.id" :value="s.id">Slot {{ s.position + 1 }}{{ s.posted ? ' ✓' : '' }}</option>
+              </select>
+              <button
+                class="button h-7 w-7 shrink-0 p-0 text-xs"
+                :disabled="!assignQueueId || addingSlot"
+                title="Add a new slot to this queue"
+                @click="addSlotInline"
+              >{{ addingSlot ? '…' : '＋' }}</button>
+            </div>
+
             <div class="flex gap-1.5">
-              <button class="button h-7 flex-1 text-xs" @click="showAssignPanel = false">Cancel</button>
+              <button class="button h-7 flex-1 text-xs" @click="showAssignPanel = false; showNewQueueForm = false">Cancel</button>
               <button class="button-primary h-7 flex-1 text-xs" :disabled="!assignSlotId || !picker.currentImage" @click="confirmPickerAssign">
                 Assign →
               </button>
@@ -442,47 +494,14 @@ onMounted(async () => {
             AI Post Generator
           </button>
 
-          <div v-if="showAiPanel" class="mt-3 space-y-3">
-            <textarea
-              v-model="aiHint"
-              rows="2"
-              class="input w-full resize-none text-xs"
-              placeholder="Optional context… e.g. this is a post for #FoxyFriday"
+          <div v-if="showAiPanel" class="mt-3">
+            <AiPostPanel
+              :image-paths="currentImagePaths()"
+              :network="targets.activeTarget?.type ?? 'x'"
+              :network-name="activeTargetName"
+              :disabled="!picker.currentImage"
             />
-            <button
-              class="button-primary w-full rounded-md"
-              :disabled="ai.generating || !picker.currentImage"
-              @click="generateAiPost"
-            >
-              <Sparkles class="h-4 w-4" />
-              {{ ai.generating ? 'Generating…' : `Generate for ${activeTargetName || 'selected network'}` }}
-            </button>
-
-            <div v-if="ai.generateError" class="rounded-md border border-rose/40 bg-rose/10 p-2 text-xs text-rose">
-              {{ ai.generateError }}
-            </div>
-
-            <div v-if="ai.generatedPost" class="space-y-2 rounded-xl border border-line bg-panelSoft p-3 text-xs">
-              <div v-if="ai.generatedPost.title">
-                <p class="mb-1 font-semibold text-slate-400">Title</p>
-                <p class="text-white">{{ ai.generatedPost.title }}</p>
-              </div>
-              <div>
-                <p class="mb-1 font-semibold text-slate-400">Description</p>
-                <p class="whitespace-pre-wrap text-white">{{ ai.generatedPost.description }}</p>
-              </div>
-              <div v-if="ai.generatedPost.tags?.length">
-                <p class="mb-1 font-semibold text-slate-400">Tags</p>
-                <p class="text-slate-300">{{ ai.generatedPost.tags.join(' ') }}</p>
-              </div>
-              <!-- Hint: the "Send to Extension" button above now includes the AI text automatically. -->
-              <p class="pt-1 text-[10px] text-slate-500">↑ Click "Send to Extension + AI" to queue image and text together.</p>
-              <div class="flex justify-end pt-0.5">
-                <button class="button h-6 px-2 text-xs" title="Discard result" @click="ai.clearGeneratedPost">
-                  <X class="h-3 w-3" />Discard
-                </button>
-              </div>
-            </div>
+            <p class="mt-2 text-[10px] text-slate-500">↑ Click "Send to Extension + AI" to queue image and text together.</p>
           </div>
         </div>
 

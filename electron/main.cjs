@@ -287,10 +287,15 @@ async function scanAndIndex(sourceId, rootPath, onProgress) {
   const now = new Date().toISOString();
   let indexed = 0;
   let duplicates = 0;
+  let removed = 0;
   const errors = [];
+
+  // ── Build a Set of all file paths found on disk this scan ────────────────
+  const diskPaths = new Set(files.map((f) => f.localPath));
 
   db.run("BEGIN TRANSACTION");
   try {
+    // ── Upsert all files found on disk ───────────────────────────────────────
     for (const file of files) {
       // Check if this file was already indexed.
       const chkStmt = db.prepare(
@@ -337,6 +342,27 @@ async function scanAndIndex(sourceId, rootPath, onProgress) {
         indexed += 1;
       }
     }
+
+    // ── Remove stale DB records (files deleted/moved from disk) ──────────────
+    // Load all source_file_id values from DB for this source, then delete any
+    // that were not found on disk during this scan.
+    const allStmt = db.prepare(
+      "SELECT id, source_file_id FROM images WHERE source_id = ?"
+    );
+    allStmt.bind([sourceId]);
+    const dbRows = [];
+    while (allStmt.step()) dbRows.push(allStmt.getAsObject());
+    allStmt.free();
+
+    for (const row of dbRows) {
+      if (!diskPaths.has(row.source_file_id)) {
+        const delStmt = db.prepare("DELETE FROM images WHERE id = ?");
+        delStmt.run([row.id]);
+        delStmt.free();
+        removed += 1;
+      }
+    }
+
     db.run("COMMIT");
   } catch (e) {
     try { db.run("ROLLBACK"); } catch (_) { /* ignore */ }
@@ -345,7 +371,7 @@ async function scanAndIndex(sourceId, rootPath, onProgress) {
 
   // Single write to disk for the entire batch — previously done N times.
   persistDatabase();
-  return { sourceId, scanned: files.length, indexed, duplicates, errors };
+  return { sourceId, scanned: files.length, indexed, duplicates, removed, errors };
 }
 
 function mimeTypeFor(filePath) {
@@ -683,7 +709,10 @@ function imageMime(p) {
            ".webp": "image/webp", ".gif": "image/gif" }[ext] ?? "image/jpeg";
 }
 
-async function generateAiPost(imagePaths, network, hint = "") {
+// postType: "engagement" | "qt" | "morning" | "goodnight" | "story"
+// perspective: "i" | "oc"
+// ocName: e.g. "Valerie"
+async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "i", ocName = "") {
   const db = await getDatabase();
   // Read AI config from DB
   const rows = db.exec("SELECT key, value FROM ai_config");
@@ -734,9 +763,25 @@ async function generateAiPost(imagePaths, network, hint = "") {
   const tagNote = nc.tagHasHash ? "Include the # symbol in each tag." : "Do NOT include # symbol in tags.";
 
   const hintLine = hint?.trim() ? `- Additional context / user instructions: ${hint.trim()}` : "";
+
+  // ── Post-type instruction ───────────────────────────────────────────────
+  const perspectiveNote = perspective === "oc" && ocName.trim()
+    ? `Write from the perspective of "${ocName.trim()}" (third person, e.g. "${ocName.trim()} loves…").`
+    : "Write in first person (I, me, my).";
+
+  const POST_TYPE_RULES = {
+    engagement: `Write an engaging caption that invites interaction. Ask a question or use a call-to-action. ${perspectiveNote}`,
+    qt:         `Write a short quote-tweet style reply/reaction to the image (1-2 sentences, conversational, no hashtags needed in text). ${perspectiveNote}`,
+    morning:    `Start with a warm "Good morning ☀️" greeting, then add a brief description of what's in the image. ${perspectiveNote}`,
+    goodnight:  `Start with a warm "Good night 🌙" or "Sweet dreams ✨" farewell, then add a brief, evocative description of the image. ${perspectiveNote}`,
+    story:      `Write a short creative micro-story (2-4 sentences) inspired by or about the subject in the image. Make it vivid and atmospheric. ${perspectiveNote}`,
+  };
+  const postTypeRule = POST_TYPE_RULES[postType] ?? POST_TYPE_RULES["engagement"];
+
   const prompt = `You are a social media content creator. Analyze the image(s) and write a post for ${network}.
 Rules:
 - Write in English.
+- Post style: ${postTypeRule}
 - Description: max ${nc.descMax} characters. ${nc.notes}
 - Tags: ${tagInstruction} ${tagNote}
 ${nc.titleNeeded ? "- Title: short, catchy, max 80 chars." : ""}${hintLine ? "\n" + hintLine : ""}
@@ -960,8 +1005,8 @@ app.whenReady().then(() => {
   }
 
   // ── AI post generation ─────────────────────────────────────────────────────
-  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint) => {
-    return generateAiPost(imagePaths, network, hint);
+  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName) => {
+    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName);
   });
 
   ipcMain.handle("extension:open-chrome", () => {
