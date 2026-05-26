@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.33 - 2026-05-26
+
+- Release v0.2.33
+
+
 ## v0.2.32 - 2026-05-26
 
 - feat: AI post modal in library, optional perspective, one-step queue
