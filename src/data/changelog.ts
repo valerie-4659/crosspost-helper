@@ -6,6 +6,20 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.30",
+    date: "2026-05-26",
+    items: [
+      "feat: shared AiPostPanel, post types, perspective, incremental scan, network hide filter, library sorting",
+    ],
+  },
+  {
+    version: "0.2.29",
+    date: "2026-05-26",
+    items: [
+      "feat: shared AiPostPanel, post types, perspective, incremental scan, network hide filter, library sorting",
+    ],
+  },
+  {
     version: "0.2.28",
     date: "2026-05-23",
     items: [

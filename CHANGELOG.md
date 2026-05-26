@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.30 - 2026-05-26
+
+- feat: shared AiPostPanel, post types, perspective, incremental scan, network hide filter, library sorting
+
+
+## v0.2.29 - 2026-05-26
+
+- feat: shared AiPostPanel, post types, perspective, incremental scan, network hide filter, library sorting
+
+
 ## v0.2.28 - 2026-05-23
 
 - Release v0.2.28
