@@ -7,6 +7,7 @@ import FilterBar from "@/components/FilterBar.vue";
 import ImagePreview from "@/components/ImagePreview.vue";
 import PlatformIcon from "@/components/PlatformIcon.vue";
 import { useAiStore } from "@/stores/aiStore";
+import { useFolderHistoryStore } from "@/stores/folderHistoryStore";
 import { useImageStore } from "@/stores/imageStore";
 import { usePickerStore } from "@/stores/pickerStore";
 import { useSourceStore } from "@/stores/sourceStore";
@@ -153,6 +154,12 @@ function deactivateMultiPick() {
   picker.setMultiPickMode(false);
   showFolderPanel.value = false;
 }
+
+// ── Folder pick history ────────────────────────────────────────────────────
+const folderHistory = useFolderHistoryStore();
+watch(() => picker.currentImage, (img) => {
+  if (img?.folderPath) folderHistory.recordVisit(img.folderPath);
+});
 
 // ── AI panel ──────────────────────────────────────────────────────────────────
 const showAiPanel = ref(false);

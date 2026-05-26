@@ -72,7 +72,9 @@ window.CrosspostBridge._currentAdapter = {
 
       // ── 4. Fill AI post text if available ────────────────────────────────
       // Wait for X to process the injected files and finish re-rendering.
-      await new Promise((r) => setTimeout(r, 500));
+      // Use a longer delay — X re-renders the compose box asynchronously after
+      // adding the image preview, which can clobber text injected too early.
+      await new Promise((r) => setTimeout(r, 800));
 
       const postContent = await bridge.getPostContent("x").catch(() => null);
       let textFilled = false;
@@ -80,17 +82,17 @@ window.CrosspostBridge._currentAdapter = {
         const tags = (postContent.tags ?? [])
           .map((t) => (t.startsWith("#") ? t : "#" + t))
           .join(" ");
-        // Use single newline — \n\n triggers a paragraph break in X's ProseMirror
+        // Use single newline — \n\n triggers a paragraph break in X's Lexical
         // editor which can split description and tags into separate tweet blocks.
         const text = [postContent.description, tags].filter(Boolean).join("\n");
         if (text) {
-          // Re-query in case React remounted the element after file injection.
+          // Re-query — X may have remounted the textarea after file injection.
           const freshTextarea = document.querySelector('[data-testid="tweetTextarea_0"]') || textarea;
           textFilled = await bridge.fillTextField(freshTextarea, text);
           if (!textFilled) {
-            // Fallback: copy to clipboard so user can paste manually.
+            // All injection methods failed — fall back to clipboard so user can paste.
             await navigator.clipboard.writeText(text).catch(() => {});
-            bridge.notify(`✓ ${toInject.length} image(s) attached — AI text copied to clipboard, paste with Ctrl+V`, "success");
+            bridge.notify(`✓ ${toInject.length} image(s) attached — text injection failed, copied to clipboard → Ctrl+V`, "info");
             return { imageIds, targetId: resolvedTargetId, filename: toInject.map((i) => i.filename).join(", ") };
           }
         }

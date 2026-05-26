@@ -65,7 +65,7 @@ window.CrosspostBridge._currentAdapter = {
 
       // ── 5. Fill AI post text if available ────────────────────────────────
       // Wait for Bluesky to process the injected files and re-render.
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 600));
 
       const postContent = await bridge.getPostContent("bluesky").catch(() => null);
       let textFilled = false;
@@ -85,7 +85,7 @@ window.CrosspostBridge._currentAdapter = {
             textFilled = await bridge.fillTextField(textarea, text);
             if (!textFilled) {
               await navigator.clipboard.writeText(text).catch(() => {});
-              bridge.notify(`✓ ${toInject.length} image(s) added — AI text copied to clipboard, paste with Ctrl+V`, "success");
+              bridge.notify(`✓ ${toInject.length} image(s) added — text injection failed, copied to clipboard → Ctrl+V`, "info");
               return { imageIds, targetId: resolvedTargetId, filename: toInject.map((i) => i.filename).join(", ") };
             }
           }

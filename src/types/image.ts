@@ -64,7 +64,12 @@ export interface ImageFilters {
   /** Library toolbar: hide images already posted to this target ID (separate from the FilterBar targetId). */
   hidePostedForTargetId?: string;
   /** Library sort order for the image grid. */
-  sortBy?: "date_desc" | "date_asc" | "folder_used";
+  sortBy?: "date_desc" | "date_asc" | "alpha_asc" | "alpha_desc" | "pick_desc" | "pick_asc";
+  /**
+   * Ordered folder paths used when sortBy is "pick_desc" or "pick_asc".
+   * Index 0 = first (highest priority). Passed by the Library page from folderHistoryStore.
+   */
+  folderPickOrder?: string[];
 }
 
 export interface DuplicateWarning {

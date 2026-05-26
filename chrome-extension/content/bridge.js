@@ -83,58 +83,91 @@ window.CrosspostBridge = {
     return data.ok ? data.content : null;
   },
 
-  // Fill a text field. Handles both contenteditable divs (X/Twitter, Bluesky)
+  // Fill a text field. Handles both contenteditable divs (X/Bluesky Lexical/ProseMirror)
   // and regular <input>/<textarea> elements.
-  // Returns true if the field was filled, false if injection failed.
+  // Returns true if the field was filled, false if all attempts failed.
   async fillTextField(element, text) {
-    if (!element) return false;
-    try {
+    if (!element || !text) return false;
+
+    // Helper: re-focus the element and wait for the browser to register it.
+    // Critical: execCommand always acts on the CURRENTLY FOCUSED element, so
+    // losing focus between calls causes insertions to land in the wrong place.
+    const refocus = async (ms = 80) => {
       element.focus();
-      // Brief pause so the browser registers the focus before execCommand.
-      await new Promise((r) => setTimeout(r, 80));
+      await new Promise((r) => setTimeout(r, ms));
+    };
+
+    // Helper: returns the current visible text content, stripped of ZWS / whitespace.
+    const getContent = () =>
+      (element.textContent ?? "").replace(/\u200B/g, "").replace(/\s+/g, " ").trim();
+
+    // Helper: select all children using the Selection API (more reliable than
+    // execCommand("selectAll") when the editor intercepts that command).
+    const selectAll = () => {
+      try {
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch {
+        document.execCommand("selectAll", false, null);
+      }
+    };
+
+    try {
+      await refocus();
 
       if (element.isContentEditable) {
-        // ── Primary: synthetic ClipboardEvent paste ────────────────────────
-        // X's ProseMirror editor has a native "paste" handler that correctly
-        // inserts text into its own transaction system and updates React state.
-        // This is more reliable than execCommand which can fire React's own
-        // insertText handler a second time and produce duplicate output.
+        // ── Method 1: execCommand insertText (PRIMARY) ────────────────────
+        // document.execCommand("insertText") creates a *trusted* beforeinput
+        // event in Chrome.  Lexical (X ≥ 2024) and ProseMirror both handle
+        // trusted beforeinput events correctly — this is how real keyboard
+        // input works.  Synthetic ClipboardEvents with isTrusted=false are
+        // increasingly filtered by modern editors.
+        selectAll();
+        document.execCommand("delete", false, null);
+        await refocus(40); // re-focus after delete — editor may move focus away
+        document.execCommand("insertText", false, text);
+        await new Promise((r) => setTimeout(r, 120));
+        if (getContent().length > 10) return true;
+
+        // ── Method 2: ClipboardEvent paste (SECONDARY) ───────────────────
+        // Some older editor versions still respond to synthetic paste.
+        await refocus();
+        selectAll();
+        document.execCommand("delete", false, null);
+        await new Promise((r) => setTimeout(r, 30));
         const dt = new DataTransfer();
         dt.setData("text/plain", text);
-        const pasteEvent = new ClipboardEvent("paste", {
-          bubbles: true,
-          cancelable: true,
-          clipboardData: dt,
-        });
+        element.dispatchEvent(new ClipboardEvent("paste", {
+          bubbles: true, cancelable: true, clipboardData: dt,
+        }));
+        await new Promise((r) => setTimeout(r, 120));
+        if (getContent().length > 10) return true;
 
-        // First clear any existing content via selectAll + delete
-        document.execCommand("selectAll", false, null);
-        document.execCommand("delete", false, null);
+        // ── Method 3: real clipboard + execCommand paste ──────────────────
+        // Write our text to the system clipboard, then use execCommand("paste")
+        // which reads from the real clipboard and is always trusted.
+        try {
+          await navigator.clipboard.writeText(text);
+          await refocus();
+          selectAll();
+          document.execCommand("delete", false, null);
+          await refocus(40);
+          document.execCommand("paste", false, null);
+          await new Promise((r) => setTimeout(r, 120));
+          if (getContent().length > 10) return true;
+        } catch { /* clipboard API unavailable */ }
 
-        element.dispatchEvent(pasteEvent);
-
-        // Give the editor a tick to process the paste event
-        await new Promise((r) => setTimeout(r, 50));
-
-        // Verify by checking our text is actually in there
-        const inserted = (element.textContent ?? "").replace(/\u200B/g, "").trim();
-        if (inserted) return true;
-
-        // ── Fallback: execCommand insertText ──────────────────────────────
-        document.execCommand("selectAll", false, null);
-        const ok = document.execCommand("insertText", false, text);
-        await new Promise((r) => setTimeout(r, 30));
-        const afterExec = (element.textContent ?? "").replace(/\u200B/g, "").trim();
-        if (afterExec) return true;
-
-        // ── Last resort: innerText + plain input event ────────────────────
-        // IMPORTANT: do NOT dispatch InputEvent with data+inputType="insertText" —
-        // React editors re-process the `data` field and insert the text a second
-        // time, causing duplicated content. A plain "input" event is enough to
-        // tell React to re-sync its virtual state from the DOM.
+        // ── Method 4: innerText + input event (LAST RESORT) ──────────────
+        // Direct DOM mutation — bypasses the framework but at least puts the
+        // text in the DOM so the user can see it and submit manually.
+        await refocus();
         element.innerText = text;
         element.dispatchEvent(new Event("input", { bubbles: true }));
-        return !!(element.innerText || element.textContent);
+        await new Promise((r) => setTimeout(r, 50));
+        return getContent().length > 0;
       }
 
       // Regular input / textarea — use native setter so React picks up the change.

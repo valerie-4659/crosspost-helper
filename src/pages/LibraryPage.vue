@@ -8,6 +8,7 @@ import ImageLightbox from "@/components/ImageLightbox.vue";
 import PlatformIcon from "@/components/PlatformIcon.vue";
 import { copyImagePath, copyImageToClipboard, exportImagesToFolder, revealImage } from "@/services/imageActionService";
 import { useAiStore } from "@/stores/aiStore";
+import { useFolderHistoryStore } from "@/stores/folderHistoryStore";
 import { useImageStore } from "@/stores/imageStore";
 import { useSourceStore } from "@/stores/sourceStore";
 import { useTargetStore } from "@/stores/targetStore";
@@ -74,6 +75,25 @@ async function deleteSingleFromLightbox(imageId: string) {
   // If the deleted image was showing in the lightbox, close it.
   if (previewImage.value?.id === imageId) previewImage.value = null;
 }
+
+const folderHistory = useFolderHistoryStore();
+
+// ── Sort controls ──────────────────────────────────────────────────────────
+type SortMode = "date" | "alpha" | "pick";
+const sortMode = ref<SortMode>("date");
+const sortAsc  = ref(false);
+
+function applySort() {
+  const dir = sortAsc.value ? "asc" : "desc";
+  imageStore.filters.sortBy = `${sortMode.value}_${dir}` as typeof imageStore.filters.sortBy;
+  imageStore.filters.folderPickOrder =
+    sortMode.value === "pick" ? folderHistory.getOrderedPaths(dir) : undefined;
+}
+// Re-apply whenever sort mode, direction, or the history itself changes.
+watch([sortMode, sortAsc], applySort, { immediate: true });
+watch(() => folderHistory.history, () => {
+  if (sortMode.value === "pick") applySort();
+}, { deep: true });
 
 // Reload images whenever a filter or showExcludedFolders changes.
 onMounted(() => imageStore.load());
@@ -192,7 +212,7 @@ const childFolders = computed(() => {
       postStats: mergedStats,
     });
   }
-  return [...children.entries()]
+  const entries = [...children.entries()]
     .map(([path, { count, isExcluded, postStats }]) => {
       // Pick the first available thumbnail from any sub-folder of this child path.
       let thumbnail: string | undefined;
@@ -208,8 +228,28 @@ const childFolders = computed(() => {
         thumbnail,
         isLastVisited: lastVisitedDir.value !== "" && lastVisitedDir.value.startsWith(path),
       };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    });
+
+  // Sort folder cards according to the active sort mode.
+  const hist = folderHistory.history;
+  entries.sort((a, b) => {
+    if (sortMode.value === "alpha") {
+      const cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+      return sortAsc.value ? cmp : -cmp;
+    }
+    if (sortMode.value === "pick") {
+      const aTime = hist[a.path] ?? 0;
+      const bTime = hist[b.path] ?? 0;
+      // Unvisited folders always go to the bottom.
+      if (!aTime && !bTime) return a.name.localeCompare(b.name);
+      if (!aTime) return 1;
+      if (!bTime) return -1;
+      return sortAsc.value ? aTime - bTime : bTime - aTime;
+    }
+    // "date" mode: sort folders alphabetically (we don't have per-folder dates cheaply).
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+  });
+  return entries;
 });
 
 /** True when we're in a leaf folder (no subfolders). */
@@ -238,6 +278,8 @@ const breadcrumbs = computed(() => {
 
 function navigateTo(path: string) {
   const prev = currentDir.value || rootDir.value;
+  // Record every folder navigation in the pick history.
+  if (path) folderHistory.recordVisit(path);
   // Going back (new path is a parent of where we were) → remember the folder we just left.
   if (prev.startsWith(path + "/")) {
     lastVisitedDir.value = prev;
@@ -434,15 +476,23 @@ async function fillSlot(slotId: string) {
           Collection
           <span class="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-ink">{{ collectionCount }}</span>
         </button>
-        <!-- Sort order toggle -->
-        <button
-          class="button gap-1.5"
-          :title="imageStore.filters.sortBy === 'date_asc' ? 'Sort: oldest first' : 'Sort: newest first'"
-          @click="imageStore.filters.sortBy = imageStore.filters.sortBy === 'date_asc' ? 'date_desc' : 'date_asc'"
-        >
-          <span class="text-sm">{{ imageStore.filters.sortBy === 'date_asc' ? '↑' : '↓' }}</span>
-          {{ imageStore.filters.sortBy === 'date_asc' ? 'Oldest' : 'Newest' }}
-        </button>
+        <!-- Sort controls: mode selector + direction toggle -->
+        <div class="flex items-center gap-0">
+          <select
+            v-model="sortMode"
+            class="input h-8 rounded-r-none border-r-0 py-0 text-xs"
+            title="Sort images and folders by…"
+          >
+            <option value="date">📅 Date</option>
+            <option value="alpha">🔤 Name</option>
+            <option value="pick">🕐 Last pick</option>
+          </select>
+          <button
+            class="button h-8 rounded-l-none px-2 text-sm font-bold"
+            :title="sortAsc ? 'Ascending — click for descending' : 'Descending — click for ascending'"
+            @click="sortAsc = !sortAsc"
+          >{{ sortAsc ? '↑' : '↓' }}</button>
+        </div>
 
         <!-- Hide-posted-for-network toggle -->
         <div class="flex items-center gap-0.5">

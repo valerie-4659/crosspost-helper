@@ -139,9 +139,33 @@ export async function listImages(filters: Partial<ImageFilters> = {}): Promise<I
     )`);
   }
 
-  const orderBy = filters.sortBy === "date_asc"
-    ? "COALESCE(images.created_at, images.modified_at, images.indexed_at) ASC"
-    : "COALESCE(images.created_at, images.modified_at, images.indexed_at) DESC";
+  let orderBy: string;
+  switch (filters.sortBy) {
+    case "date_asc":
+      orderBy = "COALESCE(images.created_at, images.modified_at, images.indexed_at) ASC";
+      break;
+    case "alpha_asc":
+      orderBy = "images.filename ASC";
+      break;
+    case "alpha_desc":
+      orderBy = "images.filename DESC";
+      break;
+    case "pick_desc":
+    case "pick_asc": {
+      const order = filters.folderPickOrder ?? [];
+      if (order.length) {
+        // Build CASE WHEN folder_path = '...' THEN <idx> ELSE <N+1> END ASC
+        // Caller passes paths already sorted in desired order (index 0 = first shown).
+        const cases = order.map((p, i) => `WHEN ${JSON.stringify(p)} THEN ${i}`).join(" ");
+        orderBy = `CASE images.folder_path ${cases} ELSE ${order.length + 1} END ASC, images.filename ASC`;
+      } else {
+        orderBy = "COALESCE(images.created_at, images.modified_at, images.indexed_at) DESC";
+      }
+      break;
+    }
+    default:
+      orderBy = "COALESCE(images.created_at, images.modified_at, images.indexed_at) DESC";
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const rows = await db.select<ImageListRow[]>(
