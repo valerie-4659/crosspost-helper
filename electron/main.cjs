@@ -710,9 +710,9 @@ function imageMime(p) {
 }
 
 // postType: "engagement" | "qt" | "morning" | "goodnight" | "story"
-// perspective: "i" | "oc"
+// perspective: "" | "i" | "oc"  — empty string = no perspective instruction
 // ocName: e.g. "Valerie"
-async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "i", ocName = "") {
+async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "") {
   const db = await getDatabase();
   // Read AI config from DB
   const rows = db.exec("SELECT key, value FROM ai_config");
@@ -767,14 +767,17 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   // ── Post-type instruction ───────────────────────────────────────────────
   const perspectiveNote = perspective === "oc" && ocName.trim()
     ? `Write from the perspective of "${ocName.trim()}" (third person, e.g. "${ocName.trim()} loves…").`
-    : "Write in first person (I, me, my).";
+    : perspective === "i"
+      ? "Write in first person (I, me, my)."
+      : "";
 
+  const perspSuffix = perspectiveNote ? ` ${perspectiveNote}` : "";
   const POST_TYPE_RULES = {
-    engagement: `Write an engaging caption that invites interaction. Ask a question or use a call-to-action. ${perspectiveNote}`,
-    qt:         `Write a short quote-tweet style reply/reaction to the image (1-2 sentences, conversational, no hashtags needed in text). ${perspectiveNote}`,
-    morning:    `Start with a warm "Good morning ☀️" greeting, then add a brief description of what's in the image. ${perspectiveNote}`,
-    goodnight:  `Start with a warm "Good night 🌙" or "Sweet dreams ✨" farewell, then add a brief, evocative description of the image. ${perspectiveNote}`,
-    story:      `Write a short creative micro-story (2-4 sentences) inspired by or about the subject in the image. Make it vivid and atmospheric. ${perspectiveNote}`,
+    engagement: `Write an engaging caption that invites interaction. Ask a question or use a call-to-action.${perspSuffix}`,
+    qt:         `Write a short quote-tweet style reply/reaction to the image (1-2 sentences, conversational, no hashtags needed in text).${perspSuffix}`,
+    morning:    `Start with a warm "Good morning ☀️" greeting, then add a brief description of what's in the image.${perspSuffix}`,
+    goodnight:  `Start with a warm "Good night 🌙" or "Sweet dreams ✨" farewell, then add a brief, evocative description of the image.${perspSuffix}`,
+    story:      `Write a short creative micro-story (2-4 sentences) inspired by or about the subject in the image. Make it vivid and atmospheric.${perspSuffix}`,
   };
   const postTypeRule = POST_TYPE_RULES[postType] ?? POST_TYPE_RULES["engagement"];
 

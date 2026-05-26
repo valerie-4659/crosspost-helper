@@ -142,8 +142,10 @@ async function queueForExtension(targetType: string) {
   }
 }
 
-async function applyAiPost(network: string) {
-  await ai.pushPostContentToExtension(network);
+function onAiQueued(count: number) {
+  imageStore.message = `Queued ${count} image(s) for ${libActiveTargetName.value}.`;
+  showAiPanel.value = false;
+  ai.clearGeneratedPost();
 }
 
 // ── Folder navigation ──────────────────────────────────────────────────────────
@@ -611,26 +613,10 @@ async function fillSlot(slotId: string) {
           :class="showAiPanel ? 'border-accent bg-accent/10 text-accent' : ''"
           :disabled="selectedCount === 0 || !targetStore.activeTargetId"
           title="Generate AI post text for selected images"
-          @click="showAiPanel = !showAiPanel; if (!showAiPanel) ai.clearGeneratedPost()"
+          @click="showAiPanel = true"
         >
           <Sparkles class="h-3.5 w-3.5" />AI Post
         </button>
-      </div>
-
-      <!-- Row 3: AI panel (collapsible) -->
-      <div v-if="showAiPanel" class="mt-2 rounded-xl border border-accent/30 bg-panelSoft p-3">
-        <div class="mb-2 flex items-center justify-between">
-          <p class="text-xs font-semibold text-white">AI Post — {{ libActiveTargetName }}</p>
-          <button class="button h-6 w-6 p-0" @click="showAiPanel = false; ai.clearGeneratedPost()"><X class="h-3 w-3" /></button>
-        </div>
-        <AiPostPanel
-          :image-paths="[(collectionArray[0] ?? imageStore.selectedImages[0])?.localPath ?? ''].filter(Boolean)"
-          :network="libActiveTargetType"
-          :network-name="libActiveTargetName"
-          :disabled="selectedCount === 0 && collectionArray.length === 0"
-          :show-push-button="true"
-          @push="applyAiPost"
-        />
       </div>
     </section>
 
@@ -928,4 +914,51 @@ async function fillSlot(slotId: string) {
   </Transition>
 
   </div><!-- end outer -->
+
+  <!-- ── AI Post Modal ──────────────────────────────────────────────────────── -->
+  <Teleport to="body">
+    <Transition
+        enter-active-class="transition duration-150 ease-out"
+        enter-from-class="opacity-0 scale-95"
+        enter-to-class="opacity-100 scale-100"
+        leave-active-class="transition duration-100 ease-in"
+        leave-from-class="opacity-100 scale-100"
+        leave-to-class="opacity-0 scale-95"
+      >
+      <div
+        v-if="showAiPanel"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      >
+        <div class="relative mx-4 flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-panelSoft shadow-2xl">
+          <!-- Header -->
+          <div class="flex shrink-0 items-center justify-between border-b border-line px-5 py-3.5">
+            <div class="flex items-center gap-2">
+              <Sparkles class="h-4 w-4 text-accent" />
+              <p class="text-sm font-semibold text-white">AI Post</p>
+              <span v-if="libActiveTargetName" class="rounded-md bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">{{ libActiveTargetName }}</span>
+            </div>
+            <button
+              class="button h-7 w-7 p-0 hover:border-rose/60 hover:text-rose"
+              title="Close"
+              @click="showAiPanel = false; ai.clearGeneratedPost()"
+            ><X class="h-3.5 w-3.5" /></button>
+          </div>
+
+          <!-- Scrollable body -->
+          <div class="overflow-y-auto px-5 py-4">
+            <AiPostPanel
+              :image-paths="(collectionArray.length ? collectionArray : imageStore.selectedImages).map(i => i.localPath).filter((p): p is string => !!p)"
+              :image-ids="(collectionArray.length ? collectionArray : imageStore.selectedImages).map(i => i.id)"
+              :network="libActiveTargetType ?? ''"
+              :network-name="libActiveTargetName"
+              :queue-limit="PLATFORM_LIMITS[libActiveTargetType ?? ''] ?? 1"
+              :disabled="selectedCount === 0 && collectionArray.length === 0"
+              @queued="onAiQueued"
+            />
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
 </template>
