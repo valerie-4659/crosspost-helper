@@ -6,6 +6,17 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.37",
+    date: "2026-05-28",
+    items: [
+      "fix(library): remove header subtitle, give header breathing room (py-4)",
+      "feat: settings navigation + QT event name input",
+      "chore: remove temp build/commit helper scripts",
+      "feat: writing personas + X Premium+ + story narratives",
+      "fix(x-adapter): close hashtag autocomplete + finalise blue hashtag nodes after text inject",
+    ],
+  },
+  {
     version: "0.2.36",
     date: "2026-05-28",
     items: [

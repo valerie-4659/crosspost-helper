@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.37 - 2026-05-28
+
+- fix(library): remove header subtitle, give header breathing room (py-4)
+- feat: settings navigation + QT event name input
+- chore: remove temp build/commit helper scripts
+- feat: writing personas + X Premium+ + story narratives
+- fix(x-adapter): close hashtag autocomplete + finalise blue hashtag nodes after text inject
+
+
 ## v0.2.36 - 2026-05-28
 
 - feat: curated NSFW/adult AI-art tag pool for X (migration 005)
