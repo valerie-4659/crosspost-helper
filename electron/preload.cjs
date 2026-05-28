@@ -52,8 +52,8 @@ contextBridge.exposeInMainWorld("desktop", {
   ai: {
     // Generate a post for the given network. imagePaths = absolute local paths.
     // Returns { title?, description, tags[] } or throws on error.
-    generatePost: (imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions) =>
-      ipcRenderer.invoke("ai:generate-post", imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions),
+    generatePost: (imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName) =>
+      ipcRenderer.invoke("ai:generate-post", imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName),
   },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),

@@ -717,7 +717,7 @@ function imageMime(p) {
 // ocName: e.g. "Valerie"
 // storylineId: null | string — if set, fetches previous story_entries for context
 // decisions: null | [{emoji, label}] — 1-4 reader-vote options appended after story text
-async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "", storylineId = null, decisions = null) {
+async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "", storylineId = null, decisions = null, qtEventName = "") {
   const db = await getDatabase();
   // Read AI config from DB
   const rows = db.exec("SELECT key, value FROM ai_config");
@@ -833,6 +833,9 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   const perspSuffix = ` ${perspectiveNote}`;
 
   // QT Event template (multi-line social post format)
+  const qtThemeInstruction = qtEventName
+    ? `Use "${qtEventName.toUpperCase()}" as the THEME (Line 1).`
+    : `Derive THEME from what you see in the image (e.g. SPICY FRIDAY, THAT LOOK, MORNING MOOD).`;
   const qtEventRule = `Write a "QT Event" post in EXACTLY this multi-line format:
 Line 1: QT [THEME IN CAPS]![fitting emoji]
 Line 2: (empty)
@@ -841,7 +844,7 @@ Line 4: (empty — only if line 3 was included)
 Line 5: [witty, cheeky one-liner tagline describing the image theme, e.g. "oooh... y'all mean (this) kinda face⁉️"]
 Line 6: (empty)
 Line 7: let's see ❤️‍🔥
-Derive THEME from what you see in the image (e.g. SPICY FRIDAY, THAT LOOK, MORNING MOOD).
+${qtThemeInstruction}
 No @ mentions except tagger from hint. No hashtags in the text body (use the tags field).
 Keep each line short. Total text under 260 characters.`;
 
@@ -1087,8 +1090,8 @@ app.whenReady().then(() => {
   }
 
   // ── AI post generation ─────────────────────────────────────────────────────
-  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions) => {
-    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions);
+  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName) => {
+    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName);
   });
 
   ipcMain.handle("extension:open-chrome", () => {

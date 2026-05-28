@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, provide, ref } from "vue";
 import PickerPage from "@/pages/PickerPage.vue";
 import LibraryPage from "@/pages/LibraryPage.vue";
 import QueuePage from "@/pages/QueuePage.vue";
@@ -15,6 +15,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useImageStore } from "@/stores/imageStore";
 
 const currentPage = ref<AppPage>("picker");
+provide("setPage", (page: AppPage) => { currentPage.value = page; });
 const targetStore = useTargetStore();
 const sourceStore = useSourceStore();
 const settingsStore = useSettingsStore();

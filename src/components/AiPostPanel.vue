@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref } from "vue";
 import { BookOpen, Check, Copy, Plus, Send, Sparkles, Trash2, X } from "lucide-vue-next";
 import { useAiStore } from "@/stores/aiStore";
 import type { StoryDecision } from "@/types/aiSettings";
+
+const setPage = inject<(page: string) => void>("setPage");
 
 const props = withDefaults(defineProps<{
   imagePaths: string[];
@@ -38,6 +40,7 @@ const postType    = ref<"engagement" | "qt" | "morning" | "goodnight" | "story">
 /** "" = no perspective instruction, "i" = first-person, "oc" = OC name */
 const perspective = ref<"" | "i" | "oc">("");
 const ocName      = ref("");
+const qtEventName = ref("");
 const copied      = ref(false);
 const queueError  = ref("");
 
@@ -94,6 +97,7 @@ async function generate() {
     perspective.value === "oc" ? ocName.value.trim() : "",
     postType.value === "story" ? selectedStorylineId.value : undefined,
     postType.value === "story" && activeDecisions.value.length > 0 ? activeDecisions.value : undefined,
+    postType.value === "qt" ? qtEventName.value.trim() || undefined : undefined,
   );
   if (ai.generatedPost) {
     // Append decisions block to description if decisions are configured
@@ -170,6 +174,17 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- QT Event name (only for QT Event post type) -->
+    <div v-if="postType === 'qt'">
+      <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Event Name <span class="normal-case text-slate-600">(optional)</span></p>
+      <input
+        v-model="qtEventName"
+        class="w-full rounded-lg border border-line bg-panelSoft px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+        placeholder="e.g. Foxy Friday, Spicy Thursday…"
+      />
+      <p class="mt-1 text-[11px] text-slate-600">Used as the theme in line 1 of the QT post. If empty, AI derives it from the image.</p>
+    </div>
+
     <!-- Perspective (optional) -->
     <div>
       <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Perspective <span class="normal-case text-slate-600">(optional)</span></p>
@@ -218,7 +233,7 @@ onMounted(async () => {
             <option :value="null">— No storyline</option>
             <option v-for="sl in ai.storylines" :key="sl.id" :value="sl.id">{{ sl.name }}</option>
           </select>
-          <router-link to="/settings" class="button h-7 px-2.5 text-xs shrink-0">Manage</router-link>
+          <button class="button h-7 px-2.5 text-xs shrink-0" @click="setPage?.('settings')">Manage</button>
         </div>
         <p v-if="selectedStorylineId" class="mt-1 text-[11px] text-slate-500">
           📖 Previous entries will be used as narrative context for this episode.
@@ -272,7 +287,7 @@ onMounted(async () => {
       <span class="text-slate-500">{{ ai.activePersona.tone }}</span>
     </div>
     <div v-else class="rounded-lg border border-line bg-ink px-2.5 py-1.5 text-xs text-slate-600">
-      👤 No persona active — <router-link to="/settings" class="text-accent/70 hover:text-accent underline">set one in Settings</router-link>
+      👤 No persona active — <button class="text-accent/70 hover:text-accent underline bg-transparent border-none p-0 cursor-pointer" @click="setPage?.('settings')">set one in Settings</button>
     </div>
 
     <!-- Generate button -->

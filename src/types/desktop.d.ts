@@ -56,6 +56,7 @@ declare global {
           ocName?: string,
           storylineId?: string | null,
           decisions?: Array<{ emoji: string; label: string }> | null,
+          qtEventName?: string,
         ): Promise<{ title: string; description: string; tags: string[] }>;
       };
       scan: {
