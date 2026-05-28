@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.40 - 2026-05-28
+
+- Release v0.2.40
+
+
 ## v0.2.39 - 2026-05-28
 
 - refactor(personas): merge Tone+StyleNotes into single Behavior Rules textarea
