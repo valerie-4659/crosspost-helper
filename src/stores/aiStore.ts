@@ -162,6 +162,7 @@ export const useAiStore = defineStore("ai", () => {
     decisions?: StoryDecision[] | null,
     qtEventName?: string,
     qtTagger?: string,
+    customMaxChars?: number | null,
   ) {
     generating.value = true;
     generateError.value = "";
@@ -177,6 +178,7 @@ export const useAiStore = defineStore("ai", () => {
         decisions ?? null,
         qtEventName ?? "",
         qtTagger ?? "",
+        customMaxChars ?? null,
       );
       generatedPost.value = { ...result, network };
       // Sync editable fields so all consumers (AiPostPanel, PickerPage, …) start from the fresh result.

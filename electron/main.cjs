@@ -717,7 +717,7 @@ function imageMime(p) {
 // ocName: e.g. "Valerie"
 // storylineId: null | string — if set, fetches previous story_entries for context
 // decisions: null | [{emoji, label}] — 1-4 reader-vote options appended after story text
-async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "", storylineId = null, decisions = null, qtEventName = "", qtTagger = "") {
+async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "", storylineId = null, decisions = null, qtEventName = "", qtTagger = "", customMaxChars = null) {
   const db = await getDatabase();
   // Read AI config from DB
   const rows = db.exec("SELECT key, value FROM ai_config");
@@ -772,6 +772,14 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
       notes: "X Premium+ enabled — you have up to 25 000 characters. Write a longer, richer post. Use paragraphs and line breaks for atmosphere.",
     };
   }
+
+  // Per-post custom max chars (Premium+ only — caps at the network's effective limit)
+  if (customMaxChars && Number.isFinite(Number(customMaxChars))) {
+    nc = { ...nc, descMax: Math.min(Number(customMaxChars), nc.descMax) };
+  }
+
+  // Scale max_tokens to the effective char limit (~3 chars/token + overhead for JSON/tags)
+  const maxTokens = Math.min(4000, Math.max(600, Math.ceil(nc.descMax / 3) + 400));
 
   const tagInstruction = tags.length
     ? `Pick up to ${nc.tagCount} relevant tags from this list (add new ones if better): ${tags.join(", ")}.`
@@ -891,7 +899,7 @@ Respond with ONLY valid JSON, no markdown fences:
       ...imageData.map((d) => ({ type: "image_url", image_url: { url: `data:${d.mime};base64,${d.b64}` } }))];
     const r = await httpsPost(hostname, "/v1/chat/completions",
       { "Authorization": `Bearer ${apiKey}` },
-      { model, max_tokens: 600, messages: [{ role: "user", content }] });
+      { model, max_tokens: maxTokens, messages: [{ role: "user", content }] });
     if (r.status !== 200) throw apiError(provider, r);
     result = r.body.choices?.[0]?.message?.content ?? "";
 
@@ -900,7 +908,7 @@ Respond with ONLY valid JSON, no markdown fences:
       { type: "text", text: prompt }];
     const r = await httpsPost("api.anthropic.com", "/v1/messages",
       { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      { model, max_tokens: 600, messages: [{ role: "user", content }] });
+      { model, max_tokens: maxTokens, messages: [{ role: "user", content }] });
     if (r.status !== 200) throw apiError("anthropic", r);
     result = r.body.content?.[0]?.text ?? "";
 
@@ -909,7 +917,7 @@ Respond with ONLY valid JSON, no markdown fences:
       ...imageData.map((d) => ({ inline_data: { mime_type: d.mime, data: d.b64 } }))];
     const r = await httpsPost("generativelanguage.googleapis.com",
       `/v1beta/models/${model}:generateContent?key=${apiKey}`, {},
-      { contents: [{ parts }], generationConfig: { responseMimeType: "application/json" } });
+      { contents: [{ parts }], generationConfig: { responseMimeType: "application/json", maxOutputTokens: maxTokens } });
     if (r.status !== 200) throw apiError("gemini", r);
     result = r.body.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   } else {
@@ -1093,8 +1101,8 @@ app.whenReady().then(() => {
   }
 
   // ── AI post generation ─────────────────────────────────────────────────────
-  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger) => {
-    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger);
+  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars) => {
+    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars);
   });
 
   ipcMain.handle("extension:open-chrome", () => {

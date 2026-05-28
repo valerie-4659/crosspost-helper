@@ -40,8 +40,24 @@ const postType    = ref<"engagement" | "qt" | "morning" | "goodnight" | "story">
 /** "" = no perspective instruction, "i" = first-person, "oc" = OC name */
 const perspective = ref<"" | "i" | "oc">("");
 const ocName      = ref("");
-const qtEventName = ref("");
-const qtTagger    = ref("");
+const qtEventName    = ref("");
+const qtTagger       = ref("");
+const customMaxChars = ref<number | null>(null);
+
+const CHAR_PRESETS = [
+  { label: "180 (Standard X)",   value: 180 },
+  { label: "280",                value: 280 },
+  { label: "500",                value: 500 },
+  { label: "1 000",              value: 1000 },
+  { label: "2 500",              value: 2500 },
+  { label: "5 000",              value: 5000 },
+  { label: "10 000",             value: 10000 },
+  { label: "25 000 (Max)",       value: 25000 },
+] as const;
+
+const showCustomMaxChars = computed(
+  () => props.network === "x" && ai.config.xPremiumPlus,
+);
 const copied      = ref(false);
 const queueError  = ref("");
 
@@ -100,6 +116,7 @@ async function generate() {
     postType.value === "story" && activeDecisions.value.length > 0 ? activeDecisions.value : undefined,
     postType.value === "qt" ? qtEventName.value.trim() || undefined : undefined,
     postType.value === "qt" ? qtTagger.value.trim() || undefined : undefined,
+    showCustomMaxChars.value ? customMaxChars.value : null,
   );
   if (ai.generatedPost) {
     // Append decisions block to description if decisions are configured
@@ -193,6 +210,22 @@ onMounted(async () => {
         placeholder="e.g. @SomeUser"
       />
       <p class="mt-1 text-[11px] text-slate-600">Generates <span class="font-mono text-slate-400">TFTT @handle</span> as line 3 of the post.</p>
+    </div>
+
+    <!-- Max post length (Premium+ only) -->
+    <div v-if="showCustomMaxChars" class="flex items-center gap-3">
+      <p class="shrink-0 text-[11px] font-medium uppercase tracking-wide text-slate-500">Max length</p>
+      <div class="relative flex-1">
+        <select
+          :value="customMaxChars ?? ''"
+          class="w-full appearance-none rounded-lg border border-line bg-panelSoft px-2.5 py-1.5 pr-7 text-xs text-slate-200 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+          @change="customMaxChars = ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null"
+        >
+          <option value="">— auto</option>
+          <option v-for="p in CHAR_PRESETS" :key="p.value" :value="p.value">{{ p.label }}</option>
+        </select>
+        <svg class="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </div>
     </div>
 
     <!-- Perspective (optional) -->

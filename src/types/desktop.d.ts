@@ -58,6 +58,7 @@ declare global {
           decisions?: Array<{ emoji: string; label: string }> | null,
           qtEventName?: string,
           qtTagger?: string,
+          customMaxChars?: number | null,
         ): Promise<{ title: string; description: string; tags: string[] }>;
       };
       scan: {
