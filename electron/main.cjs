@@ -786,7 +786,9 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     : `Generate up to ${nc.tagCount} relevant tags.`;
   const tagNote = nc.tagHasHash ? "Include the # symbol in each tag." : "Do NOT include # symbol in tags.";
 
-  const hintLine = hint?.trim() ? `- Additional context / user instructions: ${hint.trim()}` : "";
+  const hintLine = hint?.trim()
+    ? `- SCENE CONTEXT (mandatory — your post MUST reflect this scene and reference it directly): "${hint.trim()}"`
+    : "";
 
   // ── Storyline context (optional) ──────────────────────────────────────────
   let storylineContextLine = "";
@@ -877,10 +879,10 @@ Keep each line short. Total text under 260 characters.`;
   const prompt = `You are a social media content creator. Analyze the image(s) and write a post for ${network}.
 Rules:
 - Write in English.
-${personaLine ? personaLine + "\n" : ""}${storylineContextLine ? storylineContextLine + "\n" : ""}- Post style: ${postTypeRule}
+${hintLine ? hintLine + "\n" : ""}${personaLine ? personaLine + "\n" : ""}${storylineContextLine ? storylineContextLine + "\n" : ""}- Post style: ${postTypeRule}
 - Description: max ${nc.descMax} characters. ${nc.notes}
 - Tags: ${tagInstruction} ${tagNote}
-${nc.titleNeeded ? "- Title: short, catchy, max 80 chars." : ""}${hintLine ? "\n" + hintLine : ""}
+${nc.titleNeeded ? "- Title: short, catchy, max 80 chars." : ""}
 Respond with ONLY valid JSON, no markdown fences:
 {${nc.titleNeeded ? '"title":"...","' : ""}"description":"...","tags":["tag1","tag2"]}`;
 
