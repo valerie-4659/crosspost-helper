@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.48 - 2026-05-28
+
+- fix(library): don't close AI panel after queuing — user closes it manually
+- feat(ai-panel): Images only button — queues images, clears text from bridge, copies text+tags to clipboard
+- feat(ai-panel): add 360/540/720 char presets for multi-image posts
+
+
 ## v0.2.47 - 2026-05-28
 
 - fix(ai): send all images to AI + auto-scale text length per image count

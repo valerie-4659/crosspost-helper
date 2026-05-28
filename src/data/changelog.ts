@@ -6,6 +6,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.48",
+    date: "2026-05-28",
+    items: [
+      "fix(library): don't close AI panel after queuing — user closes it manually",
+      "feat(ai-panel): Images only button — queues images, clears text from bridge, copies text+tags to clipboard",
+      "feat(ai-panel): add 360/540/720 char presets for multi-image posts",
+    ],
+  },
+  {
     version: "0.2.47",
     date: "2026-05-28",
     items: [
