@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.41",
+    date: "2026-05-28",
+    items: [
+      "fix+feat: story token budget + per-post max-length selector",
+      "fix: toggle alignment + library state persistence",
+    ],
+  },
+  {
     version: "0.2.40",
     date: "2026-05-28",
     items: [

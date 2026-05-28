@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.41 - 2026-05-28
+
+- fix+feat: story token budget + per-post max-length selector
+- fix: toggle alignment + library state persistence
+
+
 ## v0.2.40 - 2026-05-28
 
 - Release v0.2.40
