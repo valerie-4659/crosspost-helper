@@ -209,13 +209,13 @@ onMounted(async () => {
           <p class="mt-0.5 text-xs text-slate-500">Raises the character limit from 280 → 25 000. AI writes longer, richer posts and story episodes.</p>
         </div>
         <button
-          class="relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
+          class="relative h-5 w-9 shrink-0 overflow-hidden rounded-full transition-colors duration-200"
           :class="ai.config.xPremiumPlus ? 'bg-accent' : 'bg-slate-700'"
           @click="ai.config.xPremiumPlus = !ai.config.xPremiumPlus"
         >
           <span
             class="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200"
-            :class="ai.config.xPremiumPlus ? 'translate-x-4' : 'translate-x-0.5'"
+            :class="ai.config.xPremiumPlus ? 'translate-x-[18px]' : 'translate-x-0.5'"
           />
         </button>
       </div>
