@@ -92,6 +92,7 @@ function saveLibState() {
     currentDir:          currentDir.value,
     hidePostedNetworkId: hidePostedNetworkId.value,
     hidePostedTargetId:  imageStore.filters.hidePostedForTargetId ?? "",
+    collectionIds:       [...collectionImages.keys()],
   }));
 }
 
@@ -118,6 +119,12 @@ onMounted(() => {
   if (_saved.hidePostedTargetId) {
     hidePostedNetworkId.value = _saved.hidePostedTargetId;
     imageStore.filters.hidePostedForTargetId = _saved.hidePostedTargetId;
+  }
+  // Pre-seed selected IDs so imageStore.load() retains them (it filters to valid IDs only)
+  if (_saved.collectionIds?.length) {
+    for (const id of _saved.collectionIds as string[]) {
+      imageStore.selectedImageIds.add(id);
+    }
   }
   imageStore.load();
 });
@@ -406,6 +413,31 @@ function lightboxNavigate(image: ImageWithPostState) {
 const collectionImages = reactive(new Map<string, ImageWithPostState>());
 const collectionArray = computed(() => [...collectionImages.values()]);
 const collectionCount = computed(() => collectionImages.size);
+
+// Restore collection (and sync selection) once images are loaded for the first time
+let _collectionRestored = false;
+watch(
+  () => imageStore.images,
+  (imgs) => {
+    if (_collectionRestored || !imgs.length || !(_saved.collectionIds as string[] | undefined)?.length) return;
+    _collectionRestored = true;
+    const savedIds = new Set<string>(_saved.collectionIds as string[]);
+    for (const img of imgs) {
+      if (savedIds.has(img.id)) {
+        collectionImages.set(img.id, img);
+        // Ensure store selection is in sync (already pre-seeded in onMounted, but
+        // imageStore.load() filters to valid IDs so this is always consistent here)
+        if (!imageStore.selectedImageIds.has(img.id)) {
+          imageStore.selectedImageIds.add(img.id);
+        }
+      }
+    }
+  },
+  { deep: false },
+);
+
+// Persist collection changes
+watch(() => collectionImages.size, saveLibState);
 
 /** Toggle a single image in/out of the collection and keep store selection in sync. */
 function toggleCollection(imageId: string) {
