@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.45",
+    date: "2026-05-28",
+    items: [
+      "fix(extension/x): move cursor to start after injection so user can edit",
+    ],
+  },
+  {
     version: "0.2.44",
     date: "2026-05-28",
     items: [

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.45 - 2026-05-28
+
+- fix(extension/x): move cursor to start after injection so user can edit
+
+
 ## v0.2.44 - 2026-05-28
 
 - fix(ai): enforce all named characters from context must appear in post
