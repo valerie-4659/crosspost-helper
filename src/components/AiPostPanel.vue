@@ -44,7 +44,7 @@ const qtEventName    = ref("");
 const qtTagger       = ref("");
 const customMaxChars = ref<number | null>(null);
 
-const CHAR_PRESETS = [
+const ALL_CHAR_PRESETS = [
   { label: "180 (Standard X)",   value: 180 },
   { label: "280",                value: 280 },
   { label: "500",                value: 500 },
@@ -53,10 +53,16 @@ const CHAR_PRESETS = [
   { label: "5 000",              value: 5000 },
   { label: "10 000",             value: 10000 },
   { label: "25 000 (Max)",       value: 25000 },
-] as const;
+];
 
-const showCustomMaxChars = computed(
-  () => props.network === "x" && ai.config.xPremiumPlus,
+const showCustomMaxChars = computed(() => props.network === "x");
+
+// Only show presets up to the effective character limit for this account tier
+const effectiveMaxChars = computed(() =>
+  ai.config.xPremiumPlus ? 25000 : 280,
+);
+const CHAR_PRESETS = computed(() =>
+  ALL_CHAR_PRESETS.filter((p) => p.value <= effectiveMaxChars.value),
 );
 const copied      = ref(false);
 const queueError  = ref("");
@@ -212,7 +218,7 @@ onMounted(async () => {
       <p class="mt-1 text-[11px] text-slate-600">Generates <span class="font-mono text-slate-400">TFTT @handle</span> as line 3 of the post.</p>
     </div>
 
-    <!-- Max post length (Premium+ only) -->
+    <!-- Max post length (all X posts) -->
     <div v-if="showCustomMaxChars" class="flex items-center gap-3">
       <p class="shrink-0 text-[11px] font-medium uppercase tracking-wide text-slate-500">Max length</p>
       <div class="relative flex-1">
