@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.43",
+    date: "2026-05-28",
+    items: [
+      "fix(ai): context hint is now mandatory and first rule in prompt",
+      "fix(settings): toggle knob overflow + correct ON translate offset",
+    ],
+  },
+  {
     version: "0.2.42",
     date: "2026-05-28",
     items: [

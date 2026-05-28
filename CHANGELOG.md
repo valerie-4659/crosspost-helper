@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.43 - 2026-05-28
+
+- fix(ai): context hint is now mandatory and first rule in prompt
+- fix(settings): toggle knob overflow + correct ON translate offset
+
+
 ## v0.2.42 - 2026-05-28
 
 - fix(ai-panel): show Max length dropdown for ALL X posts, not just Premium+
