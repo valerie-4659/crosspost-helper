@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.47",
+    date: "2026-05-28",
+    items: [
+      "fix(ai): send all images to AI + auto-scale text length per image count",
+      "fix: 180-char limit ignored + tag cursor trap in X composer",
+    ],
+  },
+  {
     version: "0.2.46",
     date: "2026-05-28",
     items: [

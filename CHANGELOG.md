@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.47 - 2026-05-28
+
+- fix(ai): send all images to AI + auto-scale text length per image count
+- fix: 180-char limit ignored + tag cursor trap in X composer
+
+
 ## v0.2.46 - 2026-05-28
 
 - Release v0.2.46
