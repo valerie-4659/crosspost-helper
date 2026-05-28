@@ -45,9 +45,12 @@ const qtTagger       = ref("");
 const customMaxChars = ref<number | null>(null);
 
 const ALL_CHAR_PRESETS = [
-  { label: "180 (Standard X)",   value: 180 },
+  { label: "180 (1 image)",      value: 180 },
   { label: "280",                value: 280 },
+  { label: "360 (2 images)",     value: 360 },
   { label: "500",                value: 500 },
+  { label: "540 (3 images)",     value: 540 },
+  { label: "720 (4 images)",     value: 720 },
   { label: "1 000",              value: 1000 },
   { label: "2 500",              value: 2500 },
   { label: "5 000",              value: 5000 },
