@@ -773,9 +773,11 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     };
   }
 
-  // Per-post custom max chars (Premium+ only — caps at the network's effective limit)
+  // Per-post custom max chars — caps at the network's effective limit.
+  // Also override notes so the AI doesn't ignore the limit based on the old Premium+ note.
   if (customMaxChars && Number.isFinite(Number(customMaxChars))) {
-    nc = { ...nc, descMax: Math.min(Number(customMaxChars), nc.descMax) };
+    const cap = Math.min(Number(customMaxChars), nc.descMax);
+    nc = { ...nc, descMax: cap, notes: `Write EXACTLY up to ${cap} characters. Do NOT exceed ${cap} characters under any circumstances.` };
   }
 
   // Scale max_tokens to the effective char limit (~3 chars/token + overhead for JSON/tags)

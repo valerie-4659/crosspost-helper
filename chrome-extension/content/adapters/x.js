@@ -119,18 +119,26 @@ window.CrosspostBridge._currentAdapter = {
           // Step 2: append trailing space → finalise hashtag nodes
           document.execCommand("insertText", false, " ");
 
-          // Step 3: move cursor to the START of the text so the user can
-          // immediately edit the description without fighting hashtag nodes.
-          await new Promise((r) => setTimeout(r, 80));
-          taFinal.dispatchEvent(new KeyboardEvent("keydown", {
-            key: "Home", code: "Home", keyCode: 36,
-            ctrlKey: true, bubbles: true, cancelable: true,
-          }));
-          await new Promise((r) => setTimeout(r, 40));
-          taFinal.dispatchEvent(new KeyboardEvent("keyup", {
-            key: "Home", code: "Home", keyCode: 36,
-            ctrlKey: true, bubbles: true,
-          }));
+          // Step 3: move cursor to the START of the text using the Selection API.
+          // Keyboard event dispatch (Ctrl+Home) is intercepted by Lexical's own handler
+          // and doesn't reliably move the cursor — use DOM selection directly instead.
+          await new Promise((r) => setTimeout(r, 100));
+          try {
+            const sel = window.getSelection();
+            if (sel) {
+              // Walk the editor's DOM to find the very first text node
+              // (that's inside the description, before any HashtagNode spans).
+              const walker = document.createTreeWalker(taFinal, NodeFilter.SHOW_TEXT);
+              const firstText = walker.nextNode();
+              if (firstText) {
+                const range = document.createRange();
+                range.setStart(firstText, 0);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }
+            }
+          } catch { /* ignore — editing will still work, cursor just stays at end */ }
         }
       }
 
