@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.34 - 2026-05-28
+
+- feat: editable AI result, modern filter UI, per-network skip, history page
+
+
 ## v0.2.33 - 2026-05-26
 
 - Release v0.2.33
