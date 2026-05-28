@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { Check, Copy, Send, Sparkles, X } from "lucide-vue-next";
 import { useAiStore } from "@/stores/aiStore";
 
@@ -40,18 +40,10 @@ const ocName      = ref("");
 const copied      = ref(false);
 const queueError  = ref("");
 
-// ── Editable result fields ─────────────────────────────────────────────────
-const editTitle       = ref("");
-const editDescription = ref("");
-const editTags        = ref(""); // space-separated tag string
-
-// Sync from store whenever a new result arrives.
-watch(() => ai.generatedPost, (post) => {
-  if (!post) return;
-  editTitle.value       = post.title       ?? "";
-  editDescription.value = post.description ?? "";
-  editTags.value        = (post.tags        ?? []).join(" ");
-}, { immediate: true });
+// Editable result fields live in the store so PickerPage can also read the
+// user-edited values when calling sendToExtension / sendMultiPickToExtension.
+// ai.editedTitle / ai.editedDescription / ai.editedTags are synced from
+// generatedPost automatically inside generatePost() and cleared by clearGeneratedPost().
 
 const POST_TYPES = [
   { value: "engagement", label: "💬 Engagement" },
@@ -89,9 +81,9 @@ async function queueForExtension() {
     const ids = props.imageIds.slice(0, props.queueLimit ?? 1);
     await window.desktop.bridge.setQueue(props.network, ids);
     await window.desktop.bridge.setPostContent(props.network, {
-      title:       editTitle.value,
-      description: editDescription.value,
-      tags:        editTags.value.split(/\s+/).filter(Boolean),
+      title:       ai.editedTitle,
+      description: ai.editedDescription,
+      tags:        ai.editedTags.split(/\s+/).filter(Boolean),
     });
     emit("queued", ids.length);
   } catch (err) {
@@ -99,13 +91,13 @@ async function queueForExtension() {
   }
 }
 
-/** Full text ready to copy: uses the user's (possibly edited) values */
+/** Full text ready to copy: uses the user's (possibly edited) values from the store */
 const copyableText = computed(() => {
   if (!ai.generatedPost) return "";
   const parts: string[] = [];
-  if (editTitle.value)       parts.push(editTitle.value);
-  if (editDescription.value) parts.push(editDescription.value);
-  if (editTags.value)        parts.push(editTags.value);
+  if (ai.editedTitle)       parts.push(ai.editedTitle);
+  if (ai.editedDescription) parts.push(ai.editedDescription);
+  if (ai.editedTags)        parts.push(ai.editedTags);
   return parts.join("\n\n");
 });
 
@@ -187,25 +179,25 @@ async function copyText() {
     <div v-if="ai.generatedPost" class="space-y-3 rounded-xl border border-accent/20 bg-panel p-4 text-xs">
       <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Result <span class="normal-case font-normal text-slate-600">— edit before sending</span></p>
 
-      <div v-if="editTitle !== undefined && ai.generatedPost.title !== undefined">
+      <div v-if="ai.generatedPost.title !== undefined">
         <p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">Title</p>
         <input
-          v-model="editTitle"
+          v-model="ai.editedTitle"
           class="w-full rounded-md border border-line bg-panelSoft px-2.5 py-1.5 text-xs text-white placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
         />
       </div>
       <div>
         <p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">Description</p>
         <textarea
-          v-model="editDescription"
+          v-model="ai.editedDescription"
           rows="5"
           class="w-full resize-y rounded-md border border-line bg-panelSoft px-2.5 py-1.5 text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
         />
       </div>
-      <div v-if="editTags">
+      <div v-if="ai.editedTags">
         <p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">Tags</p>
         <textarea
-          v-model="editTags"
+          v-model="ai.editedTags"
           rows="2"
           class="w-full resize-none rounded-md border border-line bg-panelSoft px-2.5 py-1.5 text-xs text-slate-400 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
         />

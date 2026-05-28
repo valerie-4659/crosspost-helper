@@ -45,12 +45,12 @@ async function sendToExtension() {
   try {
     // Always push the image queue.
     await window.desktop.bridge.setQueue(targetType, [picker.currentImage.id]);
-    // Also push AI post content if it was generated.
+    // Also push AI post content if it was generated (use edited values, not raw AI output).
     if (ai.generatedPost) {
       await window.desktop.bridge.setPostContent(targetType, {
-        title:       ai.generatedPost.title       ?? "",
-        description: ai.generatedPost.description ?? "",
-        tags:        [...(ai.generatedPost.tags   ?? [])],
+        title:       ai.editedTitle,
+        description: ai.editedDescription,
+        tags:        ai.editedTags.split(/\s+/).filter(Boolean),
       });
     }
     const extra = ai.generatedPost ? " + AI text" : "";
@@ -127,9 +127,9 @@ async function sendMultiPickToExtension(targetType: string) {
   await window.desktop.bridge.setQueue(targetType, ids);
   if (ai.generatedPost) {
     await window.desktop.bridge.setPostContent(targetType, {
-      title:       ai.generatedPost.title       ?? "",
-      description: ai.generatedPost.description ?? "",
-      tags:        [...(ai.generatedPost.tags   ?? [])],
+      title:       ai.editedTitle,
+      description: ai.editedDescription,
+      tags:        ai.editedTags.split(/\s+/).filter(Boolean),
     });
   }
   const extra = ai.generatedPost ? " + AI text" : "";

@@ -11,6 +11,12 @@ export const useAiStore = defineStore("ai", () => {
   const generateError = ref("");
   const generatedPost = ref<GeneratedPost | null>(null);
 
+  // User-editable versions of the generated fields.
+  // Synced from generatedPost when a new result arrives; can be freely edited.
+  const editedTitle       = ref("");
+  const editedDescription = ref("");
+  const editedTags        = ref(""); // space-separated tag string
+
   // Per-network tags (loaded on demand, keyed by network)
   const networkTagsMap = ref<Record<string, NetworkTag[]>>({});
   const tagsLoading = ref(false);
@@ -87,6 +93,10 @@ export const useAiStore = defineStore("ai", () => {
         ocName ?? "",
       );
       generatedPost.value = { ...result, network };
+      // Sync editable fields so all consumers (AiPostPanel, PickerPage, …) start from the fresh result.
+      editedTitle.value       = result.title ?? "";
+      editedDescription.value = result.description ?? "";
+      editedTags.value        = (result.tags ?? []).join(" ");
     } catch (err) {
       generateError.value = err instanceof Error ? err.message : String(err);
     } finally {
@@ -97,6 +107,9 @@ export const useAiStore = defineStore("ai", () => {
   function clearGeneratedPost() {
     generatedPost.value = null;
     generateError.value = "";
+    editedTitle.value       = "";
+    editedDescription.value = "";
+    editedTags.value        = "";
   }
 
   /** Push generated post content to the bridge for the Chrome extension. */
@@ -115,6 +128,9 @@ export const useAiStore = defineStore("ai", () => {
     generating,
     generateError,
     generatedPost,
+    editedTitle,
+    editedDescription,
+    editedTags,
     networkTagsMap,
     tagsLoading,
     loadConfig,
