@@ -787,7 +787,7 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   const tagNote = nc.tagHasHash ? "Include the # symbol in each tag." : "Do NOT include # symbol in tags.";
 
   const hintLine = hint?.trim()
-    ? `- SCENE CONTEXT (mandatory — your post MUST reflect this scene and reference it directly): "${hint.trim()}"`
+    ? `- SCENE CONTEXT — THIS IS THE MOST IMPORTANT RULE: Your post MUST be directly about this scene. Every character, name, and relationship in it MUST appear explicitly in the post text. Do NOT paraphrase, omit, or replace any name. Scene: "${hint.trim()}"`
     : "";
 
   // ── Storyline context (optional) ──────────────────────────────────────────
