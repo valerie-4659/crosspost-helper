@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Archive, Check, Clipboard, Copy, Expand, FolderOpen, RotateCcw } from "lucide-vue-next";
+import { Archive, Check, Clipboard, Copy, EyeOff, Expand, FolderOpen, RotateCcw } from "lucide-vue-next";
 import { setImagesDragData } from "@/services/imageActionService";
 import PlatformIcon from "@/components/PlatformIcon.vue";
 
@@ -125,15 +125,30 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
           <PlatformIcon :type="target.type" :size="14" />
         </button>
       </div>
-      <button
-        v-if="activeTarget"
-        class="button-primary w-full rounded-md"
-        :disabled="activeTargetStatus === 'posted'"
-        @click="emit('markPosted', image.id, activeTarget.id)"
-      >
-        <Check class="h-4 w-4" />
-        {{ activeTargetStatus === "posted" ? `Posted on ${activeTarget.name}` : `Marked ${activeTarget.name}` }}
-      </button>
+      <!-- Mark posted / Skip row for active target -->
+      <div v-if="activeTarget" class="flex gap-1.5">
+        <button
+          class="button-primary flex-1 rounded-md text-xs"
+          :disabled="activeTargetStatus === 'posted'"
+          :title="`Mark as posted on ${activeTarget.name}`"
+          @click="emit('markPosted', image.id, activeTarget.id)"
+        >
+          <Check class="h-3.5 w-3.5" />
+          {{ activeTargetStatus === "posted" ? `✓ ${activeTarget.name}` : `Mark ${activeTarget.name}` }}
+        </button>
+        <!-- Skip for network (per-network exclude) -->
+        <button
+          class="button h-8 w-8 shrink-0 p-0 transition"
+          :class="activeTargetStatus === 'skipped' ? 'border-rose/50 bg-rose/10 text-rose' : 'hover:border-rose/50 hover:text-rose'"
+          :title="activeTargetStatus === 'skipped' ? `Skipped for ${activeTarget.name} — click to undo` : `Skip for ${activeTarget.name} (per-network exclude)`"
+          @click="activeTargetStatus === 'skipped'
+            ? emit('markPosted', image.id, activeTarget.id)
+            : emit('markSkipped', image.id, activeTarget.id)"
+        >
+          <EyeOff class="h-3.5 w-3.5" />
+        </button>
+      </div>
+
       <div class="flex items-center gap-2">
         <button class="button h-8 w-8 p-0" title="Reveal file" @click="emit('reveal', image)">
           <FolderOpen class="h-4 w-4" />
@@ -144,7 +159,13 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
         <button class="button h-8 w-8 p-0" title="Copy file path" @click="emit('copyPath', image)">
           <Copy class="h-4 w-4" />
         </button>
-        <button class="button h-8 w-8 p-0" :title="image.isArchived ? 'Restore' : 'Exclude'" @click="emit('archive', image.id, !image.isArchived)">
+        <!-- Global exclude / restore -->
+        <button
+          class="button h-8 w-8 p-0 transition"
+          :class="image.isArchived ? 'border-amber-500/50 bg-amber-500/10 text-amber-400' : 'hover:border-amber-500/50 hover:text-amber-400'"
+          :title="image.isArchived ? 'Restore (globally)' : 'Exclude globally (all networks + Picker)'"
+          @click="emit('archive', image.id, !image.isArchived)"
+        >
           <RotateCcw v-if="image.isArchived" class="h-4 w-4" />
           <Archive v-else class="h-4 w-4" />
         </button>

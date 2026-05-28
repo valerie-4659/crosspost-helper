@@ -1,5 +1,5 @@
 import { createId, getDatabase, nowIso } from "./database";
-import type { PostRecord, PostRecordInput, PostRecordStatus } from "@/types/postRecord";
+import type { PostRecord, PostRecordInput, PostRecordStatus, PostHistoryEntry, PostHistoryFilters } from "@/types/postRecord";
 
 type PostRecordRow = {
   id: string;
@@ -70,4 +70,73 @@ export async function upsertPostRecord(input: PostRecordInput): Promise<PostReco
     createdAt,
     updatedAt: timestamp,
   };
+}
+
+// ── Post History ──────────────────────────────────────────────────────────────
+
+type PostHistoryRow = {
+  id: string;
+  image_id: string;
+  target_id: string;
+  status: PostRecordStatus;
+  posted_at: string | null;
+  filename: string;
+  local_path: string | null;
+  thumbnail_url: string | null;
+  target_name: string;
+  target_type: string;
+};
+
+function mapHistoryEntry(row: PostHistoryRow): PostHistoryEntry {
+  return {
+    id: row.id,
+    imageId: row.image_id,
+    targetId: row.target_id,
+    status: row.status,
+    postedAt: row.posted_at,
+    filename: row.filename,
+    localPath: row.local_path,
+    thumbnailUrl: row.thumbnail_url,
+    targetName: row.target_name,
+    targetType: row.target_type,
+  };
+}
+
+export async function getPostHistory(filters: PostHistoryFilters = {}): Promise<PostHistoryEntry[]> {
+  const db = await getDatabase();
+  const params: unknown[] = ["posted"];
+  const conditions = ["pr.status = $1"];
+
+  if (filters.targetType) {
+    params.push(filters.targetType);
+    conditions.push(`pt.type = $${params.length}`);
+  }
+  if (filters.targetId) {
+    params.push(filters.targetId);
+    conditions.push(`pr.target_id = $${params.length}`);
+  }
+  if (filters.dateFrom) {
+    params.push(filters.dateFrom);
+    conditions.push(`pr.posted_at >= $${params.length}`);
+  }
+  if (filters.dateTo) {
+    params.push(filters.dateTo);
+    conditions.push(`pr.posted_at <= $${params.length}`);
+  }
+
+  const where = conditions.join(" AND ");
+  const rows = await db.select<PostHistoryRow[]>(
+    `SELECT pr.id, pr.image_id, pr.target_id, pr.status, pr.posted_at,
+            images.filename, images.local_path, images.thumbnail_url,
+            pt.name AS target_name, pt.type AS target_type
+     FROM post_records pr
+     JOIN images ON images.id = pr.image_id
+     JOIN posting_targets pt ON pt.id = pr.target_id
+     WHERE ${where}
+     ORDER BY pr.posted_at DESC
+     LIMIT 500`,
+    params,
+  );
+
+  return rows.map(mapHistoryEntry);
 }

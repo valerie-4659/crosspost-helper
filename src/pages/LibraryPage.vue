@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
-import { Archive, Check, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
+import { Archive, Check, ChevronDown, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
@@ -478,38 +478,40 @@ async function fillSlot(slotId: string) {
           Collection
           <span class="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-ink">{{ collectionCount }}</span>
         </button>
-        <!-- Sort controls: mode selector + direction toggle -->
-        <div class="flex items-center gap-0">
-          <select
-            v-model="sortMode"
-            class="input h-8 rounded-r-none border-r-0 py-0 text-xs"
-            title="Sort images and folders by…"
-          >
-            <option value="date">📅 Date</option>
-            <option value="alpha">🔤 Name</option>
-            <option value="pick">🕐 Last pick</option>
-          </select>
+        <!-- Sort controls: pill buttons + direction toggle -->
+        <div class="flex items-center rounded-lg border border-line overflow-hidden">
           <button
-            class="button h-8 rounded-l-none px-2 text-sm font-bold"
+            v-for="sm in ([{v:'date',l:'📅 Date'},{v:'alpha',l:'🔤 Name'},{v:'pick',l:'🕐 Pick'}] as const)"
+            :key="sm.v"
+            class="h-8 px-2.5 text-xs font-medium transition border-r border-line last:border-r-0"
+            :class="sortMode === sm.v ? 'bg-accent/15 text-accent' : 'bg-panel text-slate-400 hover:bg-panelSoft hover:text-white'"
+            :title="`Sort by ${sm.l}`"
+            @click="sortMode = sm.v"
+          >{{ sm.l }}</button>
+          <button
+            class="h-8 border-l border-line bg-panel px-2 text-sm font-bold text-slate-400 transition hover:bg-panelSoft hover:text-white"
             :title="sortAsc ? 'Ascending — click for descending' : 'Descending — click for ascending'"
             @click="sortAsc = !sortAsc"
           >{{ sortAsc ? '↑' : '↓' }}</button>
         </div>
 
-        <!-- Hide-posted-for-network toggle -->
-        <div class="flex items-center gap-0.5">
-          <select
-            v-model="hidePostedNetworkId"
-            class="input h-8 rounded-r-none border-r-0 py-0 text-xs"
-            title="Select network to hide already-posted images"
-          >
-            <option value="">All images</option>
-            <option v-for="t in targetStore.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
-          </select>
+        <!-- Hide-posted-for-network: styled select + toggle -->
+        <div class="flex items-center rounded-lg border border-line overflow-hidden">
+          <div class="relative">
+            <select
+              v-model="hidePostedNetworkId"
+              class="h-8 appearance-none border-r border-line bg-panel pl-3 pr-7 text-xs text-slate-300 transition focus:outline-none cursor-pointer hover:bg-panelSoft"
+              title="Select network to hide already-posted images"
+            >
+              <option value="">All images</option>
+              <option v-for="t in targetStore.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
+            </select>
+            <ChevronDown class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
+          </div>
           <button
-            class="button h-8 rounded-l-none border-l-0 px-2 text-xs"
-            :class="imageStore.filters.hidePostedForTargetId ? 'border-rose/50 bg-rose/10 text-rose' : ''"
-            :title="imageStore.filters.hidePostedForTargetId ? 'Click to show posted images again' : 'Hide images already posted to selected network'"
+            class="h-8 px-2.5 text-xs transition"
+            :class="imageStore.filters.hidePostedForTargetId ? 'bg-rose/10 text-rose' : 'bg-panel text-slate-400 hover:bg-panelSoft hover:text-white'"
+            :title="imageStore.filters.hidePostedForTargetId ? 'Click to show posted images again' : 'Hide already-posted images'"
             :disabled="!hidePostedNetworkId"
             @click="toggleHidePosted"
           >
@@ -557,9 +559,12 @@ async function fillSlot(slotId: string) {
     >
       <!-- Row 1: network selector + selection actions -->
       <div class="flex flex-wrap items-center gap-1.5">
-        <select v-model="targetStore.activeTargetId" class="field h-7 py-0 text-xs" title="Active network for all actions">
-          <option v-for="t in targetStore.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
-        </select>
+        <div class="relative">
+          <select v-model="targetStore.activeTargetId" class="h-7 appearance-none rounded-lg border border-line bg-panelSoft pl-2.5 pr-7 text-xs text-slate-200 transition focus:border-accent/60 focus:outline-none cursor-pointer hover:border-slate-500" title="Active network for all actions">
+            <option v-for="t in targetStore.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
+          </select>
+          <ChevronDown class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
+        </div>
         <span class="mx-1 text-xs text-slate-500">|</span>
         <span class="mr-1 text-xs font-medium text-white">{{ selectedCount }} selected</span>
         <button class="button h-7 gap-1 px-2 text-xs" title="Add all visible images to the collection" @click="addVisibleToCollection">
@@ -805,9 +810,12 @@ async function fillSlot(slotId: string) {
           <span class="ml-1.5 rounded bg-accent/20 px-1.5 py-0.5 text-xs text-accent">{{ collectionCount }}</span>
         </span>
         <div class="flex items-center gap-1">
-          <select v-model="targetStore.activeTargetId" class="field h-6 py-0 text-xs" title="Active network">
-            <option v-for="t in targetStore.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
-          </select>
+          <div class="relative">
+            <select v-model="targetStore.activeTargetId" class="h-6 appearance-none rounded border border-line bg-panelSoft pl-2 pr-6 text-xs text-slate-200 focus:border-accent/60 focus:outline-none cursor-pointer" title="Active network">
+              <option v-for="t in targetStore.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
+            </select>
+            <ChevronDown class="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
+          </div>
           <button class="button h-6 w-6 p-0" title="Close tray" @click="showCollection = false">
             <X class="h-3 w-3" />
           </button>

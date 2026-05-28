@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { Check, Copy, Send, Sparkles, X } from "lucide-vue-next";
 import { useAiStore } from "@/stores/aiStore";
 
@@ -40,9 +40,22 @@ const ocName      = ref("");
 const copied      = ref(false);
 const queueError  = ref("");
 
+// ── Editable result fields ─────────────────────────────────────────────────
+const editTitle       = ref("");
+const editDescription = ref("");
+const editTags        = ref(""); // space-separated tag string
+
+// Sync from store whenever a new result arrives.
+watch(() => ai.generatedPost, (post) => {
+  if (!post) return;
+  editTitle.value       = post.title       ?? "";
+  editDescription.value = post.description ?? "";
+  editTags.value        = (post.tags        ?? []).join(" ");
+}, { immediate: true });
+
 const POST_TYPES = [
   { value: "engagement", label: "💬 Engagement" },
-  { value: "qt",         label: "🔁 Quote Tweet" },
+  { value: "qt",         label: "🎉 QT Event" },
   { value: "morning",    label: "☀️ Good Morning" },
   { value: "goodnight",  label: "🌙 Good Night" },
   { value: "story",      label: "📖 Story" },
@@ -76,9 +89,9 @@ async function queueForExtension() {
     const ids = props.imageIds.slice(0, props.queueLimit ?? 1);
     await window.desktop.bridge.setQueue(props.network, ids);
     await window.desktop.bridge.setPostContent(props.network, {
-      title:       ai.generatedPost.title       ?? "",
-      description: ai.generatedPost.description ?? "",
-      tags:        [...(ai.generatedPost.tags   ?? [])],
+      title:       editTitle.value,
+      description: editDescription.value,
+      tags:        editTags.value.split(/\s+/).filter(Boolean),
     });
     emit("queued", ids.length);
   } catch (err) {
@@ -86,13 +99,13 @@ async function queueForExtension() {
   }
 }
 
-/** Full text ready to copy: title + description + tags */
+/** Full text ready to copy: uses the user's (possibly edited) values */
 const copyableText = computed(() => {
   if (!ai.generatedPost) return "";
   const parts: string[] = [];
-  if (ai.generatedPost.title)      parts.push(ai.generatedPost.title);
-  if (ai.generatedPost.description) parts.push(ai.generatedPost.description);
-  if (ai.generatedPost.tags?.length) parts.push(ai.generatedPost.tags.join(" "));
+  if (editTitle.value)       parts.push(editTitle.value);
+  if (editDescription.value) parts.push(editDescription.value);
+  if (editTags.value)        parts.push(editTags.value);
   return parts.join("\n\n");
 });
 
@@ -170,19 +183,32 @@ async function copyText() {
       {{ ai.generateError }}
     </div>
 
-    <!-- Result -->
+    <!-- Result (editable) -->
     <div v-if="ai.generatedPost" class="space-y-3 rounded-xl border border-accent/20 bg-panel p-4 text-xs">
-      <div v-if="ai.generatedPost.title">
-        <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Title</p>
-        <p class="text-white">{{ ai.generatedPost.title }}</p>
+      <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Result <span class="normal-case font-normal text-slate-600">— edit before sending</span></p>
+
+      <div v-if="editTitle !== undefined && ai.generatedPost.title !== undefined">
+        <p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">Title</p>
+        <input
+          v-model="editTitle"
+          class="w-full rounded-md border border-line bg-panelSoft px-2.5 py-1.5 text-xs text-white placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+        />
       </div>
       <div>
-        <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Description</p>
-        <p class="whitespace-pre-wrap leading-relaxed text-slate-200">{{ ai.generatedPost.description }}</p>
+        <p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">Description</p>
+        <textarea
+          v-model="editDescription"
+          rows="5"
+          class="w-full resize-y rounded-md border border-line bg-panelSoft px-2.5 py-1.5 text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+        />
       </div>
-      <div v-if="ai.generatedPost.tags?.length">
-        <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Tags</p>
-        <p class="text-slate-400">{{ ai.generatedPost.tags.join(' ') }}</p>
+      <div v-if="editTags">
+        <p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">Tags</p>
+        <textarea
+          v-model="editTags"
+          rows="2"
+          class="w-full resize-none rounded-md border border-line bg-panelSoft px-2.5 py-1.5 text-xs text-slate-400 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+        />
       </div>
 
       <!-- Queue error -->

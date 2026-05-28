@@ -769,12 +769,26 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     ? `Write from the perspective of "${ocName.trim()}" (third person, e.g. "${ocName.trim()} loves…").`
     : perspective === "i"
       ? "Write in first person (I, me, my)."
-      : "";
+      : "Describe the image objectively as a neutral observer. Do NOT use first-person voice (no 'I', 'me', 'my').";
 
-  const perspSuffix = perspectiveNote ? ` ${perspectiveNote}` : "";
+  const perspSuffix = ` ${perspectiveNote}`;
+
+  // QT Event template (multi-line social post format)
+  const qtEventRule = `Write a "QT Event" post in EXACTLY this multi-line format:
+Line 1: QT [THEME IN CAPS]![fitting emoji]
+Line 2: (empty)
+Line 3: thx for the tag [tagger handle if hint mentions one, e.g. @Someone — skip this line entirely if no tagger mentioned]
+Line 4: (empty — only if line 3 was included)
+Line 5: [witty, cheeky one-liner tagline describing the image theme, e.g. "oooh... y'all mean (this) kinda face⁉️"]
+Line 6: (empty)
+Line 7: let's see ❤️‍🔥
+Derive THEME from what you see in the image (e.g. SPICY FRIDAY, THAT LOOK, MORNING MOOD).
+No @ mentions except tagger from hint. No hashtags in the text body (use the tags field).
+Keep each line short. Total text under 260 characters.`;
+
   const POST_TYPE_RULES = {
     engagement: `Write an engaging caption that invites interaction. Ask a question or use a call-to-action.${perspSuffix}`,
-    qt:         `Write a short quote-tweet style reply/reaction to the image (1-2 sentences, conversational, no hashtags needed in text).${perspSuffix}`,
+    qt:         qtEventRule,
     morning:    `Start with a warm "Good morning ☀️" greeting, then add a brief description of what's in the image.${perspSuffix}`,
     goodnight:  `Start with a warm "Good night 🌙" or "Sweet dreams ✨" farewell, then add a brief, evocative description of the image.${perspSuffix}`,
     story:      `Write a short creative micro-story (2-4 sentences) inspired by or about the subject in the image. Make it vivid and atmospheric.${perspSuffix}`,
