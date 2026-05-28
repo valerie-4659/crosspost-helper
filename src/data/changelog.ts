@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.44",
+    date: "2026-05-28",
+    items: [
+      "fix(ai): enforce all named characters from context must appear in post",
+      "fix(library): restore folder+selection on remount (Settings→Library)",
+    ],
+  },
+  {
     version: "0.2.43",
     date: "2026-05-28",
     items: [

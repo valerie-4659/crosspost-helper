@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.44 - 2026-05-28
+
+- fix(ai): enforce all named characters from context must appear in post
+- fix(library): restore folder+selection on remount (Settings→Library)
+
+
 ## v0.2.43 - 2026-05-28
 
 - fix(ai): context hint is now mandatory and first rule in prompt
