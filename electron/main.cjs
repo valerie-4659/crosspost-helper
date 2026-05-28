@@ -745,7 +745,8 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
 
   // Downscale images to max 1024px and encode as JPEG before sending to the AI.
   // Sending full-resolution files as base64 easily exceeds API payload limits (→ 400/502).
-  const validPaths = (imagePaths ?? []).filter((p) => p && fs.existsSync(p)).slice(0, 1);
+  // Send up to 4 images — all major vision APIs (OpenAI, Anthropic, Gemini) support multi-image.
+  const validPaths = (imagePaths ?? []).filter((p) => p && fs.existsSync(p)).slice(0, 4);
   const imageData = [];
   for (const p of validPaths) {
     try {
@@ -771,6 +772,14 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
       descMax: 25000,
       notes: "X Premium+ enabled — you have up to 25 000 characters. Write a longer, richer post. Use paragraphs and line breaks for atmosphere.",
     };
+  }
+
+  // Multi-image auto-scaling: when no custom limit is set, scale descMax by image count
+  // so the AI can describe all images (2 imgs = 2×, 3 imgs = 3×, 4 imgs = 4×).
+  const imageCount = imageData.length || 1;
+  if (!customMaxChars && imageCount > 1) {
+    const scaled = Math.min(nc.descMax * imageCount, nc.descMax <= 280 ? nc.descMax * imageCount : nc.descMax);
+    nc = { ...nc, descMax: scaled, notes: nc.notes + ` You have ${imageCount} images — write enough to describe all of them (target ~${scaled} characters total).` };
   }
 
   // Per-post custom max chars — caps at the network's effective limit.
