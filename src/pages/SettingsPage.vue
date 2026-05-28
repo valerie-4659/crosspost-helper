@@ -203,13 +203,13 @@ onMounted(async () => {
         </div>
       </div>
       <!-- X Premium+ toggle -->
-      <div class="mt-3 flex items-start gap-3 rounded-lg border border-line bg-ink px-3 py-2.5">
+      <div class="mt-3 flex items-center gap-3 rounded-lg border border-line bg-ink px-3 py-2.5">
         <div class="flex-1">
           <p class="text-sm font-medium text-white">X (Twitter) Premium+</p>
           <p class="mt-0.5 text-xs text-slate-500">Raises the character limit from 280 → 25 000. AI writes longer, richer posts and story episodes.</p>
         </div>
         <button
-          class="relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
+          class="relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
           :class="ai.config.xPremiumPlus ? 'bg-accent' : 'bg-slate-700'"
           @click="ai.config.xPremiumPlus = !ai.config.xPremiumPlus"
         >

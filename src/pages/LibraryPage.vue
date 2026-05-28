@@ -78,10 +78,27 @@ async function deleteSingleFromLightbox(imageId: string) {
 
 const folderHistory = useFolderHistoryStore();
 
+// ── Library state persistence ─────────────────────────────────────────────
+const LS_LIB = "crosspost_lib_state";
+function _loadLibState() {
+  try { return JSON.parse(localStorage.getItem(LS_LIB) ?? "null") ?? {}; }
+  catch { return {}; }
+}
+const _saved = _loadLibState();
+function saveLibState() {
+  localStorage.setItem(LS_LIB, JSON.stringify({
+    sortMode:            sortMode.value,
+    sortAsc:             sortAsc.value,
+    currentDir:          currentDir.value,
+    hidePostedNetworkId: hidePostedNetworkId.value,
+    hidePostedTargetId:  imageStore.filters.hidePostedForTargetId ?? "",
+  }));
+}
+
 // ── Sort controls ──────────────────────────────────────────────────────────
 type SortMode = "date" | "alpha" | "pick";
-const sortMode = ref<SortMode>("date");
-const sortAsc  = ref(false);
+const sortMode = ref<SortMode>(_saved.sortMode ?? "date");
+const sortAsc  = ref<boolean>(_saved.sortAsc ?? false);
 
 function applySort() {
   const dir = sortAsc.value ? "asc" : "desc";
@@ -96,13 +113,24 @@ watch(() => folderHistory.history, () => {
 }, { deep: true });
 
 // Reload images whenever a filter or showExcludedFolders changes.
-onMounted(() => imageStore.load());
+onMounted(() => {
+  // Restore hide-posted filter before the first load
+  if (_saved.hidePostedTargetId) {
+    hidePostedNetworkId.value = _saved.hidePostedTargetId;
+    imageStore.filters.hidePostedForTargetId = _saved.hidePostedTargetId;
+  }
+  imageStore.load();
+});
 watch(() => imageStore.filters, () => imageStore.load(), { deep: true });
 watch(() => imageStore.showExcludedFolders, () => imageStore.load());
 
 // ── Network hide-posted toggle ─────────────────────────────────────────────
 /** The target ID selected in the hide-posted dropdown (not yet applied). */
-const hidePostedNetworkId = ref("");
+const hidePostedNetworkId = ref<string>(_saved.hidePostedNetworkId ?? "");
+
+// Persist state on every relevant change (declared after hidePostedNetworkId)
+watch([sortMode, sortAsc, hidePostedNetworkId], saveLibState);
+watch(() => imageStore.filters.hidePostedForTargetId, saveLibState);
 
 function toggleHidePosted() {
   if (imageStore.filters.hidePostedForTargetId) {
@@ -166,6 +194,8 @@ const rootDir = computed(() => {
 
 /** The folder path the user has navigated into (empty string = rootDir). */
 const currentDir = ref("");
+// Save currentDir whenever it changes
+watch(currentDir, saveLibState);
 
 /** The last folder the user navigated out of — highlighted in the parent view. */
 const lastVisitedDir = ref("");
@@ -313,9 +343,24 @@ watch(
 );
 
 // Reset navigation whenever the folder list changes (e.g. after a new scan).
+// On the very first load, restore the saved directory if it still exists.
+let _firstFolderLoad = true;
 watch(
   () => imageStore.folders.length,
   () => {
+    if (_firstFolderLoad && imageStore.folders.length > 0) {
+      _firstFolderLoad = false;
+      const savedDir: string = _saved.currentDir ?? "";
+      if (savedDir) {
+        const exists = imageStore.folders.some(
+          (f) => f.folderPath === savedDir || f.folderPath.startsWith(savedDir + "/"),
+        );
+        if (exists) {
+          currentDir.value = savedDir;
+          return;
+        }
+      }
+    }
     currentDir.value = "";
     lastVisitedDir.value = "";
   },
