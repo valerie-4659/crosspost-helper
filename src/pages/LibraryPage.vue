@@ -350,7 +350,9 @@ watch(
 );
 
 // Reset navigation whenever the folder list changes (e.g. after a new scan).
-// On the very first load, restore the saved directory if it still exists.
+// On every (re-)mount, restore the saved directory if it still exists.
+// immediate:true ensures this fires on remount even when folders are already cached
+// (folders.length doesn't change → plain watch would never trigger again).
 let _firstFolderLoad = true;
 watch(
   () => imageStore.folders.length,
@@ -367,10 +369,11 @@ watch(
           return;
         }
       }
+      currentDir.value = "";
+      lastVisitedDir.value = "";
     }
-    currentDir.value = "";
-    lastVisitedDir.value = "";
   },
+  { immediate: true },
 );
 
 async function runAction(action: () => Promise<void>, success: string) {
@@ -414,7 +417,9 @@ const collectionImages = reactive(new Map<string, ImageWithPostState>());
 const collectionArray = computed(() => [...collectionImages.values()]);
 const collectionCount = computed(() => collectionImages.size);
 
-// Restore collection (and sync selection) once images are loaded for the first time
+// Restore collection (and sync selection) once images are available.
+// immediate:true ensures this fires on remount when images are already cached
+// (imageStore.images reference doesn't change → plain watch would never trigger).
 let _collectionRestored = false;
 watch(
   () => imageStore.images,
@@ -425,15 +430,13 @@ watch(
     for (const img of imgs) {
       if (savedIds.has(img.id)) {
         collectionImages.set(img.id, img);
-        // Ensure store selection is in sync (already pre-seeded in onMounted, but
-        // imageStore.load() filters to valid IDs so this is always consistent here)
         if (!imageStore.selectedImageIds.has(img.id)) {
           imageStore.selectedImageIds.add(img.id);
         }
       }
     }
   },
-  { deep: false },
+  { immediate: true },
 );
 
 // Persist collection changes
