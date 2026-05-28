@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.42",
+    date: "2026-05-28",
+    items: [
+      "fix(ai-panel): show Max length dropdown for ALL X posts, not just Premium+",
+      "feat(library): persist selected images + collection across navigation/restart",
+    ],
+  },
+  {
     version: "0.2.41",
     date: "2026-05-28",
     items: [

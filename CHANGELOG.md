@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.42 - 2026-05-28
+
+- fix(ai-panel): show Max length dropdown for ALL X posts, not just Premium+
+- feat(library): persist selected images + collection across navigation/restart
+
+
 ## v0.2.41 - 2026-05-28
 
 - fix+feat: story token budget + per-post max-length selector
