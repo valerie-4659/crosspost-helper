@@ -812,14 +812,14 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     );
     const p = pRows[0]?.values?.[0]; // [name, tone, emoji_use, style_notes]
     if (p) {
-      const [pName, pTone, pEmoji, pNotes] = p;
+      const [pName, , pEmoji, pNotes] = p;
       const emojiNote = pEmoji === "heavy"
         ? "Use emojis generously and often throughout the text."
         : pEmoji === "subtle"
           ? "Use 1–2 emojis where they fit naturally; don't force them."
           : "Do NOT use any emojis.";
-      personaLine = `- Persona / voice: Write as "${pName}". Tone: ${pTone}. Emoji use: ${emojiNote}.`;
-      if (String(pNotes).trim()) personaLine += ` Style notes: ${String(pNotes).trim()}`;
+      personaLine = `- Persona / voice: Write as "${pName}". Emoji use: ${emojiNote}.`;
+      if (String(pNotes).trim()) personaLine += `\n- Behavior rules for this persona: ${String(pNotes).trim()}`;
     }
   } catch { /* personas table may not exist on very old DBs — skip */ }
 

@@ -82,18 +82,18 @@ const EMOJI_USE_LABELS: Record<string, string> = {
 
 const showPersonaForm = ref(false);
 const editingPersonaId = ref<string | null>(null);
-const personaForm = ref({ name: "", tone: "", emojiUse: "subtle" as "none"|"subtle"|"heavy", styleNotes: "" });
+const personaForm = ref({ name: "", emojiUse: "subtle" as "none"|"subtle"|"heavy", styleNotes: "" });
 const personaSaved = ref(false);
 
 function openNewPersona() {
   editingPersonaId.value = null;
-  personaForm.value = { name: "", tone: "", emojiUse: "subtle", styleNotes: "" };
+  personaForm.value = { name: "", emojiUse: "subtle", styleNotes: "" };
   showPersonaForm.value = true;
 }
 
 function openEditPersona(p: import("@/types/aiSettings").Persona) {
   editingPersonaId.value = p.id;
-  personaForm.value = { name: p.name, tone: p.tone, emojiUse: p.emojiUse, styleNotes: p.styleNotes };
+  personaForm.value = { name: p.name, emojiUse: p.emojiUse, styleNotes: p.styleNotes };
   showPersonaForm.value = true;
 }
 
@@ -105,7 +105,7 @@ function cancelPersonaForm() {
 async function savePersonaForm() {
   if (!personaForm.value.name.trim()) return;
   await ai.savePersona(
-    { ...personaForm.value, isActive: editingPersonaId.value
+    { ...personaForm.value, tone: "", isActive: editingPersonaId.value
         ? (ai.personas.find((p) => p.id === editingPersonaId.value)?.isActive ?? false)
         : false },
     editingPersonaId.value ?? undefined,
@@ -309,7 +309,6 @@ onMounted(async () => {
               <span class="text-sm font-medium text-white">{{ persona.name }}</span>
               <span v-if="persona.isActive" class="rounded border border-accent/40 bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">active</span>
             </div>
-            <p v-if="persona.tone" class="mt-0.5 truncate text-xs text-slate-400">{{ persona.tone }}</p>
             <div class="mt-1 flex flex-wrap gap-1">
               <span class="rounded bg-panel px-1.5 py-0.5 text-[10px] text-slate-500">{{ EMOJI_USE_LABELS[persona.emojiUse] }}</span>
               <span v-if="persona.styleNotes" class="max-w-xs truncate rounded bg-panel px-1.5 py-0.5 text-[10px] text-slate-500">{{ persona.styleNotes }}</span>
@@ -335,7 +334,7 @@ onMounted(async () => {
         <div class="grid gap-3 sm:grid-cols-2">
           <div class="flex flex-col gap-1">
             <label class="text-[11px] uppercase tracking-wide text-slate-500">Name</label>
-            <input v-model="personaForm.name" class="field text-sm" placeholder="e.g. Valerie, Hot Mess, Neutral" />
+            <input v-model="personaForm.name" aria-label="Persona name" class="field text-sm" placeholder="e.g. Valerie, Hot Mess, Neutral" />
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-[11px] uppercase tracking-wide text-slate-500">Emoji Use</label>
@@ -346,16 +345,12 @@ onMounted(async () => {
             </select>
           </div>
           <div class="col-span-full flex flex-col gap-1">
-            <label class="text-[11px] uppercase tracking-wide text-slate-500">Tone <span class="normal-case text-slate-600">(short description)</span></label>
-            <input v-model="personaForm.tone" class="field text-sm" placeholder="e.g. Flirty, teasing, confident, loves being dramatic" />
-          </div>
-          <div class="col-span-full flex flex-col gap-1">
-            <label class="text-[11px] uppercase tracking-wide text-slate-500">Style Notes <span class="normal-case text-slate-600">(optional)</span></label>
+            <label class="text-[11px] uppercase tracking-wide text-slate-500">Behavior Rules</label>
             <textarea
               v-model="personaForm.styleNotes"
-              rows="3"
-              class="field resize-none text-xs"
-              placeholder="Vocabulary, example phrases, dos and don'ts — e.g. 'Uses ❤️‍🔥 and 💋 often. Calls followers sweet slaves. Never says boring.'"
+              rows="10"
+              class="field resize-y text-sm leading-relaxed"
+              placeholder="Describe everything: tone, vocabulary, example phrases, dos &amp; don'ts — e.g. 'Flirty and teasing. Uses ❤️‍🔥 and 💋 often. Calls followers sweet slaves. Never says boring. Always ends with a question.'"
             />
           </div>
         </div>
