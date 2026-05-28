@@ -421,44 +421,46 @@ onMounted(async () => {
       </div>
 
       <!-- Action row -->
-      <div class="flex items-center gap-2 border-t border-line pt-3">
-        <!-- Copy -->
-        <button
-          class="button h-7 gap-1.5 px-2.5 text-xs"
-          :class="copied ? 'border-mint/60 bg-mint/10 text-mint' : ''"
-          @click="copyText"
-        >
-          <Check v-if="copied" class="h-3 w-3" /><Copy v-else class="h-3 w-3" />
-          {{ copied ? 'Copied!' : 'Copy' }}
-        </button>
+      <div class="flex flex-col gap-2 border-t border-line pt-3">
 
-        <!-- Queue images only + copy text (Library mode) -->
-        <button
-          v-if="imageIds?.length"
-          class="button h-7 gap-1.5 px-2.5 text-xs"
-          :class="copiedImagesOnly ? 'border-mint/60 bg-mint/10 text-mint' : ''"
-          :title="'Queue images only — text & tags copied to clipboard'"
-          @click="queueImagesOnly"
-        >
-          <Check v-if="copiedImagesOnly" class="h-3 w-3" />
-          <Copy v-else class="h-3 w-3" />
-          {{ copiedImagesOnly ? 'Text copied!' : 'Images only' }}
-        </button>
+        <!-- Extension send buttons (Library mode only) -->
+        <template v-if="imageIds?.length">
+          <!-- Images + Text -->
+          <button
+            class="button-primary flex w-full items-center justify-center gap-2 py-2 text-sm font-medium"
+            @click="queueForExtension"
+          >
+            <Send class="h-4 w-4" />
+            Send to Extension — Images &amp; Text
+          </button>
 
-        <!-- Queue images + text for Extension (Library mode) -->
-        <button
-          v-if="imageIds?.length"
-          class="button-primary h-7 flex-1 gap-1.5 px-3 text-xs"
-          @click="queueForExtension"
-        >
-          <Send class="h-3 w-3" />
-          Queue + text
-        </button>
+          <!-- Images only -->
+          <button
+            class="button flex w-full items-center justify-center gap-2 py-2 text-sm font-medium"
+            :class="copiedImagesOnly ? 'border-mint/60 bg-mint/10 text-mint' : ''"
+            @click="queueImagesOnly"
+          >
+            <Check v-if="copiedImagesOnly" class="h-4 w-4" />
+            <Send v-else class="h-4 w-4" />
+            {{ copiedImagesOnly ? '✓ Text copied to clipboard!' : 'Send to Extension — Images only' }}
+          </button>
+        </template>
 
-        <!-- Discard -->
-        <button class="button h-7 gap-1 px-2.5 text-xs" @click="ai.clearGeneratedPost(); queueError = ''">
-          <X class="h-3 w-3" />Discard
-        </button>
+        <!-- Secondary row: Copy + Discard -->
+        <div class="flex items-center gap-2">
+          <button
+            class="button h-7 gap-1.5 px-2.5 text-xs"
+            :class="copied ? 'border-mint/60 bg-mint/10 text-mint' : ''"
+            @click="copyText"
+          >
+            <Check v-if="copied" class="h-3 w-3" /><Copy v-else class="h-3 w-3" />
+            {{ copied ? 'Copied!' : 'Copy text' }}
+          </button>
+          <button class="button h-7 gap-1 px-2.5 text-xs ml-auto" @click="ai.clearGeneratedPost(); queueError = ''">
+            <X class="h-3 w-3" />Discard
+          </button>
+        </div>
+
       </div>
     </div>
   </div>
