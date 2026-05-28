@@ -179,8 +179,6 @@ async function queueForExtension(targetType: string) {
 
 function onAiQueued(count: number) {
   imageStore.message = `Queued ${count} image(s) for ${libActiveTargetName.value}.`;
-  showAiPanel.value = false;
-  ai.clearGeneratedPost();
 }
 
 // ── Folder navigation ──────────────────────────────────────────────────────────
