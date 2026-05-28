@@ -160,6 +160,29 @@ async function queueForExtension() {
   }
 }
 
+const copiedImagesOnly = ref(false);
+
+/** Queue IMAGES ONLY — clears post content from bridge, copies text+tags to clipboard. */
+async function queueImagesOnly() {
+  if (!props.imageIds?.length) return;
+  queueError.value = "";
+  try {
+    const ids = props.imageIds.slice(0, props.queueLimit ?? 1);
+    await window.desktop.bridge.setQueue(props.network, ids);
+    // Explicitly clear any stale post content so the extension won't inject text.
+    await window.desktop.bridge.clearPostContent(props.network);
+    // Copy text + tags to clipboard so the user can paste manually.
+    if (copyableText.value) {
+      await navigator.clipboard.writeText(copyableText.value).catch(() => {});
+    }
+    copiedImagesOnly.value = true;
+    setTimeout(() => (copiedImagesOnly.value = false), 2500);
+    emit("queued", ids.length);
+  } catch (err) {
+    queueError.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
 /** Full text ready to copy: uses the user's (possibly edited) values from the store */
 const copyableText = computed(() => {
   if (!ai.generatedPost) return "";
@@ -409,14 +432,27 @@ onMounted(async () => {
           {{ copied ? 'Copied!' : 'Copy' }}
         </button>
 
-        <!-- Queue for Extension (Library mode) -->
+        <!-- Queue images only + copy text (Library mode) -->
+        <button
+          v-if="imageIds?.length"
+          class="button h-7 gap-1.5 px-2.5 text-xs"
+          :class="copiedImagesOnly ? 'border-mint/60 bg-mint/10 text-mint' : ''"
+          :title="'Queue images only — text & tags copied to clipboard'"
+          @click="queueImagesOnly"
+        >
+          <Check v-if="copiedImagesOnly" class="h-3 w-3" />
+          <Copy v-else class="h-3 w-3" />
+          {{ copiedImagesOnly ? 'Text copied!' : 'Images only' }}
+        </button>
+
+        <!-- Queue images + text for Extension (Library mode) -->
         <button
           v-if="imageIds?.length"
           class="button-primary h-7 flex-1 gap-1.5 px-3 text-xs"
           @click="queueForExtension"
         >
           <Send class="h-3 w-3" />
-          Queue for {{ networkName || network }}
+          Queue + text
         </button>
 
         <!-- Discard -->
