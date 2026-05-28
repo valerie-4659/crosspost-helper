@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.38",
+    date: "2026-05-28",
+    items: [
+      "feat(qt): Tagged-by field → TFTT @handle line 3",
+    ],
+  },
+  {
     version: "0.2.37",
     date: "2026-05-28",
     items: [

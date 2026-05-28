@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.38 - 2026-05-28
+
+- feat(qt): Tagged-by field → TFTT @handle line 3
+
+
 ## v0.2.37 - 2026-05-28
 
 - fix(library): remove header subtitle, give header breathing room (py-4)
