@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.36 - 2026-05-28
+
+- feat: curated NSFW/adult AI-art tag pool for X (migration 005)
+
+
 ## v0.2.35 - 2026-05-28
 
 - fix: edited AI text now correctly sent to extension

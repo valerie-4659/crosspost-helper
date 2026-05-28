@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.36",
+    date: "2026-05-28",
+    items: [
+      "feat: curated NSFW/adult AI-art tag pool for X (migration 005)",
+    ],
+  },
+  {
     version: "0.2.35",
     date: "2026-05-28",
     items: [
