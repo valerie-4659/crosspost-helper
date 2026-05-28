@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.35 - 2026-05-28
+
+- fix: edited AI text now correctly sent to extension
+
+
 ## v0.2.34 - 2026-05-28
 
 - feat: editable AI result, modern filter UI, per-network skip, history page

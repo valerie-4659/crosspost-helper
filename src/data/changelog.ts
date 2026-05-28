@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.35",
+    date: "2026-05-28",
+    items: [
+      "fix: edited AI text now correctly sent to extension",
+    ],
+  },
+  {
     version: "0.2.34",
     date: "2026-05-28",
     items: [
