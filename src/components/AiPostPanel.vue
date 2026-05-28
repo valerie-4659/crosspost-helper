@@ -41,6 +41,7 @@ const postType    = ref<"engagement" | "qt" | "morning" | "goodnight" | "story">
 const perspective = ref<"" | "i" | "oc">("");
 const ocName      = ref("");
 const qtEventName = ref("");
+const qtTagger    = ref("");
 const copied      = ref(false);
 const queueError  = ref("");
 
@@ -98,6 +99,7 @@ async function generate() {
     postType.value === "story" ? selectedStorylineId.value : undefined,
     postType.value === "story" && activeDecisions.value.length > 0 ? activeDecisions.value : undefined,
     postType.value === "qt" ? qtEventName.value.trim() || undefined : undefined,
+    postType.value === "qt" ? qtTagger.value.trim() || undefined : undefined,
   );
   if (ai.generatedPost) {
     // Append decisions block to description if decisions are configured
@@ -183,6 +185,14 @@ onMounted(async () => {
         placeholder="e.g. Foxy Friday, Spicy Thursday…"
       />
       <p class="mt-1 text-[11px] text-slate-600">Used as the theme in line 1 of the QT post. If empty, AI derives it from the image.</p>
+      <!-- QT Tagger handle -->
+      <p class="mt-2.5 mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Tagged by <span class="normal-case text-slate-600">(optional)</span></p>
+      <input
+        v-model="qtTagger"
+        class="w-full rounded-lg border border-line bg-panelSoft px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+        placeholder="e.g. @SomeUser"
+      />
+      <p class="mt-1 text-[11px] text-slate-600">Generates <span class="font-mono text-slate-400">TFTT @handle</span> as line 3 of the post.</p>
     </div>
 
     <!-- Perspective (optional) -->

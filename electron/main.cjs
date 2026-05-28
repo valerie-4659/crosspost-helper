@@ -717,7 +717,7 @@ function imageMime(p) {
 // ocName: e.g. "Valerie"
 // storylineId: null | string — if set, fetches previous story_entries for context
 // decisions: null | [{emoji, label}] — 1-4 reader-vote options appended after story text
-async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "", storylineId = null, decisions = null, qtEventName = "") {
+async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "", storylineId = null, decisions = null, qtEventName = "", qtTagger = "") {
   const db = await getDatabase();
   // Read AI config from DB
   const rows = db.exec("SELECT key, value FROM ai_config");
@@ -836,16 +836,19 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   const qtThemeInstruction = qtEventName
     ? `Use "${qtEventName.toUpperCase()}" as the THEME (Line 1).`
     : `Derive THEME from what you see in the image (e.g. SPICY FRIDAY, THAT LOOK, MORNING MOOD).`;
+  const taggerHandle = qtTagger ? (qtTagger.startsWith("@") ? qtTagger : `@${qtTagger}`) : null;
+  const taggerLine = taggerHandle
+    ? `Line 3: TFTT ${taggerHandle}\nLine 4: (empty)`
+    : `Line 3: (omit this line entirely — no tagger was provided)`;
   const qtEventRule = `Write a "QT Event" post in EXACTLY this multi-line format:
 Line 1: QT [THEME IN CAPS]![fitting emoji]
 Line 2: (empty)
-Line 3: thx for the tag [tagger handle if hint mentions one, e.g. @Someone — skip this line entirely if no tagger mentioned]
-Line 4: (empty — only if line 3 was included)
+${taggerLine}
 Line 5: [witty, cheeky one-liner tagline describing the image theme, e.g. "oooh... y'all mean (this) kinda face⁉️"]
 Line 6: (empty)
 Line 7: let's see ❤️‍🔥
 ${qtThemeInstruction}
-No @ mentions except tagger from hint. No hashtags in the text body (use the tags field).
+No @ mentions other than the tagger above. No hashtags in the text body (use the tags field).
 Keep each line short. Total text under 260 characters.`;
 
   // Story rule: extended for Premium+ or if a storyline is active
@@ -1090,8 +1093,8 @@ app.whenReady().then(() => {
   }
 
   // ── AI post generation ─────────────────────────────────────────────────────
-  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName) => {
-    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName);
+  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger) => {
+    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger);
   });
 
   ipcMain.handle("extension:open-chrome", () => {
