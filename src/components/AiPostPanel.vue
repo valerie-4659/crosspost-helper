@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { Check, Copy, Send, Sparkles, X } from "lucide-vue-next";
+import { computed, onMounted, ref } from "vue";
+import { BookOpen, Check, Copy, Plus, Send, Sparkles, Trash2, X } from "lucide-vue-next";
 import { useAiStore } from "@/stores/aiStore";
+import type { StoryDecision } from "@/types/aiSettings";
 
 const props = withDefaults(defineProps<{
   imagePaths: string[];
@@ -40,6 +41,24 @@ const ocName      = ref("");
 const copied      = ref(false);
 const queueError  = ref("");
 
+// ── Story mode ────────────────────────────────────────────────────────────────
+const selectedStorylineId = ref<string | null>(null);
+const decisions           = ref<StoryDecision[]>([]);
+const useDecisions        = ref(false);
+
+function addDecision() {
+  if (decisions.value.length < 4) decisions.value.push({ emoji: "🔥", label: "" });
+}
+function removeDecision(i: number) {
+  decisions.value.splice(i, 1);
+}
+
+// Char limit hint: 280 normal, 25000 for X Premium+
+const charLimit = computed(() =>
+  props.network === "x" && ai.config.xPremiumPlus ? 25000 : props.network === "x" ? 280 : null,
+);
+const descCharCount = computed(() => ai.editedDescription.length);
+
 // Editable result fields live in the store so PickerPage can also read the
 // user-edited values when calling sendToExtension / sendMultiPickToExtension.
 // ai.editedTitle / ai.editedDescription / ai.editedTags are synced from
@@ -59,6 +78,10 @@ const PERSPECTIVES = [
   { value: "oc", label: "OC name" },
 ] as const;
 
+const activeDecisions = computed(() =>
+  useDecisions.value ? decisions.value.filter((d) => d.label.trim()) : [],
+);
+
 async function generate() {
   if (!props.imagePaths.length) return;
   queueError.value = "";
@@ -69,8 +92,18 @@ async function generate() {
     postType.value,
     perspective.value || undefined,
     perspective.value === "oc" ? ocName.value.trim() : "",
+    postType.value === "story" ? selectedStorylineId.value : undefined,
+    postType.value === "story" && activeDecisions.value.length > 0 ? activeDecisions.value : undefined,
   );
-  if (ai.generatedPost) emit("generated");
+  if (ai.generatedPost) {
+    // Append decisions block to description if decisions are configured
+    if (postType.value === "story" && activeDecisions.value.length > 0) {
+      const block = "\n\n🗳️ What happens next? Vote in the comments! ⬇️\n" +
+        activeDecisions.value.map((d) => `${d.emoji} ${d.label}`).join("\n");
+      ai.editedDescription += block;
+    }
+    emit("generated");
+  }
 }
 
 /** Queue images + push AI text to the bridge in a single action (Library mode). */
@@ -85,6 +118,10 @@ async function queueForExtension() {
       description: ai.editedDescription,
       tags:        ai.editedTags.split(/\s+/).filter(Boolean),
     });
+    // Record story entry in active storyline
+    if (postType.value === "story" && selectedStorylineId.value) {
+      await ai.recordStoryEntry(selectedStorylineId.value, ai.editedDescription, ids[0]);
+    }
     emit("queued", ids.length);
   } catch (err) {
     queueError.value = err instanceof Error ? err.message : String(err);
@@ -107,6 +144,12 @@ async function copyText() {
   copied.value = true;
   setTimeout(() => (copied.value = false), 2000);
 }
+
+onMounted(async () => {
+  if (!ai.personasLoaded)    await ai.loadPersonas();
+  if (!ai.storylinesLoaded)  await ai.loadStorylines();
+  if (!ai.configLoaded)      await ai.loadConfig();
+});
 </script>
 
 <template>
@@ -160,6 +203,78 @@ async function copyText() {
       />
     </div>
 
+    <!-- ── Story mode extras ────────────────────────────────────────────────── -->
+    <template v-if="postType === 'story'">
+      <!-- Storyline selector -->
+      <div>
+        <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+          <BookOpen class="inline h-3 w-3 mr-0.5 -mt-0.5" /> Storyline <span class="normal-case text-slate-600">(optional)</span>
+        </p>
+        <div class="flex items-center gap-2">
+          <select
+            v-model="selectedStorylineId"
+            class="flex-1 rounded-lg border border-line bg-panelSoft px-2.5 py-1.5 text-xs text-slate-200 appearance-none focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+          >
+            <option :value="null">— No storyline</option>
+            <option v-for="sl in ai.storylines" :key="sl.id" :value="sl.id">{{ sl.name }}</option>
+          </select>
+          <router-link to="/settings" class="button h-7 px-2.5 text-xs shrink-0">Manage</router-link>
+        </div>
+        <p v-if="selectedStorylineId" class="mt-1 text-[11px] text-slate-500">
+          📖 Previous entries will be used as narrative context for this episode.
+        </p>
+      </div>
+
+      <!-- Decisions (reader vote) -->
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Reader Decisions <span class="normal-case text-slate-600">(optional)</span></p>
+          <button
+            class="rounded text-[10px] font-medium px-2 py-0.5 transition"
+            :class="useDecisions ? 'bg-accent/15 text-accent border border-accent/30' : 'bg-panel text-slate-500 border border-line hover:text-slate-300'"
+            @click="useDecisions = !useDecisions"
+          >{{ useDecisions ? '✓ On' : 'Off' }}</button>
+        </div>
+        <template v-if="useDecisions">
+          <div v-for="(d, i) in decisions" :key="i" class="mb-1.5 flex items-center gap-1.5">
+            <input
+              v-model="d.emoji"
+              class="w-10 rounded border border-line bg-panelSoft px-1.5 py-1 text-center text-sm focus:border-accent/60 focus:outline-none transition"
+              maxlength="4"
+              placeholder="🔥"
+            />
+            <input
+              v-model="d.label"
+              class="flex-1 rounded border border-line bg-panelSoft px-2 py-1 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none transition"
+              placeholder="e.g. She accepts the offer"
+            />
+            <button class="button h-6 w-6 p-0 text-rose hover:border-rose/60 hover:bg-rose/10 shrink-0" @click="removeDecision(i)">
+              <Trash2 class="h-3 w-3" />
+            </button>
+          </div>
+          <button
+            v-if="decisions.length < 4"
+            class="mt-0.5 flex items-center gap-1 text-[11px] text-accent/70 hover:text-accent transition"
+            @click="addDecision"
+          >
+            <Plus class="h-3 w-3" /> Add option
+          </button>
+          <p v-if="decisions.length === 0" class="text-xs text-slate-600 italic">Click "Add option" to define 1–4 reader-vote choices.</p>
+        </template>
+      </div>
+    </template>
+
+    <!-- Active persona badge -->
+    <div v-if="ai.activePersona" class="flex items-center gap-1.5 rounded-lg border border-accent/25 bg-accent/8 px-2.5 py-1.5 text-xs">
+      <span class="text-accent">👤</span>
+      <span class="text-slate-300">Voice: <strong class="text-white">{{ ai.activePersona.name }}</strong></span>
+      <span class="ml-1 text-slate-500">·</span>
+      <span class="text-slate-500">{{ ai.activePersona.tone }}</span>
+    </div>
+    <div v-else class="rounded-lg border border-line bg-ink px-2.5 py-1.5 text-xs text-slate-600">
+      👤 No persona active — <router-link to="/settings" class="text-accent/70 hover:text-accent underline">set one in Settings</router-link>
+    </div>
+
     <!-- Generate button -->
     <button
       class="button-primary w-full rounded-lg py-2"
@@ -187,7 +302,14 @@ async function copyText() {
         />
       </div>
       <div>
-        <p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">Description</p>
+        <div class="mb-1 flex items-center justify-between">
+          <p class="text-[10px] font-medium uppercase tracking-wide text-slate-500">Description</p>
+          <span
+            v-if="charLimit"
+            class="text-[10px] tabular-nums"
+            :class="descCharCount > charLimit ? 'text-rose font-semibold' : descCharCount > charLimit * 0.9 ? 'text-amber-400' : 'text-slate-600'"
+          >{{ descCharCount }} / {{ charLimit.toLocaleString() }}</span>
+        </div>
         <textarea
           v-model="ai.editedDescription"
           rows="5"

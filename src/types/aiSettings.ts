@@ -4,6 +4,8 @@ export interface AiConfig {
   provider: AiProvider;
   model: string;
   apiKey: string;
+  /** X (Twitter) Premium+ — raises the char limit from 280 to 25 000 */
+  xPremiumPlus?: boolean;
 }
 
 export interface GeneratedPost {
@@ -21,6 +23,22 @@ export interface NetworkTag {
   isDefault: boolean;
 }
 
+export type EmojiUse = "none" | "subtle" | "heavy";
+
+/** Writing persona — controls the AI's voice, tone and emoji usage. */
+export interface Persona {
+  id: string;
+  name: string;
+  /** Short tone description, e.g. "Flirty, teasing, confident" */
+  tone: string;
+  /** How many emojis the AI should use */
+  emojiUse: EmojiUse;
+  /** Free-form style notes: vocabulary, example phrases, dos/don'ts */
+  styleNotes: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
 /** Per-network generation settings used to instruct the AI. */
 export interface NetworkPostConfig {
   descMaxChars: number;
@@ -28,6 +46,30 @@ export interface NetworkPostConfig {
   titleNeeded: boolean;
   tagHasHash: boolean;
   notes: string;
+}
+
+/** Storyline — a named series of story posts that share narrative context. */
+export interface Storyline {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+}
+
+/** A single story-post fragment recorded in a storyline. */
+export interface StoryEntry {
+  id: string;
+  storylineId: string;
+  imageId: string | null;
+  postText: string;
+  entryOrder: number;
+  createdAt: string;
+}
+
+/** A reader-vote decision option appended at the end of a story post. */
+export interface StoryDecision {
+  emoji: string;
+  label: string;
 }
 
 export const NETWORK_POST_CONFIGS: Record<string, NetworkPostConfig> = {

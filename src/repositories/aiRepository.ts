@@ -6,23 +6,25 @@ import type { AiConfig, NetworkTag } from "@/types/aiSettings";
 export async function getAiConfig(): Promise<AiConfig> {
   const db = await getDatabase();
   const rows = await db.select<Array<{ key: string; value: string }>>(
-    "SELECT key, value FROM ai_config WHERE key IN ('provider','model','api_key')",
+    "SELECT key, value FROM ai_config WHERE key IN ('provider','model','api_key','x_premium_plus')",
   );
   const map: Record<string, string> = {};
   for (const r of rows) map[r.key] = r.value;
   return {
-    provider: (map["provider"] as AiConfig["provider"]) || "openai",
-    model:    map["model"]   || "gpt-4o-mini",
-    apiKey:   map["api_key"] || "",
+    provider:      (map["provider"] as AiConfig["provider"]) || "openai",
+    model:         map["model"]   || "gpt-4o-mini",
+    apiKey:        map["api_key"] || "",
+    xPremiumPlus:  map["x_premium_plus"] === "1",
   };
 }
 
 export async function saveAiConfig(config: AiConfig): Promise<void> {
   const db = await getDatabase();
   const entries: Array<[string, string]> = [
-    ["provider", config.provider],
-    ["model",    config.model],
-    ["api_key",  config.apiKey],
+    ["provider",       config.provider],
+    ["model",          config.model],
+    ["api_key",        config.apiKey],
+    ["x_premium_plus", config.xPremiumPlus ? "1" : "0"],
   ];
   for (const [key, value] of entries) {
     await db.execute(

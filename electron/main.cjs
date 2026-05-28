@@ -57,6 +57,8 @@ function migrationSql() {
     "003_ai_config.sql",
     "004_post_queues.sql",
     "005_x_tags_v2.sql",
+    "006_personas.sql",
+    "007_storylines.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
@@ -713,7 +715,9 @@ function imageMime(p) {
 // postType: "engagement" | "qt" | "morning" | "goodnight" | "story"
 // perspective: "" | "i" | "oc"  — empty string = no perspective instruction
 // ocName: e.g. "Valerie"
-async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "") {
+// storylineId: null | string — if set, fetches previous story_entries for context
+// decisions: null | [{emoji, label}] — 1-4 reader-vote options appended after story text
+async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "", storylineId = null, decisions = null) {
   const db = await getDatabase();
   // Read AI config from DB
   const rows = db.exec("SELECT key, value FROM ai_config");
@@ -757,13 +761,67 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     }
   }
 
-  const nc = NETWORK_POST_CONFIGS[network] ?? NETWORK_POST_CONFIGS["x"];
+  let nc = NETWORK_POST_CONFIGS[network] ?? NETWORK_POST_CONFIGS["x"];
+
+  // X Premium+: expand character limit from 280 → 25 000
+  const xPremiumPlus = cfg["x_premium_plus"] === "1";
+  if (network === "x" && xPremiumPlus) {
+    nc = {
+      ...nc,
+      descMax: 25000,
+      notes: "X Premium+ enabled — you have up to 25 000 characters. Write a longer, richer post. Use paragraphs and line breaks for atmosphere.",
+    };
+  }
+
   const tagInstruction = tags.length
     ? `Pick up to ${nc.tagCount} relevant tags from this list (add new ones if better): ${tags.join(", ")}.`
     : `Generate up to ${nc.tagCount} relevant tags.`;
   const tagNote = nc.tagHasHash ? "Include the # symbol in each tag." : "Do NOT include # symbol in tags.";
 
   const hintLine = hint?.trim() ? `- Additional context / user instructions: ${hint.trim()}` : "";
+
+  // ── Storyline context (optional) ──────────────────────────────────────────
+  let storylineContextLine = "";
+  if (storylineId) {
+    try {
+      const slId = String(storylineId).replace(/'/g, "''");
+      const seRows = db.exec(
+        `SELECT post_text, entry_order FROM story_entries WHERE storyline_id = '${slId}' ORDER BY entry_order ASC`
+      );
+      const texts = (seRows[0]?.values ?? []).map((r) => r[0]).filter(Boolean);
+      if (texts.length > 0) {
+        storylineContextLine = `- Story continuity — IMPORTANT: Continue this narrative coherently. Previous episodes:\n${
+          texts.map((t, i) => `  [Episode ${i + 1}]: ${t}`).join("\n")
+        }`;
+      }
+    } catch { /* storylines table may not exist on old DBs — skip */ }
+  }
+
+  // ── Reader-vote decisions (optional) ─────────────────────────────────────
+  let decisionsInstruction = "";
+  if (Array.isArray(decisions) && decisions.length > 0) {
+    const opts = decisions.map((d) => `${d.emoji} ${d.label}`).join(" / ");
+    decisionsInstruction = ` End the story at a dramatic cliffhanger or decision point leading into these reader choices: ${opts}. Do NOT include the voting options in your description — they will be appended automatically.`;
+  }
+
+  // ── Active persona (optional) ────────────────────────────────────────────
+  let personaLine = "";
+  try {
+    const pRows = db.exec(
+      "SELECT name, tone, emoji_use, style_notes FROM personas WHERE is_active = 1 LIMIT 1"
+    );
+    const p = pRows[0]?.values?.[0]; // [name, tone, emoji_use, style_notes]
+    if (p) {
+      const [pName, pTone, pEmoji, pNotes] = p;
+      const emojiNote = pEmoji === "heavy"
+        ? "Use emojis generously and often throughout the text."
+        : pEmoji === "subtle"
+          ? "Use 1–2 emojis where they fit naturally; don't force them."
+          : "Do NOT use any emojis.";
+      personaLine = `- Persona / voice: Write as "${pName}". Tone: ${pTone}. Emoji use: ${emojiNote}.`;
+      if (String(pNotes).trim()) personaLine += ` Style notes: ${String(pNotes).trim()}`;
+    }
+  } catch { /* personas table may not exist on very old DBs — skip */ }
 
   // ── Post-type instruction ───────────────────────────────────────────────
   const perspectiveNote = perspective === "oc" && ocName.trim()
@@ -787,19 +845,25 @@ Derive THEME from what you see in the image (e.g. SPICY FRIDAY, THAT LOOK, MORNI
 No @ mentions except tagger from hint. No hashtags in the text body (use the tags field).
 Keep each line short. Total text under 260 characters.`;
 
+  // Story rule: extended for Premium+ or if a storyline is active
+  const storyIsRich = (xPremiumPlus && network === "x") || !!storylineId;
+  const storyRule = storyIsRich
+    ? `Write a rich, immersive story episode (8–15 sentences, multiple paragraphs). Build vivid atmosphere, strong characterisation and emotional tension. Leave the reader eager for the next instalment.${perspSuffix}${decisionsInstruction}`
+    : `Write a short creative micro-story (2–4 sentences) inspired by or about the subject in the image. Make it vivid and atmospheric.${perspSuffix}${decisionsInstruction}`;
+
   const POST_TYPE_RULES = {
     engagement: `Write an engaging caption that invites interaction. Ask a question or use a call-to-action.${perspSuffix}`,
     qt:         qtEventRule,
     morning:    `Start with a warm "Good morning ☀️" greeting, then add a brief description of what's in the image.${perspSuffix}`,
     goodnight:  `Start with a warm "Good night 🌙" or "Sweet dreams ✨" farewell, then add a brief, evocative description of the image.${perspSuffix}`,
-    story:      `Write a short creative micro-story (2-4 sentences) inspired by or about the subject in the image. Make it vivid and atmospheric.${perspSuffix}`,
+    story:      storyRule,
   };
   const postTypeRule = POST_TYPE_RULES[postType] ?? POST_TYPE_RULES["engagement"];
 
   const prompt = `You are a social media content creator. Analyze the image(s) and write a post for ${network}.
 Rules:
 - Write in English.
-- Post style: ${postTypeRule}
+${personaLine ? personaLine + "\n" : ""}${storylineContextLine ? storylineContextLine + "\n" : ""}- Post style: ${postTypeRule}
 - Description: max ${nc.descMax} characters. ${nc.notes}
 - Tags: ${tagInstruction} ${tagNote}
 ${nc.titleNeeded ? "- Title: short, catchy, max 80 chars." : ""}${hintLine ? "\n" + hintLine : ""}
@@ -1023,8 +1087,8 @@ app.whenReady().then(() => {
   }
 
   // ── AI post generation ─────────────────────────────────────────────────────
-  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName) => {
-    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName);
+  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions) => {
+    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions);
   });
 
   ipcMain.handle("extension:open-chrome", () => {
