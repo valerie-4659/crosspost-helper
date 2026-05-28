@@ -118,6 +118,19 @@ window.CrosspostBridge._currentAdapter = {
           await new Promise((r) => setTimeout(r, 80));
           // Step 2: append trailing space → finalise hashtag nodes
           document.execCommand("insertText", false, " ");
+
+          // Step 3: move cursor to the START of the text so the user can
+          // immediately edit the description without fighting hashtag nodes.
+          await new Promise((r) => setTimeout(r, 80));
+          taFinal.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "Home", code: "Home", keyCode: 36,
+            ctrlKey: true, bubbles: true, cancelable: true,
+          }));
+          await new Promise((r) => setTimeout(r, 40));
+          taFinal.dispatchEvent(new KeyboardEvent("keyup", {
+            key: "Home", code: "Home", keyCode: 36,
+            ctrlKey: true, bubbles: true,
+          }));
         }
       }
 
