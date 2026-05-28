@@ -458,13 +458,8 @@ async function fillSlot(slotId: string) {
   <div class="relative flex h-full flex-col overflow-hidden">
 
     <!-- ── Header ──────────────────────────────────────────────────── -->
-    <header class="flex shrink-0 items-center justify-between px-5 pt-5">
-      <div>
-        <h1 class="text-2xl font-semibold text-white">Image Library</h1>
-        <p class="mt-1 text-sm text-slate-400">
-          Pick manually, drag or copy the image, then mark the network you posted to.
-        </p>
-      </div>
+    <header class="flex shrink-0 items-center justify-between px-5 py-4">
+      <h1 class="text-2xl font-semibold text-white">Image Library</h1>
       <div class="flex items-center gap-2">
         <!-- Collection toggle -->
         <button
