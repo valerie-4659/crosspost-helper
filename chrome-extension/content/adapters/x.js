@@ -95,6 +95,29 @@ window.CrosspostBridge._currentAdapter = {
             bridge.notify(`✓ ${toInject.length} image(s) attached — text injection failed, copied to clipboard → Ctrl+V`, "info");
             return { imageIds, targetId: resolvedTargetId, filename: toInject.map((i) => i.filename).join(", ") };
           }
+
+          // ── Post-injection: finalise hashtag nodes & close autocomplete ──
+          // After bulk insertText, X's Lexical editor leaves the cursor at the
+          // end of the last hashtag, which (a) opens a tag autocomplete dropdown
+          // that blocks keyboard input, and (b) keeps the final #tag as a plain
+          // TextNode (white) instead of a HashtagNode (blue) because no delimiter
+          // was typed after it.
+          //
+          // Fix:
+          //  1. Escape  → dismisses the autocomplete overlay.
+          //  2. Space   → Lexical finalises ALL pending TextNode→HashtagNode
+          //               transforms (all tags turn blue); trailing space is
+          //               harmless — X trims whitespace on post.
+          await new Promise((r) => setTimeout(r, 200));
+          const taFinal = document.querySelector('[data-testid="tweetTextarea_0"]') || freshTextarea;
+          taFinal.focus();
+          // Step 1: close autocomplete
+          taFinal.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true, cancelable: true }));
+          await new Promise((r) => setTimeout(r, 80));
+          taFinal.dispatchEvent(new KeyboardEvent("keyup",   { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+          await new Promise((r) => setTimeout(r, 80));
+          // Step 2: append trailing space → finalise hashtag nodes
+          document.execCommand("insertText", false, " ");
         }
       }
 
