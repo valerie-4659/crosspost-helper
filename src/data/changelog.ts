@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.39",
+    date: "2026-05-28",
+    items: [
+      "refactor(personas): merge Tone+StyleNotes into single Behavior Rules textarea",
+    ],
+  },
+  {
     version: "0.2.38",
     date: "2026-05-28",
     items: [

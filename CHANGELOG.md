@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.39 - 2026-05-28
+
+- refactor(personas): merge Tone+StyleNotes into single Behavior Rules textarea
+
+
 ## v0.2.38 - 2026-05-28
 
 - feat(qt): Tagged-by field → TFTT @handle line 3
