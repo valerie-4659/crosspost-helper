@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.46 - 2026-05-28
+
+- Release v0.2.46
+
+
 ## v0.2.45 - 2026-05-28
 
 - fix(extension/x): move cursor to start after injection so user can edit
