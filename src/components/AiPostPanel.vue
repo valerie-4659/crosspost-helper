@@ -42,15 +42,15 @@ const perspective = ref<"" | "i" | "oc">("");
 const ocName      = ref("");
 const qtEventName    = ref("");
 const qtTagger       = ref("");
-const customMaxChars = ref<number | null>(null);
+const customMaxChars = ref<number>(180);
 
 const ALL_CHAR_PRESETS = [
-  { label: "180 (1 image)",      value: 180 },
+  { label: "180",                value: 180 },
   { label: "280",                value: 280 },
-  { label: "360 (2 images)",     value: 360 },
+  { label: "360",                value: 360 },
   { label: "500",                value: 500 },
-  { label: "540 (3 images)",     value: 540 },
-  { label: "720 (4 images)",     value: 720 },
+  { label: "540",                value: 540 },
+  { label: "720",                value: 720 },
   { label: "1 000",              value: 1000 },
   { label: "2 500",              value: 2500 },
   { label: "5 000",              value: 5000 },
@@ -144,7 +144,7 @@ async function generate() {
     postType.value === "story" && activeDecisions.value.length > 0 ? activeDecisions.value : undefined,
     postType.value === "qt" ? qtEventName.value.trim() || undefined : undefined,
     postType.value === "qt" ? qtTagger.value.trim() || undefined : undefined,
-    showCustomMaxChars.value ? customMaxChars.value : null,
+    customMaxChars.value,
   );
   if (ai.generatedPost) {
     // Append decisions block to description if decisions are configured
@@ -267,11 +267,10 @@ onMounted(async () => {
       <p class="shrink-0 text-[11px] font-medium uppercase tracking-wide text-slate-500">Max length</p>
       <div class="relative flex-1">
         <select
-          :value="customMaxChars ?? ''"
+          :value="customMaxChars"
           class="w-full appearance-none rounded-lg border border-line bg-panelSoft px-2.5 py-1.5 pr-7 text-xs text-slate-200 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
-          @change="customMaxChars = ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null"
+          @change="customMaxChars = Number(($event.target as HTMLSelectElement).value)"
         >
-          <option value="">— auto</option>
           <option v-for="p in CHAR_PRESETS" :key="p.value" :value="p.value">{{ p.label }}</option>
         </select>
         <svg class="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
