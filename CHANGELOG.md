@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.49 - 2026-05-29
+
+- feat: send-mode dropdown + fixed 180-char default
+- fix(ai-panel): rename extension buttons to clear full-width labels
+
+
 ## v0.2.48 - 2026-05-28
 
 - fix(library): don't close AI panel after queuing — user closes it manually

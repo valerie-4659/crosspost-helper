@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.49",
+    date: "2026-05-29",
+    items: [
+      "feat: send-mode dropdown + fixed 180-char default",
+      "fix(ai-panel): rename extension buttons to clear full-width labels",
+    ],
+  },
+  {
     version: "0.2.48",
     date: "2026-05-28",
     items: [
