@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Check, ChevronLeft, Clipboard, Copy, FolderOpen, Layers, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
+import { Check, ChevronDown, ChevronLeft, Clipboard, Copy, FolderOpen, Layers, Send, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import { convertFileSrc } from "@/electron-shims/core";
 import FilterBar from "@/components/FilterBar.vue";
@@ -37,24 +37,65 @@ const extensionTargets = computed(() =>
 const queueMsg = ref("");
 const queueErr = ref("");
 
+type SendMode = "full" | "no_tags" | "images_only";
+const LS_SEND_MODE = "crosspost_send_mode";
+const sendMode         = ref<SendMode>((localStorage.getItem(LS_SEND_MODE) as SendMode) ?? "full");
+const sendDropdownOpen = ref(false);
+const sendDone         = ref(false);
+
+const SEND_MODES: { value: SendMode; label: string; sub: string }[] = [
+  { value: "full",        label: "Images, text and tags", sub: "Injects everything into the composer" },
+  { value: "no_tags",     label: "Images and text",       sub: "Injects image + description, no hashtags" },
+  { value: "images_only", label: "Images only",           sub: "Injects images only — text copied to clipboard" },
+];
+const sendModeLabel = computed(() => SEND_MODES.find((m) => m.value === sendMode.value)?.label ?? "Send");
+
+function setSendMode(m: SendMode) {
+  sendMode.value = m;
+  localStorage.setItem(LS_SEND_MODE, m);
+  sendDropdownOpen.value = false;
+}
+
+const copyablePickerText = computed(() => {
+  if (!ai.generatedPost) return "";
+  const parts: string[] = [];
+  if (ai.editedTitle)       parts.push(ai.editedTitle);
+  if (ai.editedDescription) parts.push(ai.editedDescription);
+  if (ai.editedTags)        parts.push(ai.editedTags);
+  return parts.join("\n\n");
+});
+
 async function sendToExtension() {
   if (!picker.currentImage || !targets.activeTarget) return;
   const targetType = targets.activeTarget.type;
   queueMsg.value = "";
   queueErr.value = "";
+  sendDropdownOpen.value = false;
   try {
-    // Always push the image queue.
     await window.desktop.bridge.setQueue(targetType, [picker.currentImage.id]);
-    // Also push AI post content if it was generated (use edited values, not raw AI output).
-    if (ai.generatedPost) {
+
+    if (sendMode.value === "full" && ai.generatedPost) {
       await window.desktop.bridge.setPostContent(targetType, {
         title:       ai.editedTitle,
         description: ai.editedDescription,
         tags:        ai.editedTags.split(/\s+/).filter(Boolean),
       });
+    } else if (sendMode.value === "no_tags" && ai.generatedPost) {
+      await window.desktop.bridge.setPostContent(targetType, {
+        title:       ai.editedTitle,
+        description: ai.editedDescription,
+        tags:        [],
+      });
+    } else if (sendMode.value === "images_only") {
+      await window.desktop.bridge.clearPostContent(targetType);
+      if (copyablePickerText.value) {
+        await navigator.clipboard.writeText(copyablePickerText.value).catch(() => {});
+      }
     }
-    const extra = ai.generatedPost ? " + AI text" : "";
-    queueMsg.value = `✓ Queued for ${targetType}${extra}. Open the Chrome Extension to inject.`;
+
+    sendDone.value = true;
+    setTimeout(() => (sendDone.value = false), 2500);
+    queueMsg.value = `✓ Queued for ${targetType}. Open the Chrome Extension to inject.`;
   } catch (err) {
     queueErr.value = err instanceof Error ? err.message : String(err);
   }
@@ -412,18 +453,54 @@ onMounted(async () => {
           Mark {{ activeTargetName }}
         </button>
 
-        <!-- Send to Extension — queues image + AI text (if generated) in one step -->
+        <!-- Send to Extension — split-button with send-mode dropdown -->
         <div class="border-t border-line pt-3">
-          <button
-            class="button w-full gap-2"
-            :class="ai.generatedPost ? 'border-accent/50 bg-accent/5' : ''"
-            :disabled="!picker.currentImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
-            :title="targets.activeTarget && EXTENSION_TYPES.has(targets.activeTarget.type) ? `Queue image${ai.generatedPost ? ' + AI text' : ''} for ${activeTargetName}` : `${activeTargetName} has no extension adapter`"
-            @click="sendToExtension"
-          >
-            <PlatformIcon v-if="targets.activeTarget" :type="targets.activeTarget.type" :size="14" />
-            Send to Extension{{ ai.generatedPost ? ' + AI' : '' }}
-          </button>
+          <div class="relative">
+            <div class="flex">
+              <!-- Main action -->
+              <button
+                class="button flex flex-1 items-center justify-center gap-2 rounded-r-none py-2 text-sm font-medium"
+                :class="sendDone && sendMode === 'images_only' ? 'border-mint/60 bg-mint/10 text-mint' : (ai.generatedPost ? 'border-accent/50 bg-accent/5' : '')"
+                :disabled="!picker.currentImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
+                @click="sendToExtension"
+              >
+                <Check v-if="sendDone" class="h-4 w-4" />
+                <Send v-else class="h-4 w-4" />
+                {{ sendDone && sendMode === 'images_only' ? 'Text copied!' : sendDone ? 'Queued!' : sendModeLabel }}
+              </button>
+              <!-- Dropdown toggle -->
+              <button
+                class="button flex items-center rounded-l-none border-l border-white/20 px-2.5 py-2"
+                :disabled="!picker.currentImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
+                :class="sendDropdownOpen ? 'bg-accent/10' : ''"
+                @click.stop="sendDropdownOpen = !sendDropdownOpen"
+              >
+                <ChevronDown class="h-3.5 w-3.5" :class="sendDropdownOpen ? 'rotate-180' : ''" style="transition: transform 0.15s" />
+              </button>
+            </div>
+
+            <!-- Dropdown menu -->
+            <div
+              v-if="sendDropdownOpen"
+              class="absolute bottom-full left-0 right-0 z-50 mb-1 overflow-hidden rounded-lg border border-line bg-panel shadow-xl"
+              @click.stop
+            >
+              <button
+                v-for="m in SEND_MODES"
+                :key="m.value"
+                class="flex w-full flex-col px-3 py-2.5 text-left transition hover:bg-panelSoft"
+                :class="sendMode === m.value ? 'bg-accent/10 text-accent' : 'text-slate-200'"
+                @click="setSendMode(m.value)"
+              >
+                <span class="flex items-center gap-2 text-xs font-medium">
+                  <Check v-if="sendMode === m.value" class="h-3 w-3 shrink-0" />
+                  <span v-else class="h-3 w-3 shrink-0" />
+                  {{ m.label }}
+                </span>
+                <span class="ml-5 text-[11px] text-slate-500">{{ m.sub }}</span>
+              </button>
+            </div>
+          </div>
           <p v-if="queueMsg" class="mt-1 text-xs text-mint">{{ queueMsg }}</p>
           <p v-if="queueErr" class="mt-1 text-xs text-rose">{{ queueErr }}</p>
 
