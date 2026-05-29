@@ -438,7 +438,13 @@ watch(
 );
 
 // Persist collection changes
-watch(() => collectionImages.size, saveLibState);
+watch(() => collectionImages.size, (size) => {
+  saveLibState();
+  // When the collection becomes empty, close the sidebar so it never auto-reopens
+  // the next time the user clicks an image (showCollection stays false until the user
+  // explicitly opens the tray again via the Collection button).
+  if (size === 0) showCollection.value = false;
+});
 
 /** Toggle a single image in/out of the collection and keep store selection in sync. */
 function toggleCollection(imageId: string) {
