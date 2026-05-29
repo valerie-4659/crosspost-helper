@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.58 - 2026-05-29
+
+- Release v0.2.58
+
+
 ## v0.2.57 - 2026-05-29
 
 - fix(extension): stale images on second post
