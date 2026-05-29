@@ -848,16 +848,11 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   } catch { /* personas table may not exist on very old DBs — skip */ }
 
   // ── Post-type instruction ───────────────────────────────────────────────
-  // When a persona is active and no explicit perspective override is chosen,
-  // default to first-person — the neutral-observer instruction would kill the persona voice.
-  const hasPersona = personaLine !== "";
   const perspectiveNote = perspective === "oc" && ocName.trim()
     ? `Write from the perspective of "${ocName.trim()}" (third person, e.g. "${ocName.trim()} loves…").`
     : perspective === "i"
       ? "Write in first person (I, me, my)."
-      : hasPersona
-        ? "Write in first person, fully in character."
-        : "Describe the image objectively as a neutral observer. Do NOT use first-person voice (no 'I', 'me', 'my').";
+      : "Describe the image objectively as a neutral observer. Do NOT use first-person voice (no 'I', 'me', 'my').";
 
   const perspSuffix = ` ${perspectiveNote}`;
 
@@ -886,7 +881,16 @@ Keep each line short. Total text under 260 characters.`;
     ? `Write a rich, immersive story episode (8–15 sentences, multiple paragraphs). Build vivid atmosphere, strong characterisation and emotional tension. Leave the reader eager for the next instalment.${perspSuffix}${decisionsInstruction}`
     : `Write a short creative micro-story (2–4 sentences) inspired by or about the subject in the image. Make it vivid and atmospheric.${perspSuffix}${decisionsInstruction}`;
 
-  const POST_TYPE_RULES = {
+  // When a persona is active, tone/style come from the system message.
+  // Post-type rules should only define the purpose/format — not prescribe generic tone.
+  const hasPersona = personaLine !== "";
+  const POST_TYPE_RULES = hasPersona ? {
+    engagement: `Write a caption reacting to or describing the image.${perspSuffix}`,
+    qt:         qtEventRule,
+    morning:    `Write a morning greeting post inspired by the image.${perspSuffix}`,
+    goodnight:  `Write a good-night farewell post inspired by the image.${perspSuffix}`,
+    story:      storyRule,
+  } : {
     engagement: `Write an engaging caption that invites interaction. Ask a question or use a call-to-action.${perspSuffix}`,
     qt:         qtEventRule,
     morning:    `Start with a warm "Good morning ☀️" greeting, then add a brief description of what's in the image.${perspSuffix}`,
