@@ -854,7 +854,11 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
       ? "Write in first person (I, me, my)."
       : "Describe the image objectively as a neutral observer. Do NOT use first-person voice (no 'I', 'me', 'my').";
 
-  const perspSuffix = ` ${perspectiveNote}`;
+  // When a persona is active and no explicit perspective is chosen, the neutral-observer
+  // instruction must NOT be appended — the persona system message defines the voice.
+  const hasPersona = personaLine !== "";
+  const hasExplicitPerspective = perspective === "i" || (perspective === "oc" && ocName.trim());
+  const perspSuffix = (!hasPersona || hasExplicitPerspective) ? ` ${perspectiveNote}` : "";
 
   // QT Event template (multi-line social post format)
   const qtThemeInstruction = qtEventName
@@ -883,7 +887,6 @@ Keep each line short. Total text under 260 characters.`;
 
   // When a persona is active, tone/style come from the system message.
   // Post-type rules should only define the purpose/format — not prescribe generic tone.
-  const hasPersona = personaLine !== "";
   const POST_TYPE_RULES = hasPersona ? {
     engagement: `Write a caption reacting to or describing the image.${perspSuffix}`,
     qt:         qtEventRule,
