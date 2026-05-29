@@ -825,6 +825,8 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   }
 
   // ── Active persona (optional) ────────────────────────────────────────────
+  // The persona controls HOW the AI writes (voice, tone, emojis, style).
+  // It is completely independent of the perspective (I/me, OC, neutral observer).
   let personaLine = "";
   let systemMessage = "You are a social media content creator. Follow the user's instructions exactly and respond with valid JSON only.";
   try {
@@ -834,16 +836,24 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     const p = pRows[0]?.values?.[0]; // [name, tone, emoji_use, style_notes]
     if (p) {
       const [pName, , pEmoji, pNotes] = p;
-      const emojiRule = pEmoji === "heavy"
-        ? "You MUST use emojis generously and often — scatter them throughout the text."
-        : pEmoji === "subtle"
-          ? "Use 1–2 emojis where they fit naturally."
-          : "Do NOT use any emojis whatsoever.";
       const notesBlock = String(pNotes ?? "").trim();
-      // Persona goes into the system message so the model adopts it as its identity
-      systemMessage = `You ARE "${pName}". Write EXCLUSIVELY in ${pName}'s voice and style. NEVER slip into neutral, generic, or AI-sounding language.\n${emojiRule}\n${notesBlock ? `Behavior rules:\n${notesBlock}\n` : ""}Respond with valid JSON only — no markdown fences.`;
-      // Also keep a short reminder in the user prompt
-      personaLine = `- You are writing as "${pName}" — stay fully in character.`;
+
+      if (notesBlock) {
+        // Full style notes present — use them directly, they contain everything.
+        // Do NOT add a separate emojiRule from the dropdown; it would conflict with the notes.
+        systemMessage = `You ARE "${pName}". Write EXCLUSIVELY in ${pName}'s voice and style. NEVER write like a neutral AI, a generic content creator, or a marketing copywriter.\n\n${notesBlock}\n\nRespond with valid JSON only — no markdown fences.`;
+      } else {
+        // No style notes — fall back to the emoji-use dropdown as the only style hint.
+        const emojiRule = pEmoji === "heavy"
+          ? "Use emojis generously and often throughout the text."
+          : pEmoji === "subtle"
+            ? "Use 1–2 emojis where they fit naturally."
+            : "Do NOT use any emojis.";
+        systemMessage = `You ARE "${pName}". Write EXCLUSIVELY in ${pName}'s voice and style. NEVER slip into neutral or generic language.\n${emojiRule}\nRespond with valid JSON only — no markdown fences.`;
+      }
+
+      // Short in-character reminder in the user prompt as well.
+      personaLine = `- You are writing as "${pName}" — stay fully in character, never break voice.`;
     }
   } catch { /* personas table may not exist on very old DBs — skip */ }
 
