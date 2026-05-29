@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref } from "vue";
-import { BookOpen, Check, Copy, Plus, Send, Sparkles, Trash2, X } from "lucide-vue-next";
+import { BookOpen, Check, ChevronDown, Copy, Plus, Send, Sparkles, Trash2, X } from "lucide-vue-next";
 import { useAiStore } from "@/stores/aiStore";
 import type { StoryDecision } from "@/types/aiSettings";
 
@@ -70,6 +70,25 @@ const CHAR_PRESETS = computed(() =>
 const copied      = ref(false);
 const queueError  = ref("");
 
+type SendMode = "full" | "no_tags" | "images_only";
+const LS_SEND_MODE = "crosspost_send_mode";
+const sendMode    = ref<SendMode>((localStorage.getItem(LS_SEND_MODE) as SendMode) ?? "full");
+const sendDropdownOpen = ref(false);
+
+const SEND_MODES: { value: SendMode; label: string; sub: string }[] = [
+  { value: "full",        label: "Images, text and tags", sub: "Injects everything into the composer" },
+  { value: "no_tags",     label: "Images and text",       sub: "Injects image + description, no hashtags" },
+  { value: "images_only", label: "Images only",           sub: "Injects images only — text copied to clipboard" },
+];
+
+function setSendMode(m: SendMode) {
+  sendMode.value = m;
+  localStorage.setItem(LS_SEND_MODE, m);
+  sendDropdownOpen.value = false;
+}
+
+const sendModeLabel = computed(() => SEND_MODES.find((m) => m.value === sendMode.value)?.label ?? "Send");
+
 // ── Story mode ────────────────────────────────────────────────────────────────
 const selectedStorylineId = ref<string | null>(null);
 const decisions           = ref<StoryDecision[]>([]);
@@ -138,45 +157,44 @@ async function generate() {
   }
 }
 
-/** Queue images + push AI text to the bridge in a single action (Library mode). */
-async function queueForExtension() {
-  if (!ai.generatedPost || !props.imageIds?.length) return;
+const sendDone = ref(false);
+
+/** Send to extension using the currently selected sendMode. */
+async function sendToExtension() {
+  if (!props.imageIds?.length) return;
   queueError.value = "";
+  sendDropdownOpen.value = false;
   try {
     const ids = props.imageIds.slice(0, props.queueLimit ?? 1);
     await window.desktop.bridge.setQueue(props.network, ids);
-    await window.desktop.bridge.setPostContent(props.network, {
-      title:       ai.editedTitle,
-      description: ai.editedDescription,
-      tags:        ai.editedTags.split(/\s+/).filter(Boolean),
-    });
+
+    if (sendMode.value === "full") {
+      await window.desktop.bridge.setPostContent(props.network, {
+        title:       ai.editedTitle,
+        description: ai.editedDescription,
+        tags:        ai.editedTags.split(/\s+/).filter(Boolean),
+      });
+    } else if (sendMode.value === "no_tags") {
+      await window.desktop.bridge.setPostContent(props.network, {
+        title:       ai.editedTitle,
+        description: ai.editedDescription,
+        tags:        [],
+      });
+    } else {
+      // images_only: clear stale content, copy text+tags to clipboard
+      await window.desktop.bridge.clearPostContent(props.network);
+      if (copyableText.value) {
+        await navigator.clipboard.writeText(copyableText.value).catch(() => {});
+      }
+    }
+
     // Record story entry in active storyline
     if (postType.value === "story" && selectedStorylineId.value) {
       await ai.recordStoryEntry(selectedStorylineId.value, ai.editedDescription, ids[0]);
     }
-    emit("queued", ids.length);
-  } catch (err) {
-    queueError.value = err instanceof Error ? err.message : String(err);
-  }
-}
 
-const copiedImagesOnly = ref(false);
-
-/** Queue IMAGES ONLY — clears post content from bridge, copies text+tags to clipboard. */
-async function queueImagesOnly() {
-  if (!props.imageIds?.length) return;
-  queueError.value = "";
-  try {
-    const ids = props.imageIds.slice(0, props.queueLimit ?? 1);
-    await window.desktop.bridge.setQueue(props.network, ids);
-    // Explicitly clear any stale post content so the extension won't inject text.
-    await window.desktop.bridge.clearPostContent(props.network);
-    // Copy text + tags to clipboard so the user can paste manually.
-    if (copyableText.value) {
-      await navigator.clipboard.writeText(copyableText.value).catch(() => {});
-    }
-    copiedImagesOnly.value = true;
-    setTimeout(() => (copiedImagesOnly.value = false), 2500);
+    sendDone.value = true;
+    setTimeout(() => (sendDone.value = false), 2500);
     emit("queued", ids.length);
   } catch (err) {
     queueError.value = err instanceof Error ? err.message : String(err);
@@ -423,28 +441,52 @@ onMounted(async () => {
       <!-- Action row -->
       <div class="flex flex-col gap-2 border-t border-line pt-3">
 
-        <!-- Extension send buttons (Library mode only) -->
-        <template v-if="imageIds?.length">
-          <!-- Images + Text -->
-          <button
-            class="button-primary flex w-full items-center justify-center gap-2 py-2 text-sm font-medium"
-            @click="queueForExtension"
-          >
-            <Send class="h-4 w-4" />
-            Send to Extension — Images &amp; Text
-          </button>
+        <!-- Send to Extension split-button (Library mode only) -->
+        <div v-if="imageIds?.length" class="relative">
+          <!-- Split button row -->
+          <div class="flex">
+            <!-- Main action -->
+            <button
+              class="button-primary flex flex-1 items-center justify-center gap-2 rounded-r-none py-2 text-sm font-medium"
+              :class="sendDone && sendMode === 'images_only' ? 'border-mint/60 bg-mint/10 text-mint' : ''"
+              @click="sendToExtension"
+            >
+              <Check v-if="sendDone" class="h-4 w-4" />
+              <Send v-else class="h-4 w-4" />
+              {{ sendDone && sendMode === 'images_only' ? 'Text copied!' : sendDone ? 'Queued!' : sendModeLabel }}
+            </button>
+            <!-- Dropdown toggle -->
+            <button
+              class="button-primary flex items-center rounded-l-none border-l border-white/20 px-2.5 py-2"
+              :class="sendDropdownOpen ? 'bg-accent/80' : ''"
+              @click.stop="sendDropdownOpen = !sendDropdownOpen"
+            >
+              <ChevronDown class="h-3.5 w-3.5" :class="sendDropdownOpen ? 'rotate-180' : ''" style="transition: transform 0.15s" />
+            </button>
+          </div>
 
-          <!-- Images only -->
-          <button
-            class="button flex w-full items-center justify-center gap-2 py-2 text-sm font-medium"
-            :class="copiedImagesOnly ? 'border-mint/60 bg-mint/10 text-mint' : ''"
-            @click="queueImagesOnly"
+          <!-- Dropdown menu -->
+          <div
+            v-if="sendDropdownOpen"
+            class="absolute bottom-full left-0 right-0 z-50 mb-1 overflow-hidden rounded-lg border border-line bg-panel shadow-xl"
+            @click.stop
           >
-            <Check v-if="copiedImagesOnly" class="h-4 w-4" />
-            <Send v-else class="h-4 w-4" />
-            {{ copiedImagesOnly ? '✓ Text copied to clipboard!' : 'Send to Extension — Images only' }}
-          </button>
-        </template>
+            <button
+              v-for="m in SEND_MODES"
+              :key="m.value"
+              class="flex w-full flex-col px-3 py-2.5 text-left transition hover:bg-panelSoft"
+              :class="sendMode === m.value ? 'bg-accent/10 text-accent' : 'text-slate-200'"
+              @click="setSendMode(m.value)"
+            >
+              <span class="flex items-center gap-2 text-xs font-medium">
+                <Check v-if="sendMode === m.value" class="h-3 w-3 shrink-0" />
+                <span v-else class="h-3 w-3 shrink-0" />
+                {{ m.label }}
+              </span>
+              <span class="ml-5 text-[11px] text-slate-500">{{ m.sub }}</span>
+            </button>
+          </div>
+        </div>
 
         <!-- Secondary row: Copy + Discard -->
         <div class="flex items-center gap-2">

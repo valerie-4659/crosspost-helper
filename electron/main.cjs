@@ -774,12 +774,11 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     };
   }
 
-  // Multi-image auto-scaling: when no custom limit is set, scale descMax by image count
-  // so the AI can describe all images (2 imgs = 2×, 3 imgs = 3×, 4 imgs = 4×).
+  // Tell the AI how many images are attached so it can reference all of them,
+  // but the character limit stays fixed regardless of image count.
   const imageCount = imageData.length || 1;
-  if (!customMaxChars && imageCount > 1) {
-    const scaled = Math.min(nc.descMax * imageCount, nc.descMax <= 280 ? nc.descMax * imageCount : nc.descMax);
-    nc = { ...nc, descMax: scaled, notes: nc.notes + ` You have ${imageCount} images — write enough to describe all of them (target ~${scaled} characters total).` };
+  if (imageCount > 1) {
+    nc = { ...nc, notes: nc.notes + ` There are ${imageCount} images — mention / reference all of them in the post.` };
   }
 
   // Per-post custom max chars — caps at the network's effective limit.
