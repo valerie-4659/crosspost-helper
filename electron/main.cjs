@@ -797,7 +797,9 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     : `Generate up to ${nc.tagCount} relevant tags.`;
   const tagNote = nc.tagHasHash ? "Include the # symbol in each tag." : "Do NOT include # symbol in tags.";
 
-  const hintLine = hint?.trim()
+  // For QT posts the hint is embedded directly into the format as Line 5 (tagline).
+  // Using it here as an override rule would cause the model to ignore the QT structure.
+  const hintLine = (hint?.trim() && postType !== "qt")
     ? `- SCENE CONTEXT — THIS IS THE MOST IMPORTANT RULE: Your post MUST be directly about this scene. Every character, name, and relationship in it MUST appear explicitly in the post text. Do NOT paraphrase, omit, or replace any name. Scene: "${hint.trim()}"`
     : "";
 
@@ -879,16 +881,21 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   const taggerLine = taggerHandle
     ? `Line 3: TFTT ${taggerHandle}\nLine 4: (empty)`
     : `Line 3: (omit this line entirely — no tagger was provided)`;
+  // If the user supplied a context/hint, use it verbatim as the tagline (line 5).
+  // Otherwise let the AI derive a fitting one-liner from the image.
+  const qtTagline = hint?.trim()
+    ? `Line 5: Use this tagline VERBATIM (copy it exactly, do NOT rephrase): "${hint.trim()}"`
+    : `Line 5: [witty, cheeky one-liner tagline describing the image theme, e.g. "oooh... y'all mean (this) kinda face⁉️"]`;
   const qtEventRule = `Write a "QT Event" post in EXACTLY this multi-line format:
 Line 1: QT [THEME IN CAPS]![fitting emoji]
 Line 2: (empty)
 ${taggerLine}
-Line 5: [witty, cheeky one-liner tagline describing the image theme, e.g. "oooh... y'all mean (this) kinda face⁉️"]
+${qtTagline}
 Line 6: (empty)
 Line 7: let's see ❤️‍🔥
 ${qtThemeInstruction}
 No @ mentions other than the tagger above. No hashtags in the text body (use the tags field).
-Keep each line short. Total text under 260 characters.`;
+Keep each line short. Total text under 280 characters.`;
 
   // Story rule: extended for Premium+ or if a storyline is active
   const storyIsRich = (xPremiumPlus && network === "x") || !!storylineId;
