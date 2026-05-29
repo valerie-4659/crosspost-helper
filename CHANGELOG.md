@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.55 - 2026-05-29
+
+- Release v0.2.55
+
+
 ## v0.2.54 - 2026-05-29
 
 - refactor(settings): remove emoji dropdown from persona form
