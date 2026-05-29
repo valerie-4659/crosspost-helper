@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.50",
+    date: "2026-05-29",
+    items: [
+      "feat(picker): send-mode split-button dropdown — same 3 modes as AiPostPanel",
+    ],
+  },
+  {
     version: "0.2.49",
     date: "2026-05-29",
     items: [

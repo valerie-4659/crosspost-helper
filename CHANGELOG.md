@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.50 - 2026-05-29
+
+- feat(picker): send-mode split-button dropdown — same 3 modes as AiPostPanel
+
+
 ## v0.2.49 - 2026-05-29
 
 - feat: send-mode dropdown + fixed 180-char default
