@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.56 - 2026-05-29
+
+- fix(bridge): prevent browser caching of queue/image GET requests
+
+
 ## v0.2.55 - 2026-05-29
 
 - Release v0.2.55

@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.56",
+    date: "2026-05-29",
+    items: [
+      "fix(bridge): prevent browser caching of queue/image GET requests",
+    ],
+  },
+  {
     version: "0.2.55",
     date: "2026-05-29",
     items: [
