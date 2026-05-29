@@ -48,6 +48,10 @@ contextBridge.exposeInMainWorld("desktop", {
     // Push AI-generated post content so the extension can fill text fields.
     setPostContent: (target, content) => ipcRenderer.invoke("bridge:set-post-content", target, content),
     clearPostContent: (target) => ipcRenderer.invoke("bridge:clear-post-content", target),
+    // Fired by the bridge HTTP server when the Chrome extension calls /clear-queue
+    // (i.e. after the user clicks "Mark as Posted" in the extension popup).
+    onQueueCleared: (cb) => ipcRenderer.on("bridge:queue-cleared", (_e, data) => cb(data)),
+    offQueueCleared: () => ipcRenderer.removeAllListeners("bridge:queue-cleared"),
   },
   ai: {
     // Generate a post for the given network. imagePaths = absolute local paths.

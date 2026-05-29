@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { Archive, Check, ChevronDown, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import FilterBar from "@/components/FilterBar.vue";
@@ -127,6 +127,14 @@ onMounted(() => {
     }
   }
   imageStore.load();
+
+  // Clear collection+selection when the extension popup clicks "Mark as Posted"
+  // (which triggers POST /clear-queue → bridge:queue-cleared IPC event).
+  window.desktop.bridge.onQueueCleared(() => clearCollection());
+});
+
+onUnmounted(() => {
+  window.desktop.bridge.offQueueCleared();
 });
 watch(() => imageStore.filters, () => imageStore.load(), { deep: true });
 watch(() => imageStore.showExcludedFolders, () => imageStore.load());
@@ -179,10 +187,6 @@ async function queueForExtension(targetType: string) {
 
 function onAiQueued(count: number) {
   imageStore.message = `Queued ${count} image(s) for ${libActiveTargetName.value}.`;
-  // Clear the collection so the next "Send to Extension" starts with a
-  // clean slate — otherwise old collection items (inserted first) would
-  // keep overriding newly selected images when the queue is rebuilt.
-  clearCollection();
 }
 
 // ── Folder navigation ──────────────────────────────────────────────────────────
