@@ -74,26 +74,20 @@ async function addTag() {
 }
 
 // ── Persona management ───────────────────────────────────────────────────────
-const EMOJI_USE_LABELS: Record<string, string> = {
-  none:   "🚫 No emojis",
-  subtle: "✨ Subtle",
-  heavy:  "🔥 Heavy",
-};
-
 const showPersonaForm = ref(false);
 const editingPersonaId = ref<string | null>(null);
-const personaForm = ref({ name: "", emojiUse: "subtle" as "none"|"subtle"|"heavy", styleNotes: "" });
+const personaForm = ref({ name: "", styleNotes: "" });
 const personaSaved = ref(false);
 
 function openNewPersona() {
   editingPersonaId.value = null;
-  personaForm.value = { name: "", emojiUse: "subtle", styleNotes: "" };
+  personaForm.value = { name: "", styleNotes: "" };
   showPersonaForm.value = true;
 }
 
 function openEditPersona(p: import("@/types/aiSettings").Persona) {
   editingPersonaId.value = p.id;
-  personaForm.value = { name: p.name, emojiUse: p.emojiUse, styleNotes: p.styleNotes };
+  personaForm.value = { name: p.name, styleNotes: p.styleNotes };
   showPersonaForm.value = true;
 }
 
@@ -105,7 +99,7 @@ function cancelPersonaForm() {
 async function savePersonaForm() {
   if (!personaForm.value.name.trim()) return;
   await ai.savePersona(
-    { ...personaForm.value, tone: "", isActive: editingPersonaId.value
+    { ...personaForm.value, tone: "", emojiUse: "subtle", isActive: editingPersonaId.value
         ? (ai.personas.find((p) => p.id === editingPersonaId.value)?.isActive ?? false)
         : false },
     editingPersonaId.value ?? undefined,
@@ -310,7 +304,6 @@ onMounted(async () => {
               <span v-if="persona.isActive" class="rounded border border-accent/40 bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">active</span>
             </div>
             <div class="mt-1 flex flex-wrap gap-1">
-              <span class="rounded bg-panel px-1.5 py-0.5 text-[10px] text-slate-500">{{ EMOJI_USE_LABELS[persona.emojiUse] }}</span>
               <span v-if="persona.styleNotes" class="max-w-xs truncate rounded bg-panel px-1.5 py-0.5 text-[10px] text-slate-500">{{ persona.styleNotes }}</span>
             </div>
           </div>
@@ -331,20 +324,12 @@ onMounted(async () => {
       <!-- Add / Edit form -->
       <div v-if="showPersonaForm" class="mt-4 rounded-lg border border-accent/30 bg-panelSoft p-3 flex flex-col gap-3">
         <p class="text-xs font-semibold text-white">{{ editingPersonaId ? 'Edit Persona' : 'New Persona' }}</p>
-        <div class="grid gap-3 sm:grid-cols-2">
+        <div class="flex flex-col gap-3">
           <div class="flex flex-col gap-1">
             <label class="text-[11px] uppercase tracking-wide text-slate-500">Name</label>
             <input v-model="personaForm.name" aria-label="Persona name" class="field text-sm" placeholder="e.g. Valerie, Hot Mess, Neutral" />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-[11px] uppercase tracking-wide text-slate-500">Emoji Use</label>
-            <select v-model="personaForm.emojiUse" class="field text-sm appearance-none">
-              <option value="none">🚫 None</option>
-              <option value="subtle">✨ Subtle (1–2)</option>
-              <option value="heavy">🔥 Heavy (lots)</option>
-            </select>
-          </div>
-          <div class="col-span-full flex flex-col gap-1">
             <label class="text-[11px] uppercase tracking-wide text-slate-500">Behavior Rules</label>
             <textarea
               v-model="personaForm.styleNotes"
