@@ -826,6 +826,7 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
 
   // ── Active persona (optional) ────────────────────────────────────────────
   let personaLine = "";
+  let systemMessage = "You are a social media content creator. Follow the user's instructions exactly and respond with valid JSON only.";
   try {
     const pRows = db.exec(
       "SELECT name, tone, emoji_use, style_notes FROM personas WHERE is_active = 1 LIMIT 1"
@@ -833,13 +834,16 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     const p = pRows[0]?.values?.[0]; // [name, tone, emoji_use, style_notes]
     if (p) {
       const [pName, , pEmoji, pNotes] = p;
-      const emojiNote = pEmoji === "heavy"
-        ? "Use emojis generously and often throughout the text."
+      const emojiRule = pEmoji === "heavy"
+        ? "You MUST use emojis generously and often — scatter them throughout the text."
         : pEmoji === "subtle"
-          ? "Use 1–2 emojis where they fit naturally; don't force them."
-          : "Do NOT use any emojis.";
-      personaLine = `- Persona / voice: Write as "${pName}". Emoji use: ${emojiNote}.`;
-      if (String(pNotes).trim()) personaLine += `\n- Behavior rules for this persona: ${String(pNotes).trim()}`;
+          ? "Use 1–2 emojis where they fit naturally."
+          : "Do NOT use any emojis whatsoever.";
+      const notesBlock = String(pNotes ?? "").trim();
+      // Persona goes into the system message so the model adopts it as its identity
+      systemMessage = `You ARE "${pName}". Write EXCLUSIVELY in ${pName}'s voice and style. NEVER slip into neutral, generic, or AI-sounding language.\n${emojiRule}\n${notesBlock ? `Behavior rules:\n${notesBlock}\n` : ""}Respond with valid JSON only — no markdown fences.`;
+      // Also keep a short reminder in the user prompt
+      personaLine = `- You are writing as "${pName}" — stay fully in character.`;
     }
   } catch { /* personas table may not exist on very old DBs — skip */ }
 
@@ -886,7 +890,7 @@ Keep each line short. Total text under 260 characters.`;
   };
   const postTypeRule = POST_TYPE_RULES[postType] ?? POST_TYPE_RULES["engagement"];
 
-  const prompt = `You are a social media content creator. Analyze the image(s) and write a post for ${network}.
+  const prompt = `Analyze the image(s) and write a post for ${network}.
 Rules:
 - Write in English.
 ${hintLine ? hintLine + "\n" : ""}${personaLine ? personaLine + "\n" : ""}${storylineContextLine ? storylineContextLine + "\n" : ""}- Post style: ${postTypeRule}
@@ -911,7 +915,10 @@ Respond with ONLY valid JSON, no markdown fences:
       ...imageData.map((d) => ({ type: "image_url", image_url: { url: `data:${d.mime};base64,${d.b64}` } }))];
     const r = await httpsPost(hostname, "/v1/chat/completions",
       { "Authorization": `Bearer ${apiKey}` },
-      { model, max_tokens: maxTokens, messages: [{ role: "user", content }] });
+      { model, max_tokens: maxTokens, messages: [
+        { role: "system", content: systemMessage },
+        { role: "user", content },
+      ]});
     if (r.status !== 200) throw apiError(provider, r);
     result = r.body.choices?.[0]?.message?.content ?? "";
 
@@ -920,7 +927,7 @@ Respond with ONLY valid JSON, no markdown fences:
       { type: "text", text: prompt }];
     const r = await httpsPost("api.anthropic.com", "/v1/messages",
       { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      { model, max_tokens: maxTokens, messages: [{ role: "user", content }] });
+      { model, max_tokens: maxTokens, system: systemMessage, messages: [{ role: "user", content }] });
     if (r.status !== 200) throw apiError("anthropic", r);
     result = r.body.content?.[0]?.text ?? "";
 
@@ -929,7 +936,7 @@ Respond with ONLY valid JSON, no markdown fences:
       ...imageData.map((d) => ({ inline_data: { mime_type: d.mime, data: d.b64 } }))];
     const r = await httpsPost("generativelanguage.googleapis.com",
       `/v1beta/models/${model}:generateContent?key=${apiKey}`, {},
-      { contents: [{ parts }], generationConfig: { responseMimeType: "application/json", maxOutputTokens: maxTokens } });
+      { systemInstruction: { parts: [{ text: systemMessage }] }, contents: [{ parts }], generationConfig: { responseMimeType: "application/json", maxOutputTokens: maxTokens } });
     if (r.status !== 200) throw apiError("gemini", r);
     result = r.body.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   } else {
