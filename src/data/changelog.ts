@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.52",
+    date: "2026-05-29",
+    items: [
+      "fix(ai): persona and perspective are independent; post-type rules don't override persona tone",
+      "fix(ai): persona default perspective = first-person, not neutral observer",
+    ],
+  },
+  {
     version: "0.2.51",
     date: "2026-05-29",
     items: [

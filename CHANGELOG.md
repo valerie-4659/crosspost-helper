@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.52 - 2026-05-29
+
+- fix(ai): persona and perspective are independent; post-type rules don't override persona tone
+- fix(ai): persona default perspective = first-person, not neutral observer
+
+
 ## v0.2.51 - 2026-05-29
 
 - fix(ai): persona via system message — enforces voice, emoji and behavior rules
