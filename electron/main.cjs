@@ -848,11 +848,16 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   } catch { /* personas table may not exist on very old DBs — skip */ }
 
   // ── Post-type instruction ───────────────────────────────────────────────
+  // When a persona is active and no explicit perspective override is chosen,
+  // default to first-person — the neutral-observer instruction would kill the persona voice.
+  const hasPersona = personaLine !== "";
   const perspectiveNote = perspective === "oc" && ocName.trim()
     ? `Write from the perspective of "${ocName.trim()}" (third person, e.g. "${ocName.trim()} loves…").`
     : perspective === "i"
       ? "Write in first person (I, me, my)."
-      : "Describe the image objectively as a neutral observer. Do NOT use first-person voice (no 'I', 'me', 'my').";
+      : hasPersona
+        ? "Write in first person, fully in character."
+        : "Describe the image objectively as a neutral observer. Do NOT use first-person voice (no 'I', 'me', 'my').";
 
   const perspSuffix = ` ${perspectiveNote}`;
 
