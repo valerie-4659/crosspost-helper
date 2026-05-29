@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.57 - 2026-05-29
+
+- fix(extension): stale images on second post
+- fix(library): close collection tray when collection is emptied
+
+
 ## v0.2.56 - 2026-05-29
 
 - fix(bridge): prevent browser caching of queue/image GET requests

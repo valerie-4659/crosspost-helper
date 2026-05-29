@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.57",
+    date: "2026-05-29",
+    items: [
+      "fix(extension): stale images on second post",
+      "fix(library): close collection tray when collection is emptied",
+    ],
+  },
+  {
     version: "0.2.56",
     date: "2026-05-29",
     items: [
