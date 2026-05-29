@@ -44,6 +44,10 @@ declare global {
         setPostContent(target: string, content: { title?: string; description: string; tags: string[] }): Promise<{ ok: boolean }>;
         /** Clear the AI post content for a target platform. */
         clearPostContent(target: string): Promise<{ ok: boolean }>;
+        /** Subscribe to queue-cleared events (fired when extension clicks "Mark as Posted"). */
+        onQueueCleared(cb: (data: { target: string }) => void): void;
+        /** Remove all queue-cleared listeners. */
+        offQueueCleared(): void;
       };
       ai: {
         /** Ask main process to generate a post for the given network via the configured AI provider. */
