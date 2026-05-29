@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.51",
+    date: "2026-05-29",
+    items: [
+      "fix(ai): persona via system message — enforces voice, emoji and behavior rules",
+      "fix(ai-panel): default max length = 180, remove auto option, clean preset labels",
+    ],
+  },
+  {
     version: "0.2.50",
     date: "2026-05-29",
     items: [

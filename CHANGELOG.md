@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.51 - 2026-05-29
+
+- fix(ai): persona via system message — enforces voice, emoji and behavior rules
+- fix(ai-panel): default max length = 180, remove auto option, clean preset labels
+
+
 ## v0.2.50 - 2026-05-29
 
 - feat(picker): send-mode split-button dropdown — same 3 modes as AiPostPanel
