@@ -6,6 +6,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.54",
+    date: "2026-05-29",
+    items: [
+      "refactor(settings): remove emoji dropdown from persona form",
+      "fix(ai): persona system message uses styleNotes directly, no conflicting emojiRule override",
+      "fix(ai): suppress neutral-observer perspSuffix when persona is active",
+    ],
+  },
+  {
     version: "0.2.53",
     date: "2026-05-29",
     items: [
