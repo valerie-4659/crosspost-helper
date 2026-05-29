@@ -16,7 +16,7 @@ window.CrosspostBridge = {
   // ── Image retrieval ──────────────────────────────────────────────────────
 
   async getNextImage(target) {
-    const res = await fetch(`${BRIDGE_URL}/next-image?target=${encodeURIComponent(target)}`);
+    const res = await fetch(`${BRIDGE_URL}/next-image?target=${encodeURIComponent(target)}`, { cache: "no-store" });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${res.status}`);
@@ -27,7 +27,7 @@ window.CrosspostBridge = {
   // Returns the app-selected image queue for a target platform.
   // Response: { images: [{id, filename, mimeType, targetId}], targetId, limit }
   async getQueuedImages(target) {
-    const res = await fetch(`${BRIDGE_URL}/queue?target=${encodeURIComponent(target)}`);
+    const res = await fetch(`${BRIDGE_URL}/queue?target=${encodeURIComponent(target)}`, { cache: "no-store" });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${res.status}`);
@@ -36,7 +36,7 @@ window.CrosspostBridge = {
   },
 
   async getImageBlob(imageId) {
-    const res = await fetch(`${BRIDGE_URL}/image-file?id=${encodeURIComponent(imageId)}`);
+    const res = await fetch(`${BRIDGE_URL}/image-file?id=${encodeURIComponent(imageId)}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`Could not load image: HTTP ${res.status}`);
     return res.blob();
   },
@@ -77,7 +77,7 @@ window.CrosspostBridge = {
 
   // Returns { title?, description, tags[] } if the app pushed AI content, or null.
   async getPostContent(target) {
-    const res = await fetch(`${BRIDGE_URL}/post-content?target=${encodeURIComponent(target)}`);
+    const res = await fetch(`${BRIDGE_URL}/post-content?target=${encodeURIComponent(target)}`, { cache: "no-store" });
     if (!res.ok) return null;
     const data = await res.json();
     return data.ok ? data.content : null;

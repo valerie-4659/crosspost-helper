@@ -36,7 +36,7 @@ function cdpSend(tabId, method, params) {
 
 async function cdpInjectFiles(tabId, imageIds) {
   // 1. Resolve local file paths from the bridge server.
-  const res = await fetch(`${BRIDGE_URL}/image-paths?ids=${imageIds.join(",")}`);
+  const res = await fetch(`${BRIDGE_URL}/image-paths?ids=${imageIds.join(",")}`, { cache: "no-store" });
   const { paths } = await res.json();
   const filePaths = imageIds.map((id) => paths[id]).filter(Boolean);
   if (!filePaths.length) throw new Error("No local file paths found for the queued images.");
