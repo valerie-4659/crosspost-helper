@@ -179,6 +179,10 @@ async function queueForExtension(targetType: string) {
 
 function onAiQueued(count: number) {
   imageStore.message = `Queued ${count} image(s) for ${libActiveTargetName.value}.`;
+  // Clear the collection so the next "Send to Extension" starts with a
+  // clean slate — otherwise old collection items (inserted first) would
+  // keep overriding newly selected images when the queue is rebuilt.
+  clearCollection();
 }
 
 // ── Folder navigation ──────────────────────────────────────────────────────────

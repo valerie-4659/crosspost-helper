@@ -48,7 +48,7 @@ function targetFromUrl(url) {
 
 async function checkStatus() {
   try {
-    const res = await fetch(`${BRIDGE_URL}/status`);
+    const res = await fetch(`${BRIDGE_URL}/status`, { cache: "no-store" });
     if (!res.ok) throw new Error();
     const data = await res.json();
     dot.className = "status-dot connected";
@@ -65,13 +65,13 @@ async function checkStatus() {
 // Load the app-selected queue for the current platform and show it in the popup.
 async function loadQueue(target) {
   try {
-    const res = await fetch(`${BRIDGE_URL}/queue?target=${encodeURIComponent(target)}`);
+    const res = await fetch(`${BRIDGE_URL}/queue?target=${encodeURIComponent(target)}`, { cache: "no-store" });
     const data = await res.json().catch(() => ({}));
     const images = data.images ?? [];
     if (images.length === 0) {
       // Fall back to showing a random next image so the extension still works
       // even without an explicit selection from the app.
-      const r2 = await fetch(`${BRIDGE_URL}/next-image?target=${encodeURIComponent(target)}`);
+      const r2 = await fetch(`${BRIDGE_URL}/next-image?target=${encodeURIComponent(target)}`, { cache: "no-store" });
       if (r2.ok) {
         const img = await r2.json();
         showImageInfo(img.filename, `Random — no app selection for ${PLATFORM_LABELS[target] ?? target}`);
