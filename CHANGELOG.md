@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.60 - 2026-05-30
+
+- feat(ai): improve post generation quality
+
+
 ## v0.2.59 - 2026-05-30
 
 - fix(ai): QT Event ignores TFTT line when hint/context is set
