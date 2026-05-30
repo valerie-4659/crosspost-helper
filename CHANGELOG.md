@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.59 - 2026-05-30
+
+- fix(ai): QT Event ignores TFTT line when hint/context is set
+- fix(types): add onQueueCleared/offQueueCleared to desktop.bridge type
+- fix(library): clear collection only after Mark as Posted, not on queue send
+
+
 ## v0.2.58 - 2026-05-29
 
 - Release v0.2.58

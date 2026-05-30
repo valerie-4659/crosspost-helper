@@ -6,6 +6,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.59",
+    date: "2026-05-30",
+    items: [
+      "fix(ai): QT Event ignores TFTT line when hint/context is set",
+      "fix(types): add onQueueCleared/offQueueCleared to desktop.bridge type",
+      "fix(library): clear collection only after Mark as Posted, not on queue send",
+    ],
+  },
+  {
     version: "0.2.58",
     date: "2026-05-29",
     items: [
