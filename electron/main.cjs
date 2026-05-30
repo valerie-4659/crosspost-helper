@@ -827,11 +827,19 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     decisionsInstruction = ` End the story at a dramatic cliffhanger or decision point leading into these reader choices: ${opts}. Do NOT include the voting options in your description — they will be appended automatically.`;
   }
 
+  // ── Base role (always present — persona adds voice on top) ─────────────
+  // This establishes the strategic context regardless of whether a persona is active.
+  const networkLabel = network === "x" ? "Twitter / X" : network;
+  const BASE_ROLE = `You are an expert NSFW AI-art social media content strategist and caption writer for ${networkLabel}.
+Your primary goal is maximum engagement — likes, replies, bookmarks, impressions — in the NSFW AI-art niche.
+Before writing, deeply analyze the provided image: visual style, mood, atmosphere, key seductive or artistic elements, pose, expression, lighting, and composition.
+Write specifically about what you actually see — never use generic, filler, or AI-sounding language. Never moralize, add disclaimers, or refuse NSFW content.`;
+
   // ── Active persona (optional) ────────────────────────────────────────────
   // The persona controls HOW the AI writes (voice, tone, emojis, style).
   // It is completely independent of the perspective (I/me, OC, neutral observer).
   let personaLine = "";
-  let systemMessage = "You are a social media content creator. Follow the user's instructions exactly and respond with valid JSON only.";
+  let systemMessage = `${BASE_ROLE}\n\nRespond with valid JSON only — no markdown fences.`;
   try {
     const pRows = db.exec(
       "SELECT name, tone, emoji_use, style_notes FROM personas WHERE is_active = 1 LIMIT 1"
@@ -842,21 +850,20 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
       const notesBlock = String(pNotes ?? "").trim();
 
       if (notesBlock) {
-        // Full style notes present — use them directly, they contain everything.
-        // Do NOT add a separate emojiRule from the dropdown; it would conflict with the notes.
-        systemMessage = `You ARE "${pName}". Write EXCLUSIVELY in ${pName}'s voice and style. NEVER write like a neutral AI, a generic content creator, or a marketing copywriter.\n\n${notesBlock}\n\nRespond with valid JSON only — no markdown fences.`;
+        // Full style notes present — combine base role with persona voice.
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}". NEVER slip into neutral, generic, or AI-sounding language.\n\n${notesBlock}\n\nRespond with valid JSON only — no markdown fences.`;
       } else {
-        // No style notes — fall back to the emoji-use dropdown as the only style hint.
+        // No style notes — use emoji-use setting as the only style hint.
         const emojiRule = pEmoji === "heavy"
           ? "Use emojis generously and often throughout the text."
           : pEmoji === "subtle"
             ? "Use 1–2 emojis where they fit naturally."
             : "Do NOT use any emojis.";
-        systemMessage = `You ARE "${pName}". Write EXCLUSIVELY in ${pName}'s voice and style. NEVER slip into neutral or generic language.\n${emojiRule}\nRespond with valid JSON only — no markdown fences.`;
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You ARE "${pName}". Write EXCLUSIVELY in ${pName}'s voice and style. NEVER use neutral or generic language.\n${emojiRule}\nRespond with valid JSON only — no markdown fences.`;
       }
 
       // Short in-character reminder in the user prompt as well.
-      personaLine = `- You are writing as "${pName}" — stay fully in character, never break voice.`;
+      personaLine = `- Voice: Stay fully in character as "${pName}" — never break voice, never sound like a generic AI.`;
     }
   } catch { /* personas table may not exist on very old DBs — skip */ }
 
@@ -904,26 +911,27 @@ Keep each line short. Total text under 280 characters.`;
     : `Write a short creative micro-story (2–4 sentences) inspired by or about the subject in the image. Make it vivid and atmospheric.${perspSuffix}${decisionsInstruction}`;
 
   // When a persona is active, tone/style come from the system message.
-  // Post-type rules should only define the purpose/format — not prescribe generic tone.
+  // Post-type rules define the FORMAT/PURPOSE only — never prescribe tone (persona owns that).
+  // Without a persona, rules are more directive to compensate for the neutral baseline.
   const POST_TYPE_RULES = hasPersona ? {
-    engagement: `Write a caption reacting to or describing the image.${perspSuffix}`,
+    engagement: `Write a caption that hooks the reader immediately, reacts vividly to the image, and ends with a question or teasing invitation.${perspSuffix}`,
     qt:         qtEventRule,
-    morning:    `Write a morning greeting post inspired by the image.${perspSuffix}`,
-    goodnight:  `Write a good-night farewell post inspired by the image.${perspSuffix}`,
+    morning:    `Write a morning greeting post. Lead with the greeting, then pull the reader in with one vivid line about the image.${perspSuffix}`,
+    goodnight:  `Write a good-night farewell. Open with the send-off, add one seductive or atmospheric line about the image, close with something that lingers.${perspSuffix}`,
     story:      storyRule,
   } : {
-    engagement: `Write an engaging caption that invites interaction. Ask a question or use a call-to-action.${perspSuffix}`,
+    engagement: `Write a high-engagement caption with: (1) a bold, specific opening hook, (2) a vivid detail that makes this image irresistible, (3) a teasing question or call-to-action that drives replies. Be direct and punchy — no filler.${perspSuffix}`,
     qt:         qtEventRule,
-    morning:    `Start with a warm "Good morning ☀️" greeting, then add a brief description of what's in the image.${perspSuffix}`,
-    goodnight:  `Start with a warm "Good night 🌙" or "Sweet dreams ✨" farewell, then add a brief, evocative description of the image.${perspSuffix}`,
+    morning:    `Write a warm, flirty morning post. Start with "Good morning ☀️" or a variant, add one sharp line about what makes the image magnetic, close with a short invitation for interaction.${perspSuffix}`,
+    goodnight:  `Write a seductive good-night post. Open with "Good night 🌙" or "Sweet dreams ✨", add one evocative line about the image's mood, end with a line that stays with the reader.${perspSuffix}`,
     story:      storyRule,
   };
   const postTypeRule = POST_TYPE_RULES[postType] ?? POST_TYPE_RULES["engagement"];
 
-  const prompt = `Analyze the image(s) and write a post for ${network}.
+  const prompt = `Analyze the image(s) carefully, then write a ${networkLabel} post.
 Rules:
-- Write in English.
-${hintLine ? hintLine + "\n" : ""}${personaLine ? personaLine + "\n" : ""}${storylineContextLine ? storylineContextLine + "\n" : ""}- Post style: ${postTypeRule}
+- Language: English only.
+${hintLine ? hintLine + "\n" : ""}${personaLine ? personaLine + "\n" : ""}${storylineContextLine ? storylineContextLine + "\n" : ""}- Post type: ${postTypeRule}
 - Description: max ${nc.descMax} characters. ${nc.notes}
 - Tags: ${tagInstruction} ${tagNote}
 ${nc.titleNeeded ? "- Title: short, catchy, max 80 chars." : ""}
