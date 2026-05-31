@@ -868,18 +868,17 @@ EMOJI STYLE: Use expressive, sensual, and emotionally fitting emojis. Reach for 
     }
   } catch { /* personas table may not exist on very old DBs — skip */ }
 
-  // ── Post-type instruction ───────────────────────────────────────────────
-  const perspectiveNote = perspective === "oc" && ocName.trim()
-    ? `Write from the perspective of "${ocName.trim()}" (third person, e.g. "${ocName.trim()} loves…").`
-    : perspective === "i"
-      ? "Write in first person (I, me, my)."
-      : "Describe the image objectively as a neutral observer. Do NOT use first-person voice (no 'I', 'me', 'my').";
-
-  // When a persona is active and no explicit perspective is chosen, the neutral-observer
-  // instruction must NOT be appended — the persona system message defines the voice.
+  // ── Perspective setup ──────────────────────────────────────────────────
   const hasPersona = personaLine !== "";
-  const hasExplicitPerspective = perspective === "i" || (perspective === "oc" && ocName.trim());
-  const perspSuffix = (!hasPersona || hasExplicitPerspective) ? ` ${perspectiveNote}` : "";
+  const isOC = perspective === "oc" && ocName.trim();
+  const isFirstPerson = perspective === "i";
+
+  // Narrative voice label — used inside each rule where it makes sense
+  const perspVoice = isOC
+    ? `Narrative voice: third-person focused on ${ocName.trim()} — e.g. "${ocName.trim()} feels…", "${ocName.trim()} wants…".`
+    : isFirstPerson
+      ? "Narrative voice: first person (I, me, my, mine)."
+      : "Narrative voice: neutral third-person observer — no 'I' or 'me'.";
 
   // QT Event template (multi-line social post format)
   const qtThemeInstruction = qtEventName
@@ -905,30 +904,61 @@ ${qtThemeInstruction}
 No @ mentions other than the tagger above. No hashtags in the text body (use the tags field).
 Keep each line short. Total text under 280 characters.`;
 
-  // Story rule: extended for Premium+ or if a storyline is active
-  // IMPORTANT: a story is NOT a description of the image — it is an emotional narrative
-  // written from inside the moment. DO NOT list visual details (hair colour, clothing, etc.).
-  // Instead: capture the feeling, desire, tension, and inner experience of the characters.
-  const STORY_CORE = `Do NOT describe the image visually. Do NOT list physical details like hair colour, clothing, or setting. Instead, write from INSIDE the moment: the emotion, the desire, the tension, the sensation. The reader should feel what the characters feel — not see what the camera sees.`;
+  // ── Engagement ─────────────────────────────────────────────────────────
+  // Goal: make the reader imagine THEMSELVES in the scene and reply.
+  const engagementReaderInvite = isOC
+    ? `Let the reader experience the scene through ${ocName.trim()}'s feelings, then ask a question that makes them want to BE there.`
+    : isFirstPerson
+      ? "Speak directly to your followers — pull them into your world and end with a question that makes them imagine being right there with you."
+      : "Draw the reader INTO the scene. Make them feel the energy, then hit them with a direct question: 'what would you do?', 'would you…', 'tell me…' — make it impossible to scroll past.";
+
+  const engagementRule = hasPersona
+    ? `Write a caption with a strong hook, build the mood or tension, then end with a teasing question or invitation that gets followers to engage. ${engagementReaderInvite} ${perspVoice}`
+    : `Write a high-engagement caption:
+(1) Bold opening hook — the first line must stop the scroll.
+(2) ONE vivid, specific detail that builds the feeling or tension.
+(3) Direct reader-question at the end — make them imagine themselves here. ${engagementReaderInvite}
+${perspVoice} Be punchy and specific. No filler.`;
+
+  // ── Morning greeting ────────────────────────────────────────────────────
+  // Always addressed to followers. Offer the AI style variety so each post feels different.
+  const morningRule = `Write a morning greeting post addressed to your followers. Use the image's mood and energy as inspiration.
+Pick ONE style (choose what fits the image — do NOT announce your choice):
+a) Tender & soft — warm, close, like a quiet morning together
+b) Playful & teasing — flirty, tongue-in-cheek, light energy
+c) Bold & suggestive — charged, confident, leaves something to the imagination
+d) Dreamy & poetic — atmospheric, lingers like the first light
+Vary the opening (e.g. "good morning", "morning loves", "rise and shine", "hey you" — never repeat the same phrase twice). Add one line connecting to the image's energy. Close with a short note or question directed at followers.`;
+
+  // ── Good Night ──────────────────────────────────────────────────────────
+  const goodnightRule = `Write a good-night post addressed to your followers. Use the image's mood as the emotional backdrop.
+Pick ONE style (choose what fits — do NOT announce your choice):
+a) Seductive & lingering — leaves them wanting more
+b) Tender & warm — intimate send-off, makes followers feel seen
+c) Provocative & teasing — plants a thought they'll take to bed with them
+d) Wistful & poetic — soft, atmospheric, stays with them
+Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night night" — keep it fresh). Add one evocative line connecting to the image's mood. Close with something that lingers.`;
+
+  // ── Story / Storytelling ────────────────────────────────────────────────
+  // A story is NOT a visual description — it is an emotional narrative from inside the moment.
+  const STORY_CORE = `Do NOT describe the image visually. Do NOT list physical details like hair colour, clothing, or setting. Write from INSIDE the moment: the emotion, the desire, the tension, the sensation. The reader should FEEL what the characters feel — not see what the camera sees.`;
+  const storyPerspVoice = isOC
+    ? `${perspVoice} We live this entirely through ${ocName.trim()}'s inner world.`
+    : isFirstPerson
+      ? `${perspVoice} The narrator IS in this moment — raw, immediate, intimate.`
+      : `${perspVoice} Close third-person — watching from just outside, feeling everything from within. Think: "She surrenders…", "He pulls her closer…", "The silence between them…"`;
+
   const storyIsRich = (xPremiumPlus && network === "x") || !!storylineId;
   const storyRule = storyIsRich
-    ? `Write a rich, immersive story episode (8–15 sentences, multiple paragraphs). ${STORY_CORE} Build emotional intensity, inner monologue, and sensory feeling. Leave the reader craving the next instalment.${perspSuffix}${decisionsInstruction}`
-    : `Write a short emotional micro-story (2–4 sentences). ${STORY_CORE} Make it feel intimate, raw, and alive — like a stolen moment the reader just stepped into.${perspSuffix}${decisionsInstruction}`;
+    ? `Write a rich, immersive story episode (8–15 sentences, multiple paragraphs). ${STORY_CORE} ${storyPerspVoice} Build emotional intensity and leave the reader craving the next instalment.${decisionsInstruction}`
+    : `Write a short emotional micro-story (2–4 sentences). ${STORY_CORE} ${storyPerspVoice} Make it feel intimate and alive — like a stolen moment the reader just stepped into.${decisionsInstruction}`;
 
-  // When a persona is active, tone/style come from the system message.
-  // Post-type rules define the FORMAT/PURPOSE only — never prescribe tone (persona owns that).
-  // Without a persona, rules are more directive to compensate for the neutral baseline.
-  const POST_TYPE_RULES = hasPersona ? {
-    engagement: `Write a caption that hooks the reader immediately, reacts vividly to the image, and ends with a question or teasing invitation.${perspSuffix}`,
+  // ── Final post-type map ─────────────────────────────────────────────────
+  const POST_TYPE_RULES = {
+    engagement: engagementRule,
     qt:         qtEventRule,
-    morning:    `Write a morning greeting post. Lead with the greeting, then pull the reader in with one vivid line about the image.${perspSuffix}`,
-    goodnight:  `Write a good-night farewell. Open with the send-off, add one seductive or atmospheric line about the image, close with something that lingers.${perspSuffix}`,
-    story:      storyRule,
-  } : {
-    engagement: `Write a high-engagement caption with: (1) a bold, specific opening hook, (2) a vivid detail that makes this image irresistible, (3) a teasing question or call-to-action that drives replies. Be direct and punchy — no filler.${perspSuffix}`,
-    qt:         qtEventRule,
-    morning:    `Write a warm, flirty morning post. Start with "Good morning ☀️" or a variant, add one sharp line about what makes the image magnetic, close with a short invitation for interaction.${perspSuffix}`,
-    goodnight:  `Write a seductive good-night post. Open with "Good night 🌙" or "Sweet dreams ✨", add one evocative line about the image's mood, end with a line that stays with the reader.${perspSuffix}`,
+    morning:    morningRule,
+    goodnight:  goodnightRule,
     story:      storyRule,
   };
   const postTypeRule = POST_TYPE_RULES[postType] ?? POST_TYPE_RULES["engagement"];
