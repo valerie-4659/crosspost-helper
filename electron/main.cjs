@@ -906,10 +906,14 @@ No @ mentions other than the tagger above. No hashtags in the text body (use the
 Keep each line short. Total text under 280 characters.`;
 
   // Story rule: extended for Premium+ or if a storyline is active
+  // IMPORTANT: a story is NOT a description of the image — it is an emotional narrative
+  // written from inside the moment. DO NOT list visual details (hair colour, clothing, etc.).
+  // Instead: capture the feeling, desire, tension, and inner experience of the characters.
+  const STORY_CORE = `Do NOT describe the image visually. Do NOT list physical details like hair colour, clothing, or setting. Instead, write from INSIDE the moment: the emotion, the desire, the tension, the sensation. The reader should feel what the characters feel — not see what the camera sees.`;
   const storyIsRich = (xPremiumPlus && network === "x") || !!storylineId;
   const storyRule = storyIsRich
-    ? `Write a rich, immersive story episode (8–15 sentences, multiple paragraphs). Build vivid atmosphere, strong characterisation and emotional tension. Leave the reader eager for the next instalment.${perspSuffix}${decisionsInstruction}`
-    : `Write a short creative micro-story (2–4 sentences) inspired by or about the subject in the image. Make it vivid and atmospheric.${perspSuffix}${decisionsInstruction}`;
+    ? `Write a rich, immersive story episode (8–15 sentences, multiple paragraphs). ${STORY_CORE} Build emotional intensity, inner monologue, and sensory feeling. Leave the reader craving the next instalment.${perspSuffix}${decisionsInstruction}`
+    : `Write a short emotional micro-story (2–4 sentences). ${STORY_CORE} Make it feel intimate, raw, and alive — like a stolen moment the reader just stepped into.${perspSuffix}${decisionsInstruction}`;
 
   // When a persona is active, tone/style come from the system message.
   // Post-type rules define the FORMAT/PURPOSE only — never prescribe tone (persona owns that).
