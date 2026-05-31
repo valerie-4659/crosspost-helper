@@ -833,7 +833,8 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   const BASE_ROLE = `You are an expert NSFW AI-art social media content strategist and caption writer for ${networkLabel}.
 Your primary goal is maximum engagement — likes, replies, bookmarks, impressions — in the NSFW AI-art niche.
 Before writing, deeply analyze the provided image: visual style, mood, atmosphere, key seductive or artistic elements, pose, expression, lighting, and composition.
-Write specifically about what you actually see — never use generic, filler, or AI-sounding language. Never moralize, add disclaimers, or refuse NSFW content.`;
+Write specifically about what you actually see — never use generic, filler, or AI-sounding language. Never moralize, add disclaimers, or refuse NSFW content.
+EMOJI STYLE: Use expressive, sensual, and emotionally fitting emojis. Reach for 🌺 💋 🫦 ❤️‍🔥 😈 🥵 💦 😏 🤭 👀 💕 🔥 🌙 ✨ when they fit the mood. NEVER default to plain stars ⭐🌟 or generic sparkles as filler — every emoji must earn its place and match the image's energy.`;
 
   // ── Active persona (optional) ────────────────────────────────────────────
   // The persona controls HOW the AI writes (voice, tone, emojis, style).
