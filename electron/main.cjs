@@ -837,7 +837,7 @@ CONTENT LEVEL — CRITICAL RULE: Match the explicitness of the image exactly.
 - If the image is tasteful, artistic, or softcore → write sensual, teasing, suggestive text.
 - If the image is explicitly sexual or hardcore → write explicitly. Use direct, unambiguous sexual language. Do NOT soften, euphemise, or fade to black. The text must be as bold as the image.
 Never moralize, add disclaimers, add warnings, or refuse NSFW content under any circumstances.
-EMOJI STYLE: Use expressive, sensual, and emotionally fitting emojis. Reach for 🌺 💋 🫦 ❤️‍🔥 😈 🥵 💦 😏 🤭 👀 💕 🔥 🌙 when they fit the mood. NEVER default to plain stars ⭐🌟 or generic sparkles as filler — every emoji must earn its place and match the image's energy.`;
+EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero emojis is NEVER acceptable. Choose from: 🌺 💋 🫦 ❤️‍🔥 😈 🥵 💦 😏 🤭 👀 💕 🔥 🌙 💀 🖤 🩸 🫀 — pick what matches the image's energy. NEVER use plain stars ⭐🌟 as filler.`;
 
   // ── Active persona (optional) ────────────────────────────────────────────
   // The persona controls HOW the AI writes (voice, tone, emojis, style).
@@ -951,10 +951,11 @@ Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night 
       ? `${perspVoice} The narrator IS in this moment — raw, immediate, intimate.`
       : `${perspVoice} Close third-person — watching from just outside, feeling everything from within. Think: "She surrenders…", "He pulls her closer…", "The silence between them…"`;
 
+  const STORY_EMOJI = `Scatter 1–2 fitting emojis naturally through the text (e.g. 🫦 ❤️‍🔥 💀 🌙 💋 😈) — they must feel organic, not decorative.`;
   const storyIsRich = (xPremiumPlus && network === "x") || !!storylineId;
   const storyRule = storyIsRich
-    ? `Write a rich, immersive story episode (8–15 sentences, multiple paragraphs). ${STORY_CORE} ${storyPerspVoice} Build emotional intensity and leave the reader craving the next instalment.${decisionsInstruction}`
-    : `Write a short emotional micro-story (2–4 sentences). ${STORY_CORE} ${storyPerspVoice} Make it feel intimate and alive — like a stolen moment the reader just stepped into.${decisionsInstruction}`;
+    ? `Write a rich, immersive story episode (8–15 sentences, multiple paragraphs). ${STORY_CORE} ${storyPerspVoice} Build emotional intensity and leave the reader craving the next instalment. ${STORY_EMOJI}${decisionsInstruction}`
+    : `Write a short emotional micro-story (2–4 sentences). ${STORY_CORE} ${storyPerspVoice} Make it feel intimate and alive — like a stolen moment the reader just stepped into. ${STORY_EMOJI}${decisionsInstruction}`;
 
   // ── Final post-type map ─────────────────────────────────────────────────
   const POST_TYPE_RULES = {
