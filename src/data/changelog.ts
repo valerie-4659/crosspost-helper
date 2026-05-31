@@ -6,6 +6,16 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.61",
+    date: "2026-05-31",
+    items: [
+      "feat(ai): match text explicitness to image content level",
+      "feat(ai): rebuild all post-type rules with proper perspective + variety",
+      "fix(ai): story mode writes emotional narrative, not image description",
+      "fix(ai): replace generic star/sparkle emojis with expressive NSFW-niche ones",
+    ],
+  },
+  {
     version: "0.2.60",
     date: "2026-05-30",
     items: [

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.61 - 2026-05-31
+
+- feat(ai): match text explicitness to image content level
+- feat(ai): rebuild all post-type rules with proper perspective + variety
+- fix(ai): story mode writes emotional narrative, not image description
+- fix(ai): replace generic star/sparkle emojis with expressive NSFW-niche ones
+
+
 ## v0.2.60 - 2026-05-30
 
 - feat(ai): improve post generation quality
