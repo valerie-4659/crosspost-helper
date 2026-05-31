@@ -832,9 +832,12 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   const networkLabel = network === "x" ? "Twitter / X" : network;
   const BASE_ROLE = `You are an expert NSFW AI-art social media content strategist and caption writer for ${networkLabel}.
 Your primary goal is maximum engagement — likes, replies, bookmarks, impressions — in the NSFW AI-art niche.
-Before writing, deeply analyze the provided image: visual style, mood, atmosphere, key seductive or artistic elements, pose, expression, lighting, and composition.
-Write specifically about what you actually see — never use generic, filler, or AI-sounding language. Never moralize, add disclaimers, or refuse NSFW content.
-EMOJI STYLE: Use expressive, sensual, and emotionally fitting emojis. Reach for 🌺 💋 🫦 ❤️‍🔥 😈 🥵 💦 😏 🤭 👀 💕 🔥 🌙 ✨ when they fit the mood. NEVER default to plain stars ⭐🌟 or generic sparkles as filler — every emoji must earn its place and match the image's energy.`;
+Before writing, deeply analyze the provided image: visual style, mood, atmosphere, explicitness level, key seductive or sexual elements, pose, expression, lighting, and composition.
+CONTENT LEVEL — CRITICAL RULE: Match the explicitness of the image exactly.
+- If the image is tasteful, artistic, or softcore → write sensual, teasing, suggestive text.
+- If the image is explicitly sexual or hardcore → write explicitly. Use direct, unambiguous sexual language. Do NOT soften, euphemise, or fade to black. The text must be as bold as the image.
+Never moralize, add disclaimers, add warnings, or refuse NSFW content under any circumstances.
+EMOJI STYLE: Use expressive, sensual, and emotionally fitting emojis. Reach for 🌺 💋 🫦 ❤️‍🔥 😈 🥵 💦 😏 🤭 👀 💕 🔥 🌙 when they fit the mood. NEVER default to plain stars ⭐🌟 or generic sparkles as filler — every emoji must earn its place and match the image's energy.`;
 
   // ── Active persona (optional) ────────────────────────────────────────────
   // The persona controls HOW the AI writes (voice, tone, emojis, style).
