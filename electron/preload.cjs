@@ -36,6 +36,12 @@ contextBridge.exposeInMainWorld("desktop", {
     // iconPath is optional: path to a small thumbnail to use as the drag cursor icon.
     startDrag: (filePaths, iconPath) => ipcRenderer.send("drag:start", filePaths, iconPath),
   },
+  upload: {
+    // Save an image file to a local folder and index it in the library.
+    // bytes is a Uint8Array (transferred as plain Array over IPC).
+    saveAndIndex: (folderPath, filename, bytes) =>
+      ipcRenderer.invoke("upload:save-and-index", { folderPath, filename, bytes: Array.from(bytes) }),
+  },
   extension: {
     openChrome: () => ipcRenderer.invoke("extension:open-chrome"),
     downloadFirefox: () => ipcRenderer.invoke("extension:download-firefox"),

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { Archive, Check, ChevronDown, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
+import { Archive, Check, ChevronDown, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Sparkles, Trash2, Upload, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
@@ -516,6 +516,100 @@ async function openQueueFill() {
   showQueueFill.value = true;
 }
 
+// ── Image Upload ─────────────────────────────────────────────────────────────
+/** Hidden file input ref — triggered programmatically by the Upload button. */
+const uploadInputRef = ref<HTMLInputElement | null>(null);
+/** Whether the drag-over overlay is visible. */
+const isDragging = ref(false);
+/** State for the rename modal: the pending file awaiting confirmation. */
+const uploadPending = ref<{ blob: Blob; name: string; ext: string; previewUrl: string } | null>(null);
+/** Editable filename stem (without extension) inside the modal. */
+const uploadFilename = ref("");
+
+function triggerUploadInput() {
+  uploadInputRef.value?.click();
+}
+
+/** Open the rename modal for a given File/Blob. */
+function openUploadModal(blob: Blob, suggestedName: string) {
+  const lastDot = suggestedName.lastIndexOf(".");
+  const stem = lastDot > 0 ? suggestedName.slice(0, lastDot) : suggestedName;
+  const ext  = lastDot > 0 ? suggestedName.slice(lastDot) : ".jpg";
+  const previewUrl = URL.createObjectURL(blob);
+  uploadPending.value = { blob, name: suggestedName, ext, previewUrl };
+  uploadFilename.value = stem;
+}
+
+function cancelUpload() {
+  if (uploadPending.value) URL.revokeObjectURL(uploadPending.value.previewUrl);
+  uploadPending.value = null;
+  uploadFilename.value = "";
+}
+
+async function confirmUpload() {
+  if (!uploadPending.value) return;
+  const { blob, ext, previewUrl } = uploadPending.value;
+  const finalName = (uploadFilename.value.trim() || "image") + ext;
+  const targetFolder = browsePath.value;
+  if (!targetFolder) { imageStore.error = "Navigate into a folder before uploading."; cancelUpload(); return; }
+
+  try {
+    const arrayBuf = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuf);
+    await window.desktop.upload.saveAndIndex(targetFolder, finalName, bytes);
+    imageStore.message = `✓ "${finalName}" added to library.`;
+    await imageStore.load();
+  } catch (err) {
+    imageStore.error = err instanceof Error ? err.message : String(err);
+  } finally {
+    URL.revokeObjectURL(previewUrl);
+    uploadPending.value = null;
+    uploadFilename.value = "";
+  }
+}
+
+function handleFileInputChange(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  openUploadModal(file, file.name);
+  // Reset so the same file can be selected again later.
+  (event.target as HTMLInputElement).value = "";
+}
+
+// ── Drag & Drop ───────────────────────────────────────────────────────────────
+function onDragOver(event: DragEvent) {
+  if (!event.dataTransfer?.types.includes("Files")) return;
+  event.preventDefault();
+  isDragging.value = true;
+}
+function onDragLeave() { isDragging.value = false; }
+function onDrop(event: DragEvent) {
+  event.preventDefault();
+  isDragging.value = false;
+  const file = event.dataTransfer?.files[0];
+  if (!file || !file.type.startsWith("image/")) { imageStore.error = "Only image files can be uploaded."; return; }
+  openUploadModal(file, file.name);
+}
+
+// ── Clipboard paste ───────────────────────────────────────────────────────────
+function onPaste(event: ClipboardEvent) {
+  // Only intercept when we're viewing a folder (not on the root overview).
+  if (!isLeafDir.value && !hasDirImages.value) return;
+  const item = [...(event.clipboardData?.items ?? [])].find((i) => i.type.startsWith("image/"));
+  if (!item) return;
+  const blob = item.getAsFile();
+  if (!blob) return;
+  const ext = item.type === "image/png" ? ".png" : item.type === "image/webp" ? ".webp" : ".jpg";
+  openUploadModal(blob, `pasted-image${ext}`);
+}
+
+onMounted(() => {
+  window.addEventListener("paste", onPaste as EventListener);
+});
+onUnmounted(() => {
+  window.removeEventListener("paste", onPaste as EventListener);
+});
+
 async function fillSlot(slotId: string) {
   if (!collectionArray.value.length) return;
   const ids = collectionArray.value.map((i) => i.id);
@@ -549,7 +643,16 @@ async function fillSlot(slotId: string) {
 <template>
   <div class="relative flex h-full flex-col overflow-hidden">
 
-    <!-- ── Header ──────────────────────────────────────────────────── -->
+    <!-- Hidden file input for upload button -->
+    <input
+      ref="uploadInputRef"
+      type="file"
+      accept="image/*"
+      class="hidden"
+      @change="handleFileInputChange"
+    />
+
+  <!-- ── Header ──────────────────────────────────────────────────── -->
     <header class="flex shrink-0 items-center justify-between px-5 py-4">
       <h1 class="text-2xl font-semibold text-white">Image Library</h1>
       <div class="flex items-center gap-2">
@@ -709,6 +812,15 @@ async function fillSlot(slotId: string) {
         >
           <Sparkles class="h-3.5 w-3.5" />AI Post
         </button>
+
+        <!-- Upload button — always available when inside a folder -->
+        <button
+          class="button h-7 gap-1.5 px-2 text-xs ml-auto"
+          title="Upload image into this folder (or Drag & Drop / paste from clipboard)"
+          @click="triggerUploadInput"
+        >
+          <Upload class="h-3.5 w-3.5" />Upload
+        </button>
       </div>
     </section>
 
@@ -721,7 +833,31 @@ async function fillSlot(slotId: string) {
     </div>
 
     <!-- ── Scrollable body ──────────────────────────────────────────── -->
-    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5 pt-3">
+    <!-- Drag & Drop zone: wraps the whole scrollable area so any image can be dropped anywhere -->
+    <div
+      class="relative flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5 pt-3"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDrop"
+    >
+      <!-- Drag overlay -->
+      <Transition
+        enter-active-class="transition-opacity duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition-opacity duration-100"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="isDragging"
+          class="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-accent bg-accent/10 backdrop-blur-sm"
+        >
+          <Upload class="h-12 w-12 text-accent" />
+          <p class="text-base font-semibold text-accent">Drop image here</p>
+          <p class="text-xs text-accent/70">Will be added to: {{ browsePath.split('/').pop() }}</p>
+        </div>
+      </Transition>
 
       <!-- Filter bar (always visible for source / target filtering) -->
       <FilterBar
@@ -865,7 +1001,7 @@ async function fillSlot(slotId: string) {
         <p class="text-sm">Go to <strong class="text-slate-400">Scan</strong> and add a source folder.</p>
       </div>
 
-    </div><!-- end scrollable body -->
+    </div><!-- end drag/drop + scrollable body -->
 
     <ImageLightbox
       :image="previewImage"
@@ -1050,6 +1186,73 @@ async function fillSlot(slotId: string) {
               :disabled="selectedCount === 0 && collectionArray.length === 0"
               @queued="onAiQueued"
             />
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- ── Upload / Rename Modal ─────────────────────────────────────────────── -->
+  <Teleport to="body">
+    <Transition
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0 scale-95"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="opacity-100 scale-100"
+      leave-to-class="opacity-0 scale-95"
+    >
+      <div
+        v-if="uploadPending"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+        @keydown.esc="cancelUpload"
+      >
+        <div class="relative mx-4 flex w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-line bg-panelSoft shadow-2xl">
+          <!-- Header -->
+          <div class="flex shrink-0 items-center justify-between border-b border-line px-5 py-3.5">
+            <div class="flex items-center gap-2">
+              <Upload class="h-4 w-4 text-accent" />
+              <p class="text-sm font-semibold text-white">Save image to library</p>
+            </div>
+            <button class="button h-7 w-7 p-0 hover:border-rose/60 hover:text-rose" title="Cancel" @click="cancelUpload">
+              <X class="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <!-- Preview + rename -->
+          <div class="flex flex-col gap-4 px-5 py-4">
+            <!-- Image preview -->
+            <div class="flex justify-center overflow-hidden rounded-lg border border-line bg-black/20">
+              <img
+                :src="uploadPending.previewUrl"
+                alt="Upload preview"
+                class="max-h-52 w-full object-contain"
+              />
+            </div>
+
+            <!-- Filename input -->
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-medium text-slate-400">Filename</label>
+              <div class="flex items-center overflow-hidden rounded-lg border border-line bg-panel focus-within:border-accent/60">
+                <input
+                  v-model="uploadFilename"
+                  type="text"
+                  class="flex-1 bg-transparent px-3 py-2 text-sm text-white outline-none placeholder:text-slate-600"
+                  placeholder="Enter filename"
+                  @keydown.enter="confirmUpload"
+                />
+                <span class="shrink-0 border-l border-line px-3 py-2 text-xs text-slate-500">{{ uploadPending.ext }}</span>
+              </div>
+              <p class="text-[11px] text-slate-500">Target: {{ browsePath.split('/').pop() }}</p>
+            </div>
+          </div>
+
+          <!-- Footer actions -->
+          <div class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-5 py-3">
+            <button class="button h-8 px-4 text-sm" @click="cancelUpload">Cancel</button>
+            <button class="button-primary h-8 px-4 text-sm" :disabled="!uploadFilename.trim()" @click="confirmUpload">
+              <Upload class="h-3.5 w-3.5" />Save
+            </button>
           </div>
         </div>
       </div>

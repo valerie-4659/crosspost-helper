@@ -1,0 +1,17 @@
+feat(library): image upload via button, Drag & Drop, and clipboard paste
+
+- electron/main.cjs: new upload:save-and-index IPC handler
+  writes bytes to disk, generates thumbnail, resolves source_id,
+  inserts image record, calls persistDatabase()
+
+- electron/preload.cjs: exposes window.desktop.upload.saveAndIndex()
+
+- src/types/desktop.d.ts: typed declaration for upload.saveAndIndex
+
+- src/pages/LibraryPage.vue:
+  - Hidden input[type=file] triggered by Upload button
+  - Upload button in sticky toolbar (Row 2, right side)
+  - Drag and Drop zone wrapping the scrollable body with animated overlay
+  - Clipboard paste handler on window (image/* only)
+  - Rename modal (Teleport to body): preview, editable filename stem,
+    locked extension, Enter/Save confirms, Escape/Cancel aborts

@@ -1244,6 +1244,73 @@ app.whenReady().then(() => {
     }
   });
 
+  // ── Upload a single image into the library ──────────────────────────────
+  // Receives { folderPath, filename, bytes } from the renderer.
+  // Writes the file to disk, generates a thumbnail, finds the matching
+  // image_source entry, inserts the image record, and returns the new image.
+  ipcMain.handle("upload:save-and-index", async (_event, { folderPath, filename, bytes }) => {
+    const destPath = path.join(folderPath, filename);
+
+    // Write the file bytes to disk (bytes is a plain Array from the renderer).
+    fs.writeFileSync(destPath, Buffer.from(bytes));
+
+    // Generate a thumbnail for the new file.
+    const thumbPath = await generateThumbnail(destPath);
+
+    // Build the localfile:// URL for the thumbnail (and the image itself).
+    function toLocalfileUrl(absPath) {
+      const fwd = absPath.replaceAll("\\", "/");
+      const p = fwd.startsWith("/") ? fwd : "/" + fwd;
+      return "localfile://" + encodeURI(p);
+    }
+    const localPath  = destPath.replaceAll("\\", "/");
+    const folderNorm = folderPath.replaceAll("\\", "/");
+    const thumbnailUrl = thumbPath ? toLocalfileUrl(thumbPath) : toLocalfileUrl(destPath);
+
+    // Find the source_id: look for a local_folder source whose root path is an
+    // ancestor of the destination folder, preferring the longest (most specific) match.
+    const db = await getDatabase();
+    const srcRows = [];
+    const srcStmt = db.prepare(
+      `SELECT id FROM image_sources WHERE type = 'local_folder' AND ? LIKE root_path_or_id || '%' ORDER BY LENGTH(root_path_or_id) DESC LIMIT 1`
+    );
+    srcStmt.bind([folderNorm]);
+    while (srcStmt.step()) srcRows.push(srcStmt.getAsObject());
+    srcStmt.free();
+
+    let sourceId;
+    if (srcRows.length) {
+      sourceId = srcRows[0].id;
+    } else {
+      // Fallback: find source_id via an existing image in the same folder.
+      const imgRows = [];
+      const imgStmt = db.prepare("SELECT source_id FROM images WHERE folder_path = ? LIMIT 1");
+      imgStmt.bind([folderNorm]);
+      while (imgStmt.step()) imgRows.push(imgStmt.getAsObject());
+      imgStmt.free();
+      if (!imgRows.length) throw new Error(`No indexed source covers folder: ${folderPath}`);
+      sourceId = imgRows[0].source_id;
+    }
+
+    const mimeMap = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif" };
+    const ext = path.extname(filename).toLowerCase();
+    const mimeType = mimeMap[ext] ?? "image/jpeg";
+    const fileSize = fs.statSync(destPath).size;
+    const now = new Date().toISOString();
+    const id = `image_${crypto.randomUUID()}`;
+
+    const insStmt = db.prepare(
+      `INSERT INTO images (id, source_id, source_file_id, local_path, filename, folder_path, mime_type, file_size,
+       thumbnail_url, web_view_link, created_at, modified_at, indexed_at, perceptual_hash, width, height, rating, is_archived)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, NULL, NULL, 'unknown', 0)`
+    );
+    insStmt.run([id, sourceId, localPath, localPath, filename, folderNorm, mimeType, fileSize, thumbnailUrl, now, now, now]);
+    insStmt.free();
+    persistDatabase();
+
+    return { ok: true, id, localPath, thumbnailUrl, filename, folderPath: folderNorm };
+  });
+
   // Serve local files via the localfile:// protocol so the renderer can
   // display images from arbitrary disk locations safely.
   //

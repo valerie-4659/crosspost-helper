@@ -27,6 +27,14 @@ declare global {
         /** Trigger a native OS file drag so external apps receive real files. */
         startDrag?: (filePaths: string[], iconPath?: string) => void;
       };
+      upload: {
+        /** Save a raw image file to a library folder and index it in the DB. */
+        saveAndIndex(
+          folderPath: string,
+          filename: string,
+          bytes: Uint8Array,
+        ): Promise<{ ok: boolean; id: string; localPath: string; thumbnailUrl: string; filename: string; folderPath: string }>;
+      };
       extension: {
         /** Reveal the Chrome extension folder in Finder / Explorer. */
         openChrome(): Promise<void>;
