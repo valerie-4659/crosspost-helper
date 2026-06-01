@@ -319,7 +319,7 @@ export async function countEligibleImages(filters: ImageFilters): Promise<number
   return rows[0]?.count ?? 0;
 }
 
-export async function pickRandomImage(filters: ImageFilters, excludeIds: string[] = []): Promise<ImageWithPostState | null> {
+export async function pickRandomImage(filters: ImageFilters): Promise<ImageWithPostState | null> {
   const db = await getDatabase();
   const params: unknown[] = [];
   const conditions = ["images.is_archived = 0"];
@@ -372,12 +372,12 @@ export async function pickRandomImage(filters: ImageFilters, excludeIds: string[
        OR images.folder_path LIKE ef.folder_path || '/%'
   )`);
 
-  // Cooldown exclusion: session-skipped images that haven't passed the 40% threshold yet.
-  if (excludeIds.length > 0) {
-    excludeIds.forEach((id) => params.push(id));
-    const placeholders = excludeIds.map((_, i) => `$${params.length - excludeIds.length + i + 1}`).join(", ");
-    conditions.push(`images.id NOT IN (${placeholders})`);
-  }
+  // Persistent cooldown: exclude images whose cooldown_until threshold hasn't been reached.
+  conditions.push(`NOT EXISTS (
+    SELECT 1 FROM picker_cooldowns pc
+    WHERE pc.image_id = images.id
+      AND (SELECT COALESCE(value, 0) FROM picker_state WHERE key = 'total_picks') < pc.cooldown_until
+  )`);
 
   const rows = await db.select<ImageListRow[]>(
     `SELECT images.*, image_sources.name AS source_name, image_sources.type AS source_type,
@@ -393,6 +393,45 @@ export async function pickRandomImage(filters: ImageFilters, excludeIds: string[
   );
 
   return rows[0] ? mapImageWithState(rows[0]) : null;
+}
+
+// ── Picker state helpers ────────────────────────────────────────────────────
+
+/** Increment the persistent pick counter by 1. Called after every successful pick. */
+export async function incrementPickCount(): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    "UPDATE picker_state SET value = value + 1 WHERE key = 'total_picks'",
+    [],
+  );
+}
+
+/**
+ * Put an image on persistent cooldown.
+ * @param imageId   The image to cool down
+ * @param stepsAhead  How many picks must happen before re-eligibility (ceil(poolSize * 0.4))
+ */
+export async function setImageCooldown(imageId: string, stepsAhead: number): Promise<void> {
+  const db = await getDatabase();
+  const now = nowIso();
+  await db.execute(
+    `INSERT OR REPLACE INTO picker_cooldowns (image_id, cooldown_until, skipped_at)
+     VALUES ($1,
+       (SELECT COALESCE(value, 0) FROM picker_state WHERE key = 'total_picks') + $2,
+       $3)`,
+    [imageId, stepsAhead, now],
+  );
+}
+
+/** How many images are currently on active cooldown (threshold not yet reached). */
+export async function getActiveCooldownCount(): Promise<number> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<{ count: number }>>(
+    `SELECT COUNT(*) as count FROM picker_cooldowns
+     WHERE (SELECT COALESCE(value, 0) FROM picker_state WHERE key = 'total_picks') < cooldown_until`,
+    [],
+  );
+  return rows[0]?.count ?? 0;
 }
 
 /**

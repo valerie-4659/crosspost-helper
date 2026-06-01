@@ -465,8 +465,8 @@ onMounted(async () => {
         </button>
 
         <!-- Cooldown indicator -->
-        <p v-if="picker.activeCooldownIds.length > 0" class="text-xs text-slate-500">
-          {{ picker.activeCooldownIds.length }} image{{ picker.activeCooldownIds.length === 1 ? '' : 's' }} on cooldown (skipped this session)
+        <p v-if="picker.cooldownCount > 0" class="text-xs text-slate-500">
+          {{ picker.cooldownCount }} image{{ picker.cooldownCount === 1 ? '' : 's' }} on cooldown (skipped)
         </p>
 
         <button class="button-primary rounded-md" :disabled="!picker.currentImage || !targets.activeTargetId" @click="picker.markPosted">

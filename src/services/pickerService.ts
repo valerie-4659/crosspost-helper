@@ -2,11 +2,11 @@ import { countEligibleImages, pickRandomImage } from "@/repositories/imageReposi
 import { upsertPostRecord } from "@/repositories/postRecordRepository";
 import type { ImageFilters } from "@/types/image";
 
-export async function pickRandomUnpostedImage(filters: ImageFilters, excludeIds: string[] = []) {
+export async function pickRandomUnpostedImage(filters: ImageFilters) {
   if (!filters.targetId) {
     throw new Error("Choose a posting target before picking an image.");
   }
-  return pickRandomImage(filters, excludeIds);
+  return pickRandomImage(filters);
 }
 
 export { countEligibleImages };

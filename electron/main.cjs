@@ -59,6 +59,7 @@ function migrationSql() {
     "005_x_tags_v2.sql",
     "006_personas.sql",
     "007_storylines.sql",
+    "008_picker_cooldown.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
