@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.2.67 - 2026-06-01
+
+- fix(library): propagate mark-as-posted to filename-stem siblings
+
+
+## v0.2.66 - 2026-06-01
+
+- fix(library): propagate mark-as-posted to filename-stem siblings
+
+
+## v0.2.65 - 2026-06-01
+
+- fix(library): propagate mark-as-posted to filename-stem siblings
+
+
+## v0.2.64 - 2026-06-01
+
+- fix(library): propagate mark-as-posted to filename-stem siblings
+
+
+## v0.2.63 - 2026-06-01
+
+- fix(library): propagate mark-as-posted to filename-stem siblings
+
+
 ## v0.2.62 - 2026-06-01
 
 - chore: remove upload helper scripts

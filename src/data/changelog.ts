@@ -6,6 +6,41 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.67",
+    date: "2026-06-01",
+    items: [
+      "fix(library): propagate mark-as-posted to filename-stem siblings",
+    ],
+  },
+  {
+    version: "0.2.66",
+    date: "2026-06-01",
+    items: [
+      "fix(library): propagate mark-as-posted to filename-stem siblings",
+    ],
+  },
+  {
+    version: "0.2.65",
+    date: "2026-06-01",
+    items: [
+      "fix(library): propagate mark-as-posted to filename-stem siblings",
+    ],
+  },
+  {
+    version: "0.2.64",
+    date: "2026-06-01",
+    items: [
+      "fix(library): propagate mark-as-posted to filename-stem siblings",
+    ],
+  },
+  {
+    version: "0.2.63",
+    date: "2026-06-01",
+    items: [
+      "fix(library): propagate mark-as-posted to filename-stem siblings",
+    ],
+  },
+  {
     version: "0.2.62",
     date: "2026-06-01",
     items: [
