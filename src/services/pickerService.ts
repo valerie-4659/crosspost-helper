@@ -1,5 +1,5 @@
 import { countEligibleImages, pickRandomImage } from "@/repositories/imageRepository";
-import { upsertPostRecord } from "@/repositories/postRecordRepository";
+import { markWithSiblings } from "@/repositories/postRecordRepository";
 import type { ImageFilters } from "@/types/image";
 
 export async function pickRandomUnpostedImage(filters: ImageFilters) {
@@ -12,10 +12,7 @@ export async function pickRandomUnpostedImage(filters: ImageFilters) {
 export { countEligibleImages };
 
 export async function markImagePosted(imageId: string, targetId: string, postUrl?: string, caption?: string) {
-  return upsertPostRecord({
-    imageId,
-    targetId,
-    status: "posted",
+  await markWithSiblings(imageId, targetId, "posted", {
     postUrl: postUrl?.trim() || null,
     caption: caption?.trim() || null,
   });

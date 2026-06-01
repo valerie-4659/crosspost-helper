@@ -1,4 +1,5 @@
 import { createId, getDatabase, nowIso } from "./database";
+import { findStemSiblingIds } from "./imageRepository";
 import type { PostRecord, PostRecordInput, PostRecordStatus, PostHistoryEntry, PostHistoryFilters } from "@/types/postRecord";
 
 type PostRecordRow = {
@@ -70,6 +71,27 @@ export async function upsertPostRecord(input: PostRecordInput): Promise<PostReco
     createdAt,
     updatedAt: timestamp,
   };
+}
+
+/**
+ * Mark an image AND all its filename-stem siblings with the given status.
+ *
+ * A "stem sibling" is any image in the same source whose filename stem
+ * (name without extension) is identical.  This ensures that posting
+ * "blubb.jpg" also marks "blubb.png" so that deleting one variant does
+ * not silently lose the posted state for the remaining variants.
+ */
+export async function markWithSiblings(
+  imageId: string,
+  targetId: string,
+  status: PostRecordStatus,
+  extras?: { postUrl?: string | null; caption?: string | null },
+): Promise<void> {
+  await upsertPostRecord({ imageId, targetId, status, ...extras });
+  const siblings = await findStemSiblingIds(imageId);
+  for (const sibId of siblings) {
+    await upsertPostRecord({ imageId: sibId, targetId, status, ...extras });
+  }
 }
 
 // ── Post History ──────────────────────────────────────────────────────────────

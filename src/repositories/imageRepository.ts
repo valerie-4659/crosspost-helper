@@ -658,3 +658,32 @@ export async function listExcludedFolderPaths(): Promise<Set<string>> {
   const rows = await db.select<Array<{ folder_path: string }>>("SELECT folder_path FROM excluded_folders");
   return new Set(rows.map((r) => r.folder_path));
 }
+
+/**
+ * Returns the IDs of all other images in the same source that share the same
+ * filename stem (i.e. the filename without its extension).
+ *
+ * Example: "blubb.jpg" → finds "blubb.png", "blubb.webp", … in the same source.
+ * This allows mark-as-posted/skipped to propagate across format variants so that
+ * deleting one variant doesn't silently lose the posted state for the others.
+ */
+export async function findStemSiblingIds(imageId: string): Promise<string[]> {
+  const db = await getDatabase();
+  const meta = await db.select<Array<{ source_id: string; filename: string }>>(
+    "SELECT source_id, filename FROM images WHERE id = $1 LIMIT 1",
+    [imageId],
+  );
+  if (!meta.length) return [];
+
+  const { source_id, filename } = meta[0];
+  // Strip the last extension: "blubb.jpg" → "blubb", "my.cool.image.jpg" → "my.cool.image"
+  const stem = filename.replace(/\.[^.]+$/, "");
+  if (!stem || stem === filename) return []; // no extension → nothing to propagate
+
+  // Match any file with the same stem followed by a dot (different extension)
+  const rows = await db.select<Array<{ id: string }>>(
+    "SELECT id FROM images WHERE source_id = $1 AND id != $2 AND LOWER(filename) LIKE LOWER($3)",
+    [source_id, imageId, stem + ".%"],
+  );
+  return rows.map((r) => r.id);
+}

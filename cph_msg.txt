@@ -1,0 +1,21 @@
+fix(library): propagate mark-as-posted to filename-stem siblings
+
+Post records are keyed by image UUID, not by filename. When a user has
+the same image in two formats (e.g. blubb.png full-res and small/blubb.jpg
+for sharing), marking one variant as posted did not affect the other.
+On the next scan, if the shared variant was deleted, its post_record was
+cascade-deleted too, silently losing the posted state for the surviving variant.
+
+Fix: every mark-as-posted/skipped now also marks all "stem siblings" in the
+same source — images whose filename stem (name without extension) is identical.
+
+Changes:
+- imageRepository.ts: findStemSiblingIds(imageId) — queries images in the
+  same source_id where LOWER(filename) LIKE 'stem.%', returns sibling IDs
+- postRecordRepository.ts: markWithSiblings(imageId, targetId, status, extras?)
+  — calls upsertPostRecord for the primary image and all stem siblings
+- pickerService.ts: markImagePosted uses markWithSiblings
+- imageStore.ts: markPosted, markSkipped, markSelectedPosted use markWithSiblings
+- pickerStore.ts: markMultiPickPosted uses markWithSiblings
+- electron/main.cjs: bridge upsertPostRecord and /mark-all-posted endpoint
+  use the new _upsertOnePostRecord + _findStemSiblingIds helpers

@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { deleteAllImages, deleteImages, deleteImagesInFolder, excludeFolder, includeFolder, listDistinctFolders, listFolderPostStats, listFolderThumbnails, listImages, setImageArchived } from "@/repositories/imageRepository";
-import { upsertPostRecord } from "@/repositories/postRecordRepository";
+import { markWithSiblings } from "@/repositories/postRecordRepository";
 import type { FolderEntry } from "@/repositories/imageRepository";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
 
@@ -103,7 +103,7 @@ export const useImageStore = defineStore("images", () => {
 
   async function markPosted(imageId: string, targetId: string) {
     error.value = "";
-    await upsertPostRecord({ imageId, targetId, status: "posted" });
+    await markWithSiblings(imageId, targetId, "posted");
     // Update in-place — avoids a full IPC reload for every single click.
     const idx = images.value.findIndex((img) => img.id === imageId);
     if (idx !== -1) {
@@ -117,7 +117,7 @@ export const useImageStore = defineStore("images", () => {
 
   async function markSkipped(imageId: string, targetId: string) {
     error.value = "";
-    await upsertPostRecord({ imageId, targetId, status: "skipped" });
+    await markWithSiblings(imageId, targetId, "skipped");
     // Update in-place and remove if filter hides skipped images.
     const idx = images.value.findIndex((img) => img.id === imageId);
     if (idx !== -1) {
@@ -138,7 +138,7 @@ export const useImageStore = defineStore("images", () => {
     error.value = "";
     for (const imageId of selectedImageIds.value) {
       for (const targetId of targetIds) {
-        await upsertPostRecord({ imageId, targetId, status: "posted" });
+        await markWithSiblings(imageId, targetId, "posted");
       }
     }
     message.value = `Marked ${selectedImageIds.value.size} image(s) for ${targetIds.length} target(s).`;

@@ -411,10 +411,8 @@ function copyImagesToFolder(paths, destination) {
 const BRIDGE_PORT = 27842;
 let bridgeServer = null;
 
-// Shared post-record upsert used by both /mark-posted and /mark-all-posted.
-async function upsertPostRecord(imageId, targetId) {
-  const db2 = await getDatabase();
-  const now = new Date().toISOString();
+// Low-level single-image post-record upsert (no sibling propagation).
+function _upsertOnePostRecord(db2, imageId, targetId, now) {
   const chk = db2.prepare("SELECT id FROM post_records WHERE image_id = ? AND target_id = ? LIMIT 1");
   chk.bind([imageId, targetId]);
   const existing = [];
@@ -428,6 +426,42 @@ async function upsertPostRecord(imageId, targetId) {
     const ins = db2.prepare("INSERT INTO post_records (id, image_id, target_id, status, posted_at, created_at, updated_at) VALUES (?, ?, ?, 'posted', ?, ?, ?)");
     ins.run([`pr_${crypto.randomUUID()}`, imageId, targetId, now, now, now]);
     ins.free();
+  }
+}
+
+// Find IDs of all images in the same source with the same filename stem.
+// E.g. "blubb.jpg" finds "blubb.png" so marks propagate across format variants.
+function _findStemSiblingIds(db2, imageId) {
+  const meta = db2.prepare("SELECT source_id, filename FROM images WHERE id = ? LIMIT 1");
+  meta.bind([imageId]);
+  const rows = [];
+  while (meta.step()) rows.push(meta.getAsObject());
+  meta.free();
+  if (!rows.length) return [];
+
+  const { source_id, filename } = rows[0];
+  const stem = filename.replace(/\.[^.]+$/, "");
+  if (!stem || stem === filename) return [];
+
+  const like = stem.toLowerCase() + ".%";
+  const sib = db2.prepare(
+    "SELECT id FROM images WHERE source_id = ? AND id != ? AND LOWER(filename) LIKE ?"
+  );
+  sib.bind([source_id, imageId, like]);
+  const ids = [];
+  while (sib.step()) ids.push(sib.getAsObject().id);
+  sib.free();
+  return ids;
+}
+
+// Shared post-record upsert used by both /mark-posted and /mark-all-posted.
+// Propagates the "posted" state to all filename-stem siblings automatically.
+async function upsertPostRecord(imageId, targetId) {
+  const db2 = await getDatabase();
+  const now = new Date().toISOString();
+  _upsertOnePostRecord(db2, imageId, targetId, now);
+  for (const sibId of _findStemSiblingIds(db2, imageId)) {
+    _upsertOnePostRecord(db2, sibId, targetId, now);
   }
   persistDatabase();
 }
@@ -637,19 +671,9 @@ async function handleBridge(req, res) {
         db2.run("BEGIN");
         const now = new Date().toISOString();
         for (const imageId of imageIds) {
-          const chk = db2.prepare("SELECT id FROM post_records WHERE image_id = ? AND target_id = ? LIMIT 1");
-          chk.bind([imageId, targetId]);
-          const existing = [];
-          while (chk.step()) existing.push(chk.getAsObject());
-          chk.free();
-          if (existing.length) {
-            const upd = db2.prepare("UPDATE post_records SET status = 'posted', posted_at = ?, updated_at = ? WHERE id = ?");
-            upd.run([now, now, existing[0].id]);
-            upd.free();
-          } else {
-            const ins = db2.prepare("INSERT INTO post_records (id, image_id, target_id, status, posted_at, created_at, updated_at) VALUES (?, ?, ?, 'posted', ?, ?, ?)");
-            ins.run([`pr_${crypto.randomUUID()}`, imageId, targetId, now, now, now]);
-            ins.free();
+          _upsertOnePostRecord(db2, imageId, targetId, now);
+          for (const sibId of _findStemSiblingIds(db2, imageId)) {
+            _upsertOnePostRecord(db2, sibId, targetId, now);
           }
         }
         db2.run("COMMIT");

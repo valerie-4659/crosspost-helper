@@ -9,7 +9,7 @@ import {
   setImageArchived,
   setImageCooldown,
 } from "@/repositories/imageRepository";
-import { upsertPostRecord } from "@/repositories/postRecordRepository";
+import { markWithSiblings } from "@/repositories/postRecordRepository";
 import { useTargetStore } from "./targetStore";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
 
@@ -228,7 +228,7 @@ export const usePickerStore = defineStore("picker", () => {
     if (!targetId) return;
     const filled = multiPickSlots.value.filter(Boolean) as ImageWithPostState[];
     for (const img of filled) {
-      await upsertPostRecord({ imageId: img.id, targetId, status: "posted" });
+      await markWithSiblings(img.id, targetId, "posted");
     }
     multiPickMessage.value = `Marked ${filled.length} image(s) as posted.`;
     multiPickSlots.value = Array(multiPickCount.value).fill(undefined);
