@@ -1,13 +1,15 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { copyImagePath, copyImageToClipboard, revealImage } from "@/services/imageActionService";
-import { markImagePosted, markImageSkipped, pickRandomUnpostedImage } from "@/services/pickerService";
-import { pickRandomImages } from "@/repositories/imageRepository";
+import { countEligibleImages, markImagePosted, pickRandomUnpostedImage } from "@/services/pickerService";
+import { pickRandomImages, setImageArchived } from "@/repositories/imageRepository";
 import { upsertPostRecord } from "@/repositories/postRecordRepository";
 import { useTargetStore } from "./targetStore";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
 
 const HISTORY_MAX = 10;
+/** Fraction of the pool that must be picked before a skipped image is re-eligible. */
+const COOLDOWN_FRACTION = 0.4;
 
 export const usePickerStore = defineStore("picker", () => {
   const targetStore = useTargetStore();
@@ -25,6 +27,22 @@ export const usePickerStore = defineStore("picker", () => {
     rating: "all",
   });
 
+  // ── Cooldown tracking (session-only — resets on app restart) ────────────
+  /** Total picks done this session. Incremented on every successful pickRandom. */
+  const sessionPickCount = ref(0);
+  /**
+   * Maps imageId → minimum sessionPickCount before the image is re-eligible.
+   * Set on Skip; cleared automatically once the threshold is passed.
+   */
+  const cooldownMap = ref(new Map<string, number>());
+
+  /** IDs currently on cooldown (threshold not yet reached). */
+  const activeCooldownIds = computed(() =>
+    [...cooldownMap.value.entries()]
+      .filter(([, minCount]) => sessionPickCount.value < minCount)
+      .map(([id]) => id),
+  );
+
   const canPick = computed(() => Boolean(targetStore.activeTargetId));
   const canGoBack = computed(() => history.value.length > 0);
 
@@ -33,7 +51,7 @@ export const usePickerStore = defineStore("picker", () => {
     error.value = null;
     try {
       filters.value.targetId = targetStore.activeTargetId;
-      const next = await pickRandomUnpostedImage(filters.value);
+      const next = await pickRandomUnpostedImage(filters.value, activeCooldownIds.value);
       if (!next) {
         error.value = "No unposted image matched the current filters.";
         return;
@@ -43,6 +61,7 @@ export const usePickerStore = defineStore("picker", () => {
         history.value = [currentImage.value, ...history.value].slice(0, HISTORY_MAX);
       }
       currentImage.value = next;
+      sessionPickCount.value++;
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : String(caught);
     } finally {
@@ -70,9 +89,30 @@ export const usePickerStore = defineStore("picker", () => {
     await pickRandom();
   }
 
+  /**
+   * Skip the current image for this session.
+   * The image is NOT written to the DB — it stays eligible long-term.
+   * Instead it enters a session cooldown: it can only be re-picked after
+   * 40% of the eligible pool has been seen (sessionPickCount threshold).
+   */
   async function markSkipped() {
     if (!currentImage.value || !targetStore.activeTargetId) return;
-    await markImageSkipped(currentImage.value.id, targetStore.activeTargetId);
+    const imageId = currentImage.value.id;
+    // Calculate pool size to set the cooldown threshold
+    const poolSize = await countEligibleImages({ ...filters.value, targetId: targetStore.activeTargetId });
+    const cooldownSteps = Math.max(1, Math.ceil(poolSize * COOLDOWN_FRACTION));
+    cooldownMap.value.set(imageId, sessionPickCount.value + cooldownSteps);
+    await pickRandom();
+  }
+
+  /**
+   * Exclude the current image from ALL networks permanently (sets is_archived=1).
+   * Use when image quality is not good enough for any platform.
+   */
+  async function excludeGlobally() {
+    if (!currentImage.value) return;
+    await setImageArchived(currentImage.value.id, true);
+    message.value = "Image excluded from all networks.";
     await pickRandom();
   }
 
@@ -202,11 +242,15 @@ export const usePickerStore = defineStore("picker", () => {
     message,
     canPick,
     canGoBack,
+    // Cooldown info (session)
+    activeCooldownIds,
+    sessionPickCount,
     pickRandom,
     goBack,
     markPosted,
     markTargetPosted,
     markSkipped,
+    excludeGlobally,
     openCurrentImage,
     copyPath,
     copyImage,

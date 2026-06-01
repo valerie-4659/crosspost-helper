@@ -1,13 +1,15 @@
-import { pickRandomImage } from "@/repositories/imageRepository";
+import { countEligibleImages, pickRandomImage } from "@/repositories/imageRepository";
 import { upsertPostRecord } from "@/repositories/postRecordRepository";
 import type { ImageFilters } from "@/types/image";
 
-export async function pickRandomUnpostedImage(filters: ImageFilters) {
+export async function pickRandomUnpostedImage(filters: ImageFilters, excludeIds: string[] = []) {
   if (!filters.targetId) {
     throw new Error("Choose a posting target before picking an image.");
   }
-  return pickRandomImage(filters);
+  return pickRandomImage(filters, excludeIds);
 }
+
+export { countEligibleImages };
 
 export async function markImagePosted(imageId: string, targetId: string, postUrl?: string, caption?: string) {
   return upsertPostRecord({

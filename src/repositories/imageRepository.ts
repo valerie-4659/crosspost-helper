@@ -268,7 +268,58 @@ export async function upsertImage(input: ImageInput): Promise<{ imageId: string;
   return { imageId: id, created: true };
 }
 
-export async function pickRandomImage(filters: ImageFilters): Promise<ImageWithPostState | null> {
+/**
+ * Count the total number of images eligible for random picking with the given filters.
+ * Used to calculate the 40% cooldown threshold after a skip.
+ */
+export async function countEligibleImages(filters: ImageFilters): Promise<number> {
+  const db = await getDatabase();
+  const params: unknown[] = [];
+  const conditions = ["images.is_archived = 0"];
+
+  if (filters.sourceId) {
+    params.push(filters.sourceId);
+    conditions.push(`images.source_id = $${params.length}`);
+  }
+  if (filters.rating && filters.rating !== "all") {
+    params.push(filters.rating);
+    conditions.push(`images.rating = $${params.length}`);
+  }
+  if (filters.targetId) {
+    params.push(filters.targetId);
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM post_records pr
+      WHERE pr.image_id = images.id AND pr.target_id = $${params.length} AND pr.status = 'posted'
+    )`);
+  }
+  if (filters.excludePostedAnywhere) {
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM post_records pa
+      WHERE pa.image_id = images.id AND pa.status = 'posted'
+    )`);
+  }
+  if (!filters.includeSkipped) {
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM post_records sr
+      WHERE sr.image_id = images.id AND sr.status = 'skipped'
+    )`);
+  }
+  conditions.push(`NOT EXISTS (
+    SELECT 1 FROM excluded_folders ef
+    WHERE images.folder_path = ef.folder_path
+       OR images.folder_path LIKE ef.folder_path || '/%'
+  )`);
+
+  const rows = await db.select<Array<{ count: number }>>(
+    `SELECT COUNT(*) as count FROM images
+     JOIN image_sources ON image_sources.id = images.source_id
+     WHERE ${conditions.join(" AND ")}`,
+    params,
+  );
+  return rows[0]?.count ?? 0;
+}
+
+export async function pickRandomImage(filters: ImageFilters, excludeIds: string[] = []): Promise<ImageWithPostState | null> {
   const db = await getDatabase();
   const params: unknown[] = [];
   const conditions = ["images.is_archived = 0"];
@@ -320,6 +371,13 @@ export async function pickRandomImage(filters: ImageFilters): Promise<ImageWithP
     WHERE images.folder_path = ef.folder_path
        OR images.folder_path LIKE ef.folder_path || '/%'
   )`);
+
+  // Cooldown exclusion: session-skipped images that haven't passed the 40% threshold yet.
+  if (excludeIds.length > 0) {
+    excludeIds.forEach((id) => params.push(id));
+    const placeholders = excludeIds.map((_, i) => `$${params.length - excludeIds.length + i + 1}`).join(", ");
+    conditions.push(`images.id NOT IN (${placeholders})`);
+  }
 
   const rows = await db.select<ImageListRow[]>(
     `SELECT images.*, image_sources.name AS source_name, image_sources.type AS source_type,

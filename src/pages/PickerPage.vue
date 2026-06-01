@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Check, ChevronDown, ChevronLeft, Clipboard, Copy, FolderOpen, Layers, Send, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
+import { Ban, Check, ChevronDown, ChevronLeft, Clipboard, Copy, FolderOpen, Layers, Send, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import { convertFileSrc } from "@/electron-shims/core";
 import FilterBar from "@/components/FilterBar.vue";
@@ -442,11 +442,32 @@ onMounted(async () => {
             <Copy class="h-4 w-4" />
             Path
           </button>
-          <button class="button" :disabled="!picker.currentImage || !targets.activeTargetId" @click="picker.markSkipped">
+          <button
+            class="button"
+            :disabled="!picker.currentImage || !targets.activeTargetId"
+            title="Skip for this session — image returns to the pool after ~40% of eligible images have been picked"
+            @click="picker.markSkipped"
+          >
             <SkipForward class="h-4 w-4" />
             Skip {{ activeTargetName }}
           </button>
         </div>
+
+        <!-- Global exclude — destructive action, full-width, visually distinct -->
+        <button
+          class="button col-span-2 w-full gap-2 border-amber-800/50 bg-amber-900/20 text-amber-400 hover:border-amber-600 hover:bg-amber-900/40"
+          :disabled="!picker.currentImage"
+          title="Permanently exclude this image from ALL networks (sets is_archived). Cannot be undone from the picker."
+          @click="picker.excludeGlobally"
+        >
+          <Ban class="h-4 w-4" />
+          Exclude globally
+        </button>
+
+        <!-- Cooldown indicator -->
+        <p v-if="picker.activeCooldownIds.length > 0" class="text-xs text-slate-500">
+          {{ picker.activeCooldownIds.length }} image{{ picker.activeCooldownIds.length === 1 ? '' : 's' }} on cooldown (skipped this session)
+        </p>
 
         <button class="button-primary rounded-md" :disabled="!picker.currentImage || !targets.activeTargetId" @click="picker.markPosted">
           <Check class="h-4 w-4" />
