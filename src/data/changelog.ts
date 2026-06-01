@@ -6,6 +6,18 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.62",
+    date: "2026-06-01",
+    items: [
+      "chore: remove upload helper scripts",
+      "feat(library): image upload via button, Drag & Drop, and clipboard paste",
+      "fix(picker): restore computed import removed during cooldown refactor",
+      "feat(picker): persist skip cooldown in DB (migration 008)",
+      "feat(picker): skip cooldown (40% pool threshold) + global exclude",
+      "fix(ai): enforce minimum 1-3 emojis in every output, especially story",
+    ],
+  },
+  {
     version: "0.2.61",
     date: "2026-05-31",
     items: [

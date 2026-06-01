@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.62 - 2026-06-01
+
+- chore: remove upload helper scripts
+- feat(library): image upload via button, Drag & Drop, and clipboard paste
+- fix(picker): restore computed import removed during cooldown refactor
+- feat(picker): persist skip cooldown in DB (migration 008)
+- feat(picker): skip cooldown (40% pool threshold) + global exclude
+- fix(ai): enforce minimum 1-3 emojis in every output, especially story
+
+
 ## v0.2.61 - 2026-05-31
 
 - feat(ai): match text explicitness to image content level
