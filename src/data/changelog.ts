@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.72",
+    date: "2026-06-02",
+    items: [
+      "fix(bluesky): add userGesture:true + triple-interceptor for file input capture",
+    ],
+  },
+  {
     version: "0.2.71",
     date: "2026-06-02",
     items: [
