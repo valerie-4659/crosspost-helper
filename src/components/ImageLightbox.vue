@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { convertFileSrc } from "@/electron-shims/core";
-import { Check, ChevronLeft, ChevronRight, Trash2, X } from "lucide-vue-next";
+import { Archive, Check, ChevronLeft, ChevronRight, RotateCcw, Trash2, X } from "lucide-vue-next";
 import type { ImageWithPostState } from "@/types/image";
 
 const props = defineProps<{
@@ -18,6 +18,8 @@ const emit = defineEmits<{
   toggleSelected: [imageId: string];
   /** Confirmed hard delete of this image from the DB. */
   delete: [imageId: string];
+  /** Globally exclude (or restore) this image from all networks + Picker. */
+  archive: [imageId: string, archived: boolean];
 }>();
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -105,6 +107,17 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         >
           <Check class="h-3.5 w-3.5" />
           {{ isSelected ? "Selected" : "Select" }}
+        </button>
+
+        <!-- Global exclude / restore -->
+        <button
+          class="button h-8 w-8 p-0 transition"
+          :class="image.isArchived ? 'border-amber-500/50 bg-amber-500/10 text-amber-400' : 'hover:border-amber-500/50 hover:text-amber-400'"
+          :title="image.isArchived ? 'Restore (globally)' : 'Exclude globally (all networks + Picker)'"
+          @click="emit('archive', image.id, !image.isArchived)"
+        >
+          <RotateCcw v-if="image.isArchived" class="h-4 w-4" />
+          <Archive v-else class="h-4 w-4" />
         </button>
 
         <!-- Delete (two-step) -->

@@ -19,10 +19,7 @@ export async function markImagePosted(imageId: string, targetId: string, postUrl
 }
 
 export async function markImageSkipped(imageId: string, targetId: string, caption?: string) {
-  return upsertPostRecord({
-    imageId,
-    targetId,
-    status: "skipped",
+  await markWithSiblings(imageId, targetId, "skipped", {
     caption: caption?.trim() || null,
   });
 }

@@ -1011,6 +1011,7 @@ async function fillSlot(slotId: string) {
       @navigate="lightboxNavigate"
       @toggle-selected="toggleCollection"
       @delete="deleteSingleFromLightbox"
+      @archive="imageStore.archive"
     />
 
   <!-- ── Collection overlay tray (slides in over content) ─────────── -->
