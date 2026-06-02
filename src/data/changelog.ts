@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.69",
+    date: "2026-06-02",
+    items: [
+      "fix(bluesky): rewrite adapter for current bsky.app DOM structure",
+    ],
+  },
+  {
     version: "0.2.68",
     date: "2026-06-02",
     items: [
