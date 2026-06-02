@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.75",
+    date: "2026-06-02",
+    items: [
+      "feat(library): add Send to Plugin + AI Post buttons to collection panel",
+      "fix(bluesky): use document.createElement override for instance-level click suppression",
+    ],
+  },
+  {
     version: "0.2.74",
     date: "2026-06-02",
     items: [

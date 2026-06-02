@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.75 - 2026-06-02
+
+- feat(library): add Send to Plugin + AI Post buttons to collection panel
+- fix(bluesky): use document.createElement override for instance-level click suppression
+
+
 ## v0.2.74 - 2026-06-02
 
 - fix(bluesky): remove userGesture:true to prevent OS file picker from opening
