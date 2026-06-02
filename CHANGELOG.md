@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.76 - 2026-06-02
+
+- blubb
+
+
 ## v0.2.75 - 2026-06-02
 
 - feat(library): add Send to Plugin + AI Post buttons to collection panel
