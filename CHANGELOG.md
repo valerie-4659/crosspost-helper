@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.70 - 2026-06-02
+
+- fix(bluesky): switch to CDP injection to bypass isolated-world limitation
+
+
 ## v0.2.69 - 2026-06-02
 
 - fix(bluesky): rewrite adapter for current bsky.app DOM structure

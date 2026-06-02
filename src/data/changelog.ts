@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.70",
+    date: "2026-06-02",
+    items: [
+      "fix(bluesky): switch to CDP injection to bypass isolated-world limitation",
+    ],
+  },
+  {
     version: "0.2.69",
     date: "2026-06-02",
     items: [
