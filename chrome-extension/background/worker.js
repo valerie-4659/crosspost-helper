@@ -93,6 +93,47 @@ async function cdpInjectFiles(tabId, imageIds) {
   }
 }
 
+// ── CDP file injection — CivitAI ───────────────────────────────────────────
+//
+// CivitAI uses react-dropzone.  The only reliable way to trigger it
+// programmatically is DOM.setFileInputFiles at the C++ level, which fires a
+// *trusted* native change event — identical to what the OS file-picker sends.
+// Synthetic JS events (DataTransfer getter tricks, __reactProps.onChange) are
+// filtered out by react-dropzone's internal validation pipeline.
+
+async function cdpInjectFilesCivitai(tabId, imageIds) {
+  // 1. Resolve local file paths from the bridge server.
+  const res = await fetch(`${BRIDGE_URL}/image-paths?ids=${imageIds.join(",")}`, { cache: "no-store" });
+  const { paths } = await res.json();
+  const filePaths = imageIds.map((id) => paths[id]).filter(Boolean);
+  if (!filePaths.length) throw new Error("No local file paths found for the queued images.");
+
+  // 2. Attach debugger.
+  await cdpAttach(tabId);
+  try {
+    await cdpSend(tabId, "DOM.enable");
+
+    // 3. Find the hidden file input react-dropzone creates.
+    const { result } = await cdpSend(tabId, "Runtime.evaluate", {
+      expression: `(
+        document.querySelector('input[type="file"][accept*="image"]') ||
+        document.querySelector('input[type="file"]')
+      )`,
+      returnByValue: false,
+    });
+    if (!result?.objectId) throw new Error("File input not found on the CivitAI page — try reloading.");
+
+    // 4. Set files at the C++ level.  Fires a trusted change event that
+    //    react-dropzone processes exactly like a real OS file-picker selection.
+    await cdpSend(tabId, "DOM.setFileInputFiles", {
+      objectId: result.objectId,
+      files: filePaths,
+    });
+  } finally {
+    await cdpDetach(tabId);
+  }
+}
+
 // ── Message listener ───────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -101,5 +142,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true; // keep channel open for async response
+  }
+
+  if (msg.type === "CDP_INJECT_FILES_CIVITAI") {
+    cdpInjectFilesCivitai(sender.tab.id, msg.imageIds)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
   }
 });
