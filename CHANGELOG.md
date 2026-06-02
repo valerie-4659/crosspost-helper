@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.71 - 2026-06-02
+
+- Release v0.2.71
+
+
 ## v0.2.70 - 2026-06-02
 
 - fix(bluesky): switch to CDP injection to bypass isolated-world limitation
