@@ -161,31 +161,52 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
   try {
     await cdpSend(tabId, "DOM.enable");
 
-    // 3. Install THREE interceptors in the PAGE context (Runtime.evaluate runs
-    //    in the real page JS world, not the isolated content-script world):
+    // 3. Install FOUR-layer interceptors in the PAGE context.
     //
-    //    a) HTMLInputElement.prototype.click override — catches explicit .click()
-    //    b) Capture-phase 'click' event listener — catches dispatchEvent clicks
-    //    c) MutationObserver on document.body — catches inputs added to the DOM
-    //       even when .click() is deferred or bypassed
+    //    Root cause of the persistent OS picker: the user clicking "Inject" in
+    //    the extension popup grants User Activation to the service worker, which
+    //    Chrome propagates into Runtime.evaluate on the tab regardless of the
+    //    userGesture flag.  JS-level prototype suppression alone is not enough
+    //    because Chrome may schedule the file picker at C++ level on trusted
+    //    events before our JS return statement runs.
     //
-    //    All three store the reference in window.__cdpCapturedInput and suppress
-    //    the OS file picker from opening.
+    //    Layer A (document.createElement override) is the key fix:
+    //    It installs a per-INSTANCE click no-op on every newly created <input>.
+    //    Instance methods have higher JS priority than the prototype AND do NOT
+    //    fire any browser event at all → Chrome's C++ picker is never reached.
     await cdpSend(tabId, "Runtime.evaluate", {
       expression: `(function() {
         window.__cdpCapturedInput = null;
+        const _origCreate = document.createElement.bind(document);
+        const _origProtoClick = HTMLInputElement.prototype.click;
 
-        // (a) prototype override
-        const _origClick = HTMLInputElement.prototype.click;
-        HTMLInputElement.prototype.click = function() {
-          if (this.type === 'file') {
-            window.__cdpCapturedInput = this;
-            return; // suppress OS picker
+        // Layer A: createElement override — instance-level click no-op.
+        // This is the primary suppressor.  expo-image-picker creates the input
+        // via document.createElement; our override immediately attaches a
+        // per-instance click() that captures the reference and returns without
+        // firing any event → Chrome's file picker is never scheduled.
+        document.createElement = function(tag, ...args) {
+          const el = _origCreate(tag, ...args);
+          if (String(tag).toLowerCase() === 'input') {
+            el.click = function() {
+              if (this.type === 'file') {
+                window.__cdpCapturedInput = this;
+                return; // no event fired, no OS picker
+              }
+              _origProtoClick.call(this);
+            };
           }
-          return _origClick.call(this);
+          return el;
         };
 
-        // (b) capture-phase event listener
+        // Layer B: prototype override (inputs not via document.createElement)
+        HTMLInputElement.prototype.click = function() {
+          if (this.type === 'file') { window.__cdpCapturedInput = this; return; }
+          return _origProtoClick.call(this);
+        };
+
+        // Layer C: capture-phase listener (HTMLInputElement.prototype.click.call()
+        //          bypasses both instance method and prototype chain)
         function _captureHandler(e) {
           const t = e.target;
           if (t instanceof HTMLInputElement && t.type === 'file') {
@@ -196,24 +217,21 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
         }
         document.addEventListener('click', _captureHandler, true);
 
-        // (c) MutationObserver — fires after the sync task that creates & clicks
-        //     the input; acts as a last-resort reference store
+        // Layer D: MutationObserver — catches inputs appended without any click
         const _obs = new MutationObserver((mutations) => {
           for (const m of mutations) {
             for (const node of m.addedNodes) {
               const inp = (node instanceof HTMLInputElement && node.type === 'file')
-                ? node
-                : node.querySelector && node.querySelector('input[type="file"]');
-              if (inp && !window.__cdpCapturedInput) {
-                window.__cdpCapturedInput = inp;
-              }
+                ? node : (node.querySelector && node.querySelector('input[type="file"]'));
+              if (inp && !window.__cdpCapturedInput) window.__cdpCapturedInput = inp;
             }
           }
         });
         _obs.observe(document.body, { childList: true, subtree: true });
 
         window.__cdpRestoreAll = function() {
-          HTMLInputElement.prototype.click = _origClick;
+          document.createElement = _origCreate;
+          HTMLInputElement.prototype.click = _origProtoClick;
           document.removeEventListener('click', _captureHandler, true);
           _obs.disconnect();
           delete window.__cdpRestoreAll;
@@ -222,20 +240,8 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
       returnByValue: true,
     });
 
-    // 4. Click the media button WITHOUT userGesture:true.
-    //
-    //    userGesture:true was needed to let expo-image-picker's input.click()
-    //    run — but that same flag causes Chrome to schedule the OS file picker
-    //    at the C++ level before our JS prototype override can suppress it.
-    //
-    //    Without userGesture:true:
-    //    • React's onClick handler still fires (no user-gesture requirement).
-    //    • expo-image-picker creates the <input> and appends it to document.body
-    //      → MutationObserver captures the reference immediately.
-    //    • expo-image-picker calls input.click() → Chrome silently blocks it
-    //      (no user gesture) → OS picker never opens.
-    //    • DOM.setFileInputFiles then fires a trusted native change event →
-    //      expo-image-picker's onchange handler processes our files normally.
+    // 4. Click the media button. Layer A suppresses the subsequent input.click()
+    //    before Chrome can schedule the OS picker.
     const { result: btnResult } = await cdpSend(tabId, "Runtime.evaluate", {
       expression: `(function() {
         const btn =
@@ -247,7 +253,6 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
         return btn ? btn.getAttribute('data-testid') || btn.getAttribute('aria-label') || 'found' : null;
       })()`,
       returnByValue: true,
-      // intentionally NO userGesture:true — see comment above
     });
 
     // 5. Poll for the captured input (expo-image-picker may run in a microtask).
