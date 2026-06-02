@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.74",
+    date: "2026-06-02",
+    items: [
+      "fix(bluesky): remove userGesture:true to prevent OS file picker from opening",
+    ],
+  },
+  {
     version: "0.2.73",
     date: "2026-06-02",
     items: [

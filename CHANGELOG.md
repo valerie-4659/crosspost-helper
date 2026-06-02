@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.74 - 2026-06-02
+
+- fix(bluesky): remove userGesture:true to prevent OS file picker from opening
+
+
 ## v0.2.73 - 2026-06-02
 
 - Release v0.2.73
