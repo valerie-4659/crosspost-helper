@@ -161,52 +161,75 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
   try {
     await cdpSend(tabId, "DOM.enable");
 
-    // 3. Install FOUR-layer interceptors in the PAGE context.
+    // 3. Install interceptors in PAGE context.
     //
-    //    Root cause of the persistent OS picker: the user clicking "Inject" in
-    //    the extension popup grants User Activation to the service worker, which
-    //    Chrome propagates into Runtime.evaluate on the tab regardless of the
-    //    userGesture flag.  JS-level prototype suppression alone is not enough
-    //    because Chrome may schedule the file picker at C++ level on trusted
-    //    events before our JS return statement runs.
+    //    Why previous approaches failed:
+    //    Overriding document.createElement or HTMLInputElement.prototype.click
+    //    is unreliable because expo-image-picker may CACHE these references at
+    //    module-load time.  A cached reference bypasses any override we install
+    //    after page load.
     //
-    //    Layer A (document.createElement override) is the key fix:
-    //    It installs a per-INSTANCE click no-op on every newly created <input>.
-    //    Instance methods have higher JS priority than the prototype AND do NOT
-    //    fire any browser event at all → Chrome's C++ picker is never reached.
+    //    Solution — override the HTMLInputElement.prototype 'type' SETTER:
+    //    This is a prototype property descriptor, NOT a method reference.
+    //    Every assignment `input.type = 'file'` MUST traverse the prototype
+    //    chain and will hit our setter — it cannot be cached.
+    //    In the setter we immediately set disabled = true on the element.
+    //    Disabled inputs ignore .click() at the C++ level, so Chrome never
+    //    schedules the OS file picker regardless of user-activation state.
+    //
+    //    We also override Element.prototype.setAttribute so that the alternate
+    //    form `input.setAttribute('type','file')` is intercepted too (setAttribute
+    //    bypasses IDL property setters in the engine).
+    //
+    //    After injection we re-enable the input before DOM.setFileInputFiles
+    //    so CDP can operate on a non-disabled element.
     await cdpSend(tabId, "Runtime.evaluate", {
       expression: `(function() {
         window.__cdpCapturedInput = null;
-        const _origCreate = document.createElement.bind(document);
-        const _origProtoClick = HTMLInputElement.prototype.click;
 
-        // Layer A: createElement override — instance-level click no-op.
-        // This is the primary suppressor.  expo-image-picker creates the input
-        // via document.createElement; our override immediately attaches a
-        // per-instance click() that captures the reference and returns without
-        // firing any event → Chrome's file picker is never scheduled.
-        document.createElement = function(tag, ...args) {
-          const el = _origCreate(tag, ...args);
-          if (String(tag).toLowerCase() === 'input') {
-            el.click = function() {
-              if (this.type === 'file') {
-                window.__cdpCapturedInput = this;
-                return; // no event fired, no OS picker
-              }
-              _origProtoClick.call(this);
-            };
+        // Layer A: 'type' setter override on HTMLInputElement.prototype.
+        // Primary suppressor — cannot be cached by page scripts.
+        const _typeDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'type');
+        const _origTypeSetter = _typeDesc.set;
+        Object.defineProperty(HTMLInputElement.prototype, 'type', {
+          ..._typeDesc,
+          set(value) {
+            _origTypeSetter.call(this, value);
+            if (value === 'file') {
+              window.__cdpCapturedInput = this;
+              this.disabled = true; // blocks OS picker on .click() at C++ level
+            }
           }
-          return el;
+        });
+
+        // Layer B: setAttribute override — covers input.setAttribute('type','file')
+        // which bypasses the IDL property setter above.
+        const _origSetAttr = Element.prototype.setAttribute;
+        Element.prototype.setAttribute = function(name, value) {
+          _origSetAttr.call(this, name, value);
+          if (name === 'type' && value === 'file' && this instanceof HTMLInputElement) {
+            window.__cdpCapturedInput = this;
+            this.disabled = true;
+          }
         };
 
-        // Layer B: prototype override (inputs not via document.createElement)
-        HTMLInputElement.prototype.click = function() {
-          if (this.type === 'file') { window.__cdpCapturedInput = this; return; }
-          return _origProtoClick.call(this);
-        };
+        // Layer C: MutationObserver backup — catches inputs already of type=file
+        // when appended (e.g. created via innerHTML or a framework template).
+        const _obs = new MutationObserver((mutations) => {
+          for (const m of mutations) {
+            for (const node of m.addedNodes) {
+              const inp = (node instanceof HTMLInputElement && node.type === 'file')
+                ? node : (node.querySelector && node.querySelector('input[type="file"]'));
+              if (inp && !window.__cdpCapturedInput) {
+                window.__cdpCapturedInput = inp;
+                inp.disabled = true;
+              }
+            }
+          }
+        });
+        _obs.observe(document.body, { childList: true, subtree: true });
 
-        // Layer C: capture-phase listener (HTMLInputElement.prototype.click.call()
-        //          bypasses both instance method and prototype chain)
+        // Layer D: capture-phase click listener — final safety net.
         function _captureHandler(e) {
           const t = e.target;
           if (t instanceof HTMLInputElement && t.type === 'file') {
@@ -217,21 +240,9 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
         }
         document.addEventListener('click', _captureHandler, true);
 
-        // Layer D: MutationObserver — catches inputs appended without any click
-        const _obs = new MutationObserver((mutations) => {
-          for (const m of mutations) {
-            for (const node of m.addedNodes) {
-              const inp = (node instanceof HTMLInputElement && node.type === 'file')
-                ? node : (node.querySelector && node.querySelector('input[type="file"]'));
-              if (inp && !window.__cdpCapturedInput) window.__cdpCapturedInput = inp;
-            }
-          }
-        });
-        _obs.observe(document.body, { childList: true, subtree: true });
-
         window.__cdpRestoreAll = function() {
-          document.createElement = _origCreate;
-          HTMLInputElement.prototype.click = _origProtoClick;
+          Object.defineProperty(HTMLInputElement.prototype, 'type', _typeDesc);
+          Element.prototype.setAttribute = _origSetAttr;
           document.removeEventListener('click', _captureHandler, true);
           _obs.disconnect();
           delete window.__cdpRestoreAll;
@@ -269,9 +280,13 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
       }
     }
 
-    // 6. Restore everything regardless of success.
+    // 6. Restore interceptors and re-enable the captured input.
+    //    The input was set to disabled=true to block the OS picker during the
+    //    click.  We must re-enable it before DOM.setFileInputFiles so that CDP
+    //    can operate on a normal (non-disabled) file input.
     await cdpSend(tabId, "Runtime.evaluate", {
       expression: `(function() {
+        if (window.__cdpCapturedInput) window.__cdpCapturedInput.disabled = false;
         if (window.__cdpRestoreAll) window.__cdpRestoreAll();
         delete window.__cdpCapturedInput;
       })()`,
