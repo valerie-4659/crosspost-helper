@@ -134,6 +134,108 @@ async function cdpInjectFilesCivitai(tabId, imageIds) {
   }
 }
 
+// ── CDP file injection — Bluesky ──────────────────────────────────────────
+//
+// Bluesky uses expo-image-picker (legacy mode on web).  When the media button
+// is clicked, the library creates a hidden <input type="file"> dynamically
+// inside a Promise executor and immediately calls input.click() — which opens
+// the OS file dialog.  We need to:
+//
+//   a) Intercept that click() call BEFORE the OS picker opens.
+//   b) Capture the input element reference.
+//   c) Set our files on it via DOM.setFileInputFiles (trusted C++ event).
+//
+// Content scripts run in an *isolated* JavaScript world — prototype overrides
+// there do NOT affect page code.  Runtime.evaluate runs directly in the page
+// context, so prototype overrides ARE visible to expo-image-picker.
+
+async function cdpInjectFilesBluesky(tabId, imageIds) {
+  // 1. Resolve local file paths from the bridge server.
+  const res = await fetch(`${BRIDGE_URL}/image-paths?ids=${imageIds.join(",")}`, { cache: "no-store" });
+  const { paths } = await res.json();
+  const filePaths = imageIds.map((id) => paths[id]).filter(Boolean);
+  if (!filePaths.length) throw new Error("No local file paths found for the queued images.");
+
+  // 2. Attach debugger.
+  await cdpAttach(tabId);
+  try {
+    await cdpSend(tabId, "DOM.enable");
+
+    // 3. Install a click interceptor on HTMLInputElement.prototype in the PAGE
+    //    context.  expo-image-picker calls input.click() → our override captures
+    //    the element and suppresses the OS picker.
+    await cdpSend(tabId, "Runtime.evaluate", {
+      expression: `(function() {
+        window.__cdpCapturedInput = null;
+        const _origClick = HTMLInputElement.prototype.click;
+        HTMLInputElement.prototype.click = function() {
+          if (this.type === 'file') {
+            window.__cdpCapturedInput = this;
+            return; // suppress OS file picker
+          }
+          return _origClick.call(this);
+        };
+        window.__cdpRestoreClick = function() {
+          HTMLInputElement.prototype.click = _origClick;
+          delete window.__cdpRestoreClick;
+        };
+      })()`,
+      returnByValue: true,
+    });
+
+    // 4. Click the media button → expo-image-picker creates the input and calls
+    //    .click() on it (which we intercept above).
+    await cdpSend(tabId, "Runtime.evaluate", {
+      expression: `(function() {
+        const btn =
+          document.querySelector('[data-testid="openMediaBtn"]') ||
+          document.querySelector('[aria-label*="Add media" i]') ||
+          document.querySelector('[aria-label*="media" i][role="button"]');
+        if (btn) btn.click();
+        return !!btn;
+      })()`,
+      returnByValue: true,
+    });
+
+    // 5. Poll for the captured input (expo-image-picker may defer via microtask).
+    let capturedObjId = null;
+    for (let i = 0; i < 25; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      const { result } = await cdpSend(tabId, "Runtime.evaluate", {
+        expression: `window.__cdpCapturedInput`,
+        returnByValue: false,
+      });
+      if (result?.objectId) {
+        capturedObjId = result.objectId;
+        break;
+      }
+    }
+
+    // 6. Restore the prototype regardless of success.
+    await cdpSend(tabId, "Runtime.evaluate", {
+      expression: `(function() {
+        if (window.__cdpRestoreClick) window.__cdpRestoreClick();
+        delete window.__cdpCapturedInput;
+      })()`,
+      returnByValue: true,
+    });
+
+    if (!capturedObjId) {
+      throw new Error("Could not capture Bluesky's file input — media button not found or input not created");
+    }
+
+    // 7. Set files at C++ level → fires a trusted native change event that
+    //    expo-image-picker's onchange handler processes exactly like a real
+    //    OS file-picker selection.
+    await cdpSend(tabId, "DOM.setFileInputFiles", {
+      objectId: capturedObjId,
+      files: filePaths,
+    });
+  } finally {
+    await cdpDetach(tabId);
+  }
+}
+
 // ── Message listener ───────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -146,6 +248,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "CDP_INJECT_FILES_CIVITAI") {
     cdpInjectFilesCivitai(sender.tab.id, msg.imageIds)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "CDP_INJECT_FILES_BLUESKY") {
+    cdpInjectFilesBluesky(sender.tab.id, msg.imageIds)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;

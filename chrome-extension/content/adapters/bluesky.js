@@ -3,9 +3,14 @@
 //
 // Bluesky uses expo-image-picker (legacy mode on web) which creates a hidden
 // <input type="file"> *on demand* inside a Promise executor when the media
-// button is clicked — not as a persistent DOM element.  We intercept
-// document.createElement to capture that element before the OS picker opens,
-// then inject our files directly via _injectFilesCore.
+// button is clicked — not as a persistent DOM element.
+//
+// Content scripts run in an isolated JS world, so prototype overrides there
+// have NO effect on expo-image-picker's page context.  We therefore delegate
+// file injection to the background worker (CDP_INJECT_FILES_BLUESKY), which
+// uses Runtime.evaluate to override HTMLInputElement.prototype.click *in the
+// page context*, clicks openMediaBtn, captures the dynamically-created input,
+// and sets files via DOM.setFileInputFiles (trusted native C++ event).
 //
 // Selector notes (current social-app source, 2025+):
 //   • Compose button  — aria-label="Compose new post"
@@ -60,57 +65,24 @@ window.CrosspostBridge._currentAdapter = {
         return null;
       }
 
-      // ── 3. Intercept document.createElement to capture expo-image-picker's
-      //        dynamically created <input type="file"> before the OS dialog
-      //        opens.  The Promise executor inside launchImageLibraryAsync runs
-      //        synchronously, so capturedInput is set by the time btn.click()
-      //        returns.
-      let capturedInput = null;
-      const origCreateElement = document.createElement.bind(document);
-      document.createElement = function (tagName, ...args) {
-        const el = origCreateElement(tagName, ...args);
-        if (tagName.toLowerCase() === "input") {
-          const origElClick = HTMLInputElement.prototype.click.bind(el);
-          el.click = function () {
-            if (this.type === "file") {
-              capturedInput = this;
-              return; // suppress OS file picker
-            }
-            origElClick();
-          };
-        }
-        return el;
-      };
+      // ── 3. Inject via CDP (trusted native file selection) ─────────────────
+      // The worker overrides HTMLInputElement.prototype.click in the page
+      // context, clicks openMediaBtn, captures the dynamically-created file
+      // input, and sets our files via DOM.setFileInputFiles — a trusted C++
+      // event that expo-image-picker processes like a real OS file selection.
+      bridge.notify(`Injecting ${toInject.length} image(s)…`, "info");
+      const imageIds = toInject.map((i) => i.id);
 
-      // Click the image/media button so expo-image-picker creates the input.
-      const mediaBtn =
-        document.querySelector('[data-testid="openMediaBtn"]') ||
-        document.querySelector('[aria-label*="media" i]') ||
-        document.querySelector('[aria-label*="image" i]');
-      if (mediaBtn) mediaBtn.click();
+      const cdpResult = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: "CDP_INJECT_FILES_BLUESKY", imageIds }, resolve);
+      });
 
-      // Restore immediately — the Promise executor already ran synchronously.
-      document.createElement = origCreateElement;
-
-      if (!capturedInput) {
-        bridge.notify("Could not find the media upload input — try reloading", "error");
+      if (!cdpResult?.ok) {
+        bridge.notify(cdpResult?.error ?? "File injection failed", "error");
         return null;
       }
 
-      // ── 4. Fetch all blobs and inject ─────────────────────────────────────
-      bridge.notify(`Fetching ${toInject.length} image(s)…`, "info");
-      const files = await Promise.all(
-        toInject.map(async (img) => ({
-          blob: await bridge.getImageBlob(img.id),
-          filename: img.filename,
-          mimeType: img.mimeType,
-        })),
-      );
-
-      await bridge.injectMultipleFilesIntoInput(capturedInput, files);
-
       const resolvedTargetId = targetId ?? toInject[0]?.targetId;
-      const imageIds = toInject.map((i) => i.id);
 
       // ── 5. Fill AI post text if available ────────────────────────────────
       // Wait for Bluesky to process the injected files and re-render.
