@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.73 - 2026-06-02
+
+- Release v0.2.73
+
+
 ## v0.2.72 - 2026-06-02
 
 - fix(bluesky): add userGesture:true + triple-interceptor for file input capture
