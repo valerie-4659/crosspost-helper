@@ -161,45 +161,87 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
   try {
     await cdpSend(tabId, "DOM.enable");
 
-    // 3. Install a click interceptor on HTMLInputElement.prototype in the PAGE
-    //    context.  expo-image-picker calls input.click() → our override captures
-    //    the element and suppresses the OS picker.
+    // 3. Install THREE interceptors in the PAGE context (Runtime.evaluate runs
+    //    in the real page JS world, not the isolated content-script world):
+    //
+    //    a) HTMLInputElement.prototype.click override — catches explicit .click()
+    //    b) Capture-phase 'click' event listener — catches dispatchEvent clicks
+    //    c) MutationObserver on document.body — catches inputs added to the DOM
+    //       even when .click() is deferred or bypassed
+    //
+    //    All three store the reference in window.__cdpCapturedInput and suppress
+    //    the OS file picker from opening.
     await cdpSend(tabId, "Runtime.evaluate", {
       expression: `(function() {
         window.__cdpCapturedInput = null;
+
+        // (a) prototype override
         const _origClick = HTMLInputElement.prototype.click;
         HTMLInputElement.prototype.click = function() {
           if (this.type === 'file') {
             window.__cdpCapturedInput = this;
-            return; // suppress OS file picker
+            return; // suppress OS picker
           }
           return _origClick.call(this);
         };
-        window.__cdpRestoreClick = function() {
+
+        // (b) capture-phase event listener
+        function _captureHandler(e) {
+          const t = e.target;
+          if (t instanceof HTMLInputElement && t.type === 'file') {
+            window.__cdpCapturedInput = t;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          }
+        }
+        document.addEventListener('click', _captureHandler, true);
+
+        // (c) MutationObserver — fires after the sync task that creates & clicks
+        //     the input; acts as a last-resort reference store
+        const _obs = new MutationObserver((mutations) => {
+          for (const m of mutations) {
+            for (const node of m.addedNodes) {
+              const inp = (node instanceof HTMLInputElement && node.type === 'file')
+                ? node
+                : node.querySelector && node.querySelector('input[type="file"]');
+              if (inp && !window.__cdpCapturedInput) {
+                window.__cdpCapturedInput = inp;
+              }
+            }
+          }
+        });
+        _obs.observe(document.body, { childList: true, subtree: true });
+
+        window.__cdpRestoreAll = function() {
           HTMLInputElement.prototype.click = _origClick;
-          delete window.__cdpRestoreClick;
+          document.removeEventListener('click', _captureHandler, true);
+          _obs.disconnect();
+          delete window.__cdpRestoreAll;
         };
       })()`,
       returnByValue: true,
     });
 
-    // 4. Click the media button → expo-image-picker creates the input and calls
-    //    .click() on it (which we intercept above).
-    await cdpSend(tabId, "Runtime.evaluate", {
+    // 4. Click the media button with userGesture:true so Chrome allows the
+    //    subsequent file-input click inside expo-image-picker's Promise executor
+    //    (Chrome blocks programmatic file-input clicks without a user gesture).
+    const { result: btnResult } = await cdpSend(tabId, "Runtime.evaluate", {
       expression: `(function() {
         const btn =
           document.querySelector('[data-testid="openMediaBtn"]') ||
           document.querySelector('[aria-label*="Add media" i]') ||
-          document.querySelector('[aria-label*="media" i][role="button"]');
+          document.querySelector('[aria-label*="media" i][role="button"]') ||
+          document.querySelector('[aria-label*="image" i][role="button"]');
         if (btn) btn.click();
-        return !!btn;
+        return btn ? btn.getAttribute('data-testid') || btn.getAttribute('aria-label') || 'found' : null;
       })()`,
       returnByValue: true,
+      userGesture: true,   // ← critical: lets expo-image-picker's input.click() run
     });
 
-    // 5. Poll for the captured input (expo-image-picker may defer via microtask).
+    // 5. Poll for the captured input (expo-image-picker may run in a microtask).
     let capturedObjId = null;
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 100));
       const { result } = await cdpSend(tabId, "Runtime.evaluate", {
         expression: `window.__cdpCapturedInput`,
@@ -211,22 +253,25 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
       }
     }
 
-    // 6. Restore the prototype regardless of success.
+    // 6. Restore everything regardless of success.
     await cdpSend(tabId, "Runtime.evaluate", {
       expression: `(function() {
-        if (window.__cdpRestoreClick) window.__cdpRestoreClick();
+        if (window.__cdpRestoreAll) window.__cdpRestoreAll();
         delete window.__cdpCapturedInput;
       })()`,
       returnByValue: true,
     });
 
     if (!capturedObjId) {
-      throw new Error("Could not capture Bluesky's file input — media button not found or input not created");
+      const btnLabel = btnResult?.value ?? "null";
+      throw new Error(
+        `Could not capture Bluesky's file input (media btn: ${btnLabel}) — ` +
+        "try reloading bsky.app and ensure the compose window is open",
+      );
     }
 
-    // 7. Set files at C++ level → fires a trusted native change event that
-    //    expo-image-picker's onchange handler processes exactly like a real
-    //    OS file-picker selection.
+    // 7. Set files at C++ level → trusted native change event that expo-image-picker
+    //    processes identically to a real OS file-picker selection.
     await cdpSend(tabId, "DOM.setFileInputFiles", {
       objectId: capturedObjId,
       files: filePaths,
