@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.68 - 2026-06-02
+
+- feat(lightbox): add global archive/restore button + misc fixes
+- fix(civitai): use CDP injection for react-dropzone compatibility
+
+
 ## v0.2.67 - 2026-06-01
 
 - fix(library): propagate mark-as-posted to filename-stem siblings

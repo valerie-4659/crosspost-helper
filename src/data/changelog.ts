@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.68",
+    date: "2026-06-02",
+    items: [
+      "feat(lightbox): add global archive/restore button + misc fixes",
+      "fix(civitai): use CDP injection for react-dropzone compatibility",
+    ],
+  },
+  {
     version: "0.2.67",
     date: "2026-06-01",
     items: [
