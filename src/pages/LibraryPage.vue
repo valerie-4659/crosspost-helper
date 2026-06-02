@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { Archive, Check, ChevronDown, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Sparkles, Trash2, Upload, X } from "lucide-vue-next";
+import { Archive, Check, ChevronDown, ChevronRight, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Send, Sparkles, Trash2, Upload, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
@@ -491,7 +491,18 @@ async function markCollection() {
   clearCollection();
 }
 
-// Collection tray stays closed until the user explicitly clicks the Collection button.
+/** Push all collection images (up to the platform limit) to the bridge queue. */
+async function sendCollectionToPlugin() {
+  if (!libActiveTargetType.value || !collectionCount.value) return;
+  const limit = PLATFORM_LIMITS[libActiveTargetType.value] ?? 1;
+  const ids = collectionArray.value.map((i) => i.id).slice(0, limit);
+  try {
+    await window.desktop.bridge.setQueue(libActiveTargetType.value, ids);
+    imageStore.message = `✓ ${ids.length} image(s) queued for ${libActiveTargetName.value} — click Inject in the extension`;
+  } catch (err) {
+    imageStore.error = err instanceof Error ? err.message : String(err);
+  }
+}
 
 // ── Fill Queue Slots from collection ────────────────────────────────────────
 const queueStore = useQueueStore();
@@ -1135,6 +1146,27 @@ async function fillSlot(slotId: string) {
         </div>
         <button v-else class="button h-7 w-full gap-1 text-xs" @click="openQueueFill">
           → Fill Queue Slot
+        </button>
+
+        <!-- Send to Chrome Extension queue -->
+        <button
+          v-if="EXTENSION_TYPES.has(libActiveTargetType as PostingTargetType)"
+          class="button h-7 w-full gap-1 text-xs"
+          :disabled="!collectionCount || !targetStore.activeTargetId"
+          :title="`Queue ${collectionCount} image(s) for the Chrome extension (${libActiveTargetName})`"
+          @click="sendCollectionToPlugin"
+        >
+          <Send class="h-3 w-3" />Send to Plugin
+        </button>
+
+        <!-- AI Post for collection -->
+        <button
+          class="button h-7 w-full gap-1 text-xs"
+          :disabled="!collectionCount || !targetStore.activeTargetId"
+          title="Generate AI post text for all collection images"
+          @click="showAiPanel = true"
+        >
+          <Sparkles class="h-3 w-3" />AI Post
         </button>
 
         <button class="button h-6 w-full text-xs hover:border-rose/60 hover:text-rose" @click="clearCollection">
