@@ -222,9 +222,20 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
       returnByValue: true,
     });
 
-    // 4. Click the media button with userGesture:true so Chrome allows the
-    //    subsequent file-input click inside expo-image-picker's Promise executor
-    //    (Chrome blocks programmatic file-input clicks without a user gesture).
+    // 4. Click the media button WITHOUT userGesture:true.
+    //
+    //    userGesture:true was needed to let expo-image-picker's input.click()
+    //    run — but that same flag causes Chrome to schedule the OS file picker
+    //    at the C++ level before our JS prototype override can suppress it.
+    //
+    //    Without userGesture:true:
+    //    • React's onClick handler still fires (no user-gesture requirement).
+    //    • expo-image-picker creates the <input> and appends it to document.body
+    //      → MutationObserver captures the reference immediately.
+    //    • expo-image-picker calls input.click() → Chrome silently blocks it
+    //      (no user gesture) → OS picker never opens.
+    //    • DOM.setFileInputFiles then fires a trusted native change event →
+    //      expo-image-picker's onchange handler processes our files normally.
     const { result: btnResult } = await cdpSend(tabId, "Runtime.evaluate", {
       expression: `(function() {
         const btn =
@@ -236,7 +247,7 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
         return btn ? btn.getAttribute('data-testid') || btn.getAttribute('aria-label') || 'found' : null;
       })()`,
       returnByValue: true,
-      userGesture: true,   // ← critical: lets expo-image-picker's input.click() run
+      // intentionally NO userGesture:true — see comment above
     });
 
     // 5. Poll for the captured input (expo-image-picker may run in a microtask).
