@@ -30,12 +30,15 @@ const emit = defineEmits<{
   (e: "generated"): void;
   /** Fired after images + AI content were pushed to the bridge. */
   (e: "queued", count: number): void;
+  /** Fired when user clicks "Mark on…" — parent should mark selection/collection as posted. */
+  (e: "mark"): void;
 }>();
 
 const ai = useAiStore();
 
 // ── Controls ──────────────────────────────────────────────────────────────────
-const hint        = ref("");
+const hint           = ref("");
+const aiInstructions = ref("");
 const postType    = ref<"engagement" | "qt" | "morning" | "goodnight" | "story">("engagement");
 /** "" = no perspective instruction, "i" = first-person, "oc" = OC name */
 const perspective = ref<"" | "i" | "oc">("");
@@ -145,6 +148,7 @@ async function generate() {
     postType.value === "qt" ? qtEventName.value.trim() || undefined : undefined,
     postType.value === "qt" ? qtTagger.value.trim() || undefined : undefined,
     customMaxChars.value,
+    aiInstructions.value.trim() || undefined,
   );
   if (ai.generatedPost) {
     // Append decisions block to description if decisions are configured
@@ -226,10 +230,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-3">
     <!-- Post type selector -->
     <div>
-      <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Post type</p>
+      <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Post type</p>
       <div class="flex flex-wrap gap-1.5">
         <button
           v-for="pt in POST_TYPES"
@@ -245,7 +249,7 @@ onMounted(async () => {
 
     <!-- QT Event name (only for QT Event post type) -->
     <div v-if="postType === 'qt'">
-      <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Event Name <span class="normal-case text-slate-600">(optional)</span></p>
+      <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Event Name <span class="normal-case text-slate-600">(optional)</span></p>
       <input
         v-model="qtEventName"
         class="w-full rounded-lg border border-line bg-panelSoft px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
@@ -253,7 +257,7 @@ onMounted(async () => {
       />
       <p class="mt-1 text-[11px] text-slate-600">Used as the theme in line 1 of the QT post. If empty, AI derives it from the image.</p>
       <!-- QT Tagger handle -->
-      <p class="mt-2.5 mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Tagged by <span class="normal-case text-slate-600">(optional)</span></p>
+      <p class="mt-2 mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Tagged by <span class="normal-case text-slate-600">(optional)</span></p>
       <input
         v-model="qtTagger"
         class="w-full rounded-lg border border-line bg-panelSoft px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
@@ -279,7 +283,7 @@ onMounted(async () => {
 
     <!-- Perspective (optional) -->
     <div>
-      <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Perspective <span class="normal-case text-slate-600">(optional)</span></p>
+      <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Perspective <span class="normal-case text-slate-600">(optional)</span></p>
       <div class="flex items-center gap-1.5">
         <button
           v-for="pv in PERSPECTIVES"
@@ -299,14 +303,25 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Hint textarea -->
+    <!-- Hint / Context textarea -->
     <div>
-      <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Context <span class="normal-case text-slate-600">(optional)</span></p>
+      <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Context <span class="normal-case text-slate-600">(optional — sets the mood/theme, not copied verbatim)</span></p>
       <textarea
         v-model="hint"
         rows="2"
-        class="w-full resize-none rounded-lg border border-line bg-panelSoft px-3 py-2.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
-        placeholder="e.g. this is a post for #FoxyFriday"
+        class="w-full resize-none rounded-lg border border-line bg-panelSoft px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+        placeholder="e.g. Foxy Friday, romantic beach scene, spicy office encounter…"
+      />
+    </div>
+
+    <!-- AI Instructions (character names, specific details) -->
+    <div>
+      <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">AI Instructions <span class="normal-case text-slate-600">(optional — character names, key details)</span></p>
+      <textarea
+        v-model="aiInstructions"
+        rows="2"
+        class="w-full resize-none rounded-lg border border-line bg-panelSoft px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+        placeholder="e.g. The woman is Valerie, the man is Marcus. They are colleagues."
       />
     </div>
 
@@ -314,7 +329,7 @@ onMounted(async () => {
     <template v-if="postType === 'story'">
       <!-- Storyline selector -->
       <div>
-        <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+        <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">
           <BookOpen class="inline h-3 w-3 mr-0.5 -mt-0.5" /> Storyline <span class="normal-case text-slate-600">(optional)</span>
         </p>
         <div class="flex items-center gap-2">
@@ -334,7 +349,7 @@ onMounted(async () => {
 
       <!-- Decisions (reader vote) -->
       <div>
-        <div class="flex items-center justify-between mb-1.5">
+        <div class="flex items-center justify-between mb-1">
           <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Reader Decisions <span class="normal-case text-slate-600">(optional)</span></p>
           <button
             class="rounded text-[10px] font-medium px-2 py-0.5 transition"
@@ -389,7 +404,7 @@ onMounted(async () => {
       @click="generate"
     >
       <Sparkles class="h-4 w-4" :class="ai.generating ? 'animate-pulse' : ''" />
-      {{ ai.generating ? 'Generating…' : `Generate for ${networkName || network}` }}
+      {{ ai.generating ? 'Generating…' : 'Generate' }}
     </button>
 
     <!-- Generate error -->
@@ -499,6 +514,29 @@ onMounted(async () => {
           </button>
           <button class="button h-7 gap-1 px-2.5 text-xs ml-auto" @click="ai.clearGeneratedPost(); queueError = ''">
             <X class="h-3 w-3" />Discard
+          </button>
+        </div>
+
+        <!-- Bottom convenience row (saves scrolling back to top) -->
+        <div v-if="imageIds?.length || networkName" class="flex items-center gap-2 border-t border-line pt-2.5">
+          <button
+            v-if="imageIds?.length"
+            class="button h-7 flex-1 gap-1.5 px-2.5 text-xs"
+            :class="sendDone ? 'border-mint/60 bg-mint/10 text-mint' : ''"
+            title="Send images + content to the Chrome extension"
+            @click="sendToExtension"
+          >
+            <Check v-if="sendDone" class="h-3 w-3" />
+            <Send v-else class="h-3 w-3" />
+            {{ sendDone ? 'Queued!' : 'Send to Plugin' }}
+          </button>
+          <button
+            class="button h-7 flex-1 gap-1.5 px-2.5 text-xs"
+            :title="`Mark as posted on ${networkName || network}`"
+            @click="emit('mark')"
+          >
+            <Check class="h-3 w-3" />
+            Mark on {{ networkName || network }}
           </button>
         </div>
 

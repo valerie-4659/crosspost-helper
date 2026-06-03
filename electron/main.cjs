@@ -743,7 +743,8 @@ function imageMime(p) {
 // ocName: e.g. "Valerie"
 // storylineId: null | string — if set, fetches previous story_entries for context
 // decisions: null | [{emoji, label}] — 1-4 reader-vote options appended after story text
-async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "", storylineId = null, decisions = null, qtEventName = "", qtTagger = "", customMaxChars = null) {
+// aiInstructions: "" | string — character names, specific image details injected as a strict rule
+async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "", storylineId = null, decisions = null, qtEventName = "", qtTagger = "", customMaxChars = null, aiInstructions = "") {
   const db = await getDatabase();
   // Read AI config from DB
   const rows = db.exec("SELECT key, value FROM ai_config");
@@ -822,10 +823,17 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     : `Generate up to ${nc.tagCount} relevant tags.`;
   const tagNote = nc.tagHasHash ? "Include the # symbol in each tag." : "Do NOT include # symbol in tags.";
 
-  // For QT posts the hint is embedded directly into the format as Line 5 (tagline).
-  // Using it here as an override rule would cause the model to ignore the QT structure.
+  // Context/hint = mood & theme FRAMEWORK (not verbatim copy).
+  // Always use English in the prompt regardless of what language the hint was written in.
+  // For QT posts the hint becomes the tagline (Line 5) — don't add it as a separate rule.
   const hintLine = (hint?.trim() && postType !== "qt")
-    ? `- SCENE CONTEXT — THIS IS THE MOST IMPORTANT RULE: Your post MUST be directly about this scene. Every character, name, and relationship in it MUST appear explicitly in the post text. Do NOT paraphrase, omit, or replace any name. Scene: "${hint.trim()}"`
+    ? `- THEME / MOOD — Use this as a creative framework and inspiration: "${hint.trim()}". Capture its spirit and energy. Do NOT copy it word-for-word. Always write the final post in English.`
+    : "";
+
+  // AI instructions = specific factual details about the image (character names, relationships…).
+  // These are hard facts the AI must respect — different from the mood/theme hint above.
+  const aiInstructionsLine = aiInstructions?.trim()
+    ? `- IMAGE DETAILS — MANDATORY: Incorporate these specific details into the post. Use names and facts exactly as given: ${aiInstructions.trim()}`
     : "";
 
   // ── Storyline context (optional) ──────────────────────────────────────────
@@ -868,6 +876,7 @@ EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero
   // The persona controls HOW the AI writes (voice, tone, emojis, style).
   // It is completely independent of the perspective (I/me, OC, neutral observer).
   let personaLine = "";
+  let personaEmojiRule = ""; // carried into post-type rules that need it
   let systemMessage = `${BASE_ROLE}\n\nRespond with valid JSON only — no markdown fences.`;
   try {
     const pRows = db.exec(
@@ -878,21 +887,22 @@ EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero
       const [pName, , pEmoji, pNotes] = p;
       const notesBlock = String(pNotes ?? "").trim();
 
+      // Emoji rule derived from persona setting — overrides the BASE_ROLE default.
+      personaEmojiRule = pEmoji === "heavy"
+        ? "Use emojis generously — scatter them throughout, let them amplify your voice."
+        : pEmoji === "subtle"
+          ? "Use 1–2 emojis where they fit naturally. No more."
+          : "Do NOT use any emojis at all.";
+
       if (notesBlock) {
-        // Full style notes present — combine base role with persona voice.
-        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}". NEVER slip into neutral, generic, or AI-sounding language.\n\n${notesBlock}\n\nRespond with valid JSON only — no markdown fences.`;
+        // Full style notes present — persona voice completely replaces the generic style.
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}". NEVER slip into neutral, generic, or AI-sounding language. Your style notes below are LAW — follow them exactly.\n\n${notesBlock}\n\nEMOJI RULE (from persona settings): ${personaEmojiRule}\n\nRespond with valid JSON only — no markdown fences.`;
       } else {
-        // No style notes — use emoji-use setting as the only style hint.
-        const emojiRule = pEmoji === "heavy"
-          ? "Use emojis generously and often throughout the text."
-          : pEmoji === "subtle"
-            ? "Use 1–2 emojis where they fit naturally."
-            : "Do NOT use any emojis.";
-        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You ARE "${pName}". Write EXCLUSIVELY in ${pName}'s voice and style. NEVER use neutral or generic language.\n${emojiRule}\nRespond with valid JSON only — no markdown fences.`;
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You ARE "${pName}". Write EXCLUSIVELY in ${pName}'s voice and style. NEVER use neutral or generic language.\nEMOJI RULE: ${personaEmojiRule}\nRespond with valid JSON only — no markdown fences.`;
       }
 
-      // Short in-character reminder in the user prompt as well.
-      personaLine = `- Voice: Stay fully in character as "${pName}" — never break voice, never sound like a generic AI.`;
+      // Short in-character reminder repeated in the user prompt for reinforcement.
+      personaLine = `- Voice: You ARE "${pName}" — write exclusively in their voice. Never sound like a generic AI. Emoji rule: ${personaEmojiRule}`;
     }
   } catch { /* personas table may not exist on very old DBs — skip */ }
 
@@ -969,18 +979,25 @@ Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night 
 
   // ── Story / Storytelling ────────────────────────────────────────────────
   // A story is NOT a visual description — it is an emotional narrative from inside the moment.
-  const STORY_CORE = `Do NOT describe the image visually. Do NOT list physical details like hair colour, clothing, or setting. Write from INSIDE the moment: the emotion, the desire, the tension, the sensation. The reader should FEEL what the characters feel — not see what the camera sees.`;
+  const STORY_CORE = `CRITICAL — Do NOT describe the image visually. Do NOT list hair colour, clothing, props, or camera angle. Instead, write from INSIDE the moment: the emotion, desire, tension, anticipation, or sensation. The reader should FEEL what the characters feel — not see what the camera sees. The image is only a mood reference — the actual story is invented by you and lives in the characters' heads and hearts.`;
   const storyPerspVoice = isOC
     ? `${perspVoice} We live this entirely through ${ocName.trim()}'s inner world.`
     : isFirstPerson
       ? `${perspVoice} The narrator IS in this moment — raw, immediate, intimate.`
       : `${perspVoice} Close third-person — watching from just outside, feeling everything from within. Think: "She surrenders…", "He pulls her closer…", "The silence between them…"`;
 
-  const STORY_EMOJI = `Scatter 1–2 fitting emojis naturally through the text (e.g. 🫦 ❤️‍🔥 💀 🌙 💋 😈) — they must feel organic, not decorative.`;
-  const storyIsRich = (xPremiumPlus && network === "x") || !!storylineId;
+  // Story emoji: respect persona setting if set, otherwise default naturalistic rule.
+  const STORY_EMOJI = personaEmojiRule
+    ? `Emojis: ${personaEmojiRule}`
+    : `Scatter 1–2 fitting emojis naturally through the text (e.g. 🫦 ❤️‍🔥 💀 🌙 💋 😈) — they must feel organic, not decorative.`;
+
+  // Determine story length based on available character budget.
+  // Short stories for tight limits, rich episodes for larger budgets.
+  const storyCharBudget = nc.descMax;
+  const storyIsRich = storyCharBudget >= 500 || !!storylineId;
   const storyRule = storyIsRich
-    ? `Write a rich, immersive story episode (8–15 sentences, multiple paragraphs). ${STORY_CORE} ${storyPerspVoice} Build emotional intensity and leave the reader craving the next instalment. ${STORY_EMOJI}${decisionsInstruction}`
-    : `Write a short emotional micro-story (2–4 sentences). ${STORY_CORE} ${storyPerspVoice} Make it feel intimate and alive — like a stolen moment the reader just stepped into. ${STORY_EMOJI}${decisionsInstruction}`;
+    ? `Write a rich, immersive story episode that FILLS the available ${storyCharBudget}-character space — aim for at least 80% of the budget. Use multiple paragraphs. ${STORY_CORE} ${storyPerspVoice} The tone should match the image: it can be tender, romantic, playful, or explicitly sexual — let the mood of the image guide you. Build emotional intensity and leave the reader craving the next instalment. ${STORY_EMOJI}${decisionsInstruction}`
+    : `Write a short but vivid emotional micro-story (3–5 sentences, use the full ${storyCharBudget} characters). ${STORY_CORE} ${storyPerspVoice} Make it feel intimate and alive — like a stolen moment the reader just stepped into. The tone can be tender, playful, or raw and explicit — let the image decide. ${STORY_EMOJI}${decisionsInstruction}`;
 
   // ── Final post-type map ─────────────────────────────────────────────────
   const POST_TYPE_RULES = {
@@ -994,8 +1011,8 @@ Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night 
 
   const prompt = `Analyze the image(s) carefully, then write a ${networkLabel} post.
 Rules:
-- Language: English only.
-${hintLine ? hintLine + "\n" : ""}${personaLine ? personaLine + "\n" : ""}${storylineContextLine ? storylineContextLine + "\n" : ""}- Post type: ${postTypeRule}
+- Language: English only. Always write the post in English regardless of the language of any instructions below.
+${aiInstructionsLine ? aiInstructionsLine + "\n" : ""}${hintLine ? hintLine + "\n" : ""}${personaLine ? personaLine + "\n" : ""}${storylineContextLine ? storylineContextLine + "\n" : ""}- Post type: ${postTypeRule}
 - Description: max ${nc.descMax} characters. ${nc.notes}
 - Tags: ${tagInstruction} ${tagNote}
 ${nc.titleNeeded ? "- Title: short, catchy, max 80 chars." : ""}
@@ -1222,8 +1239,8 @@ app.whenReady().then(() => {
   }
 
   // ── AI post generation ─────────────────────────────────────────────────────
-  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars) => {
-    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars);
+  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions) => {
+    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions);
   });
 
   ipcMain.handle("extension:open-chrome", () => {

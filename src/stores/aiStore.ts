@@ -142,14 +142,15 @@ export const useAiStore = defineStore("ai", () => {
 
   /**
    * Call the main-process AI handler to generate a post for the given network.
-   * @param imagePaths   Absolute local paths (max 4)
-   * @param network      Target network type string
-   * @param hint         Optional user hint / context
-   * @param postType     "engagement" | "qt" | "morning" | "goodnight" | "story"
-   * @param perspective  "i" | "oc"
-   * @param ocName       OC display name (only used when perspective === "oc")
-   * @param storylineId  Optional storyline ID — previous entries are fetched for context
-   * @param decisions    Optional reader-vote decisions (1–4) appended after the story text
+   * @param imagePaths      Absolute local paths (max 4)
+   * @param network         Target network type string
+   * @param hint            Optional user context / mood (treated as a framework, not verbatim)
+   * @param postType        "engagement" | "qt" | "morning" | "goodnight" | "story"
+   * @param perspective     "i" | "oc"
+   * @param ocName          OC display name (only used when perspective === "oc")
+   * @param storylineId     Optional storyline ID — previous entries are fetched for context
+   * @param decisions       Optional reader-vote decisions (1–4) appended after the story text
+   * @param aiInstructions  Optional specific image details (character names, relationships…)
    */
   async function generatePost(
     imagePaths: string[],
@@ -163,6 +164,7 @@ export const useAiStore = defineStore("ai", () => {
     qtEventName?: string,
     qtTagger?: string,
     customMaxChars?: number | null,
+    aiInstructions?: string,
   ) {
     generating.value = true;
     generateError.value = "";
@@ -179,6 +181,7 @@ export const useAiStore = defineStore("ai", () => {
         qtEventName ?? "",
         qtTagger ?? "",
         customMaxChars ?? null,
+        aiInstructions ?? "",
       );
       generatedPost.value = { ...result, network };
       // Sync editable fields so all consumers (AiPostPanel, PickerPage, …) start from the fresh result.

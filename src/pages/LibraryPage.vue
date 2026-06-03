@@ -189,6 +189,14 @@ function onAiQueued(count: number) {
   imageStore.message = `Queued ${count} image(s) for ${libActiveTargetName.value}.`;
 }
 
+async function onAiMark() {
+  if (collectionArray.value.length) {
+    await markCollection();
+  } else {
+    await markSelected();
+  }
+}
+
 // ── Folder navigation ──────────────────────────────────────────────────────────
 
 /** Segment-aware common ancestor of all scanned folders (the navigation root). */
@@ -1195,11 +1203,21 @@ async function fillSlot(slotId: string) {
       >
         <div class="relative mx-4 flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-panelSoft shadow-2xl">
           <!-- Header -->
-          <div class="flex shrink-0 items-center justify-between border-b border-line px-5 py-3.5">
+          <div class="flex shrink-0 items-center justify-between border-b border-line px-5 py-3">
             <div class="flex items-center gap-2">
               <Sparkles class="h-4 w-4 text-accent" />
               <p class="text-sm font-semibold text-white">AI Post</p>
-              <span v-if="libActiveTargetName" class="rounded-md bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">{{ libActiveTargetName }}</span>
+              <!-- Platform switcher — change target without closing the modal -->
+              <div class="relative">
+                <select
+                  v-model="targetStore.activeTargetId"
+                  class="h-6 appearance-none rounded-md border border-accent/30 bg-accent/10 pl-2 pr-6 text-[11px] font-medium text-accent focus:border-accent/60 focus:outline-none cursor-pointer"
+                  title="Switch target platform"
+                >
+                  <option v-for="t in targetStore.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
+                </select>
+                <ChevronDown class="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-accent/70" />
+              </div>
             </div>
             <button
               class="button h-7 w-7 p-0 hover:border-rose/60 hover:text-rose"
@@ -1218,6 +1236,7 @@ async function fillSlot(slotId: string) {
               :queue-limit="PLATFORM_LIMITS[libActiveTargetType ?? ''] ?? 1"
               :disabled="selectedCount === 0 && collectionArray.length === 0"
               @queued="onAiQueued"
+              @mark="onAiMark"
             />
           </div>
         </div>

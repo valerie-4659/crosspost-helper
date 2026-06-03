@@ -600,13 +600,26 @@ onMounted(async () => {
           </button>
 
           <div v-if="showAiPanel" class="mt-3">
+            <!-- Platform switcher for AI panel -->
+            <div class="mb-2 flex items-center gap-2">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500 shrink-0">Platform</p>
+              <div class="relative flex-1">
+                <select
+                  v-model="targets.activeTargetId"
+                  class="w-full appearance-none rounded-lg border border-line bg-panelSoft pl-2.5 pr-7 text-xs text-slate-200 py-1 focus:border-accent/60 focus:outline-none cursor-pointer hover:border-slate-500 transition"
+                  title="Switch platform for AI post"
+                >
+                  <option v-for="t in targets.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
+                </select>
+                <ChevronDown class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
+              </div>
+            </div>
             <AiPostPanel
               :image-paths="currentImagePaths()"
               :network="targets.activeTarget?.type ?? 'x'"
               :network-name="activeTargetName"
               :disabled="!picker.currentImage"
             />
-            <p class="mt-2 text-[10px] text-slate-500">↑ Click "Send to Extension + AI" to queue image and text together.</p>
           </div>
         </div>
 
