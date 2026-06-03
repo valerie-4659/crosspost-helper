@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.78 - 2026-06-03
+
+- feat(ai-panel): platform switcher, AI instructions, compact UI, prompt overhaul
+
+
+## v0.2.77 - 2026-06-03
+
+- feat(ai-panel): platform switcher, AI instructions, compact UI, prompt overhaul
+
+
 ## v0.2.76 - 2026-06-02
 
 - blubb
