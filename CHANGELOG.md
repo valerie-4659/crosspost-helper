@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.82 - 2026-06-03
+
+- Release v0.2.82
+
+
 ## v0.2.81 - 2026-06-03
 
 - feat: adding video prompt generation
