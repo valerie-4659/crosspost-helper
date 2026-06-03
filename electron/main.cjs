@@ -1068,6 +1068,122 @@ Respond with ONLY valid JSON, no markdown fences:
   return { title: parsed.title ?? "", description: parsed.description ?? "", tags: parsed.tags ?? [] };
 }
 
+// ─── Video Prompt Generation ──────────────────────────────────────────────────
+
+const VIDEO_MODELS = {
+  wan_2_2_explicit: { name: "WAN 2.2 Explicit", explicit: true,  maxWords: 350 },
+  wan_2_5:          { name: "WAN 2.5",           explicit: false, maxWords: 300 },
+  wan_2_7:          { name: "WAN 2.7",           explicit: false, maxWords: 300 },
+  grok_imagine:     { name: "GROK Imagine",       explicit: false, maxWords: 250 },
+  seedance:         { name: "Seedance",           explicit: false, maxWords: 350 },
+};
+
+// videoModel: one of the VIDEO_MODELS keys
+// instructions: optional character names / specific scene details
+async function generateVideoPrompt(imagePaths, videoModel = "wan_2_5", instructions = "") {
+  const db = await getDatabase();
+  const rows = db.exec("SELECT key, value FROM ai_config");
+  const cfg = {};
+  if (rows.length && rows[0].values) {
+    for (const [k, v] of rows[0].values) cfg[k] = v;
+  }
+
+  const provider  = cfg["provider"]  || "openai";
+  const apiKey    = cfg["api_key"]   || "";
+  const model     = cfg["model"]     || "gpt-4o";
+  const maxTokens = 700;
+
+  if (!apiKey) throw new Error("No AI API key configured. Please set one in Settings → AI.");
+
+  const vm = VIDEO_MODELS[videoModel] ?? VIDEO_MODELS["wan_2_5"];
+
+  // Load first image (video prompts work best with one reference)
+  const validPaths = (imagePaths ?? []).filter((p) => p && fs.existsSync(p)).slice(0, 1);
+  const imageData = [];
+  for (const p of validPaths) {
+    try {
+      const img = await nativeImage.createThumbnailFromPath(p, { width: 1024, height: 1024 });
+      if (!img.isEmpty()) {
+        imageData.push({ mime: "image/jpeg", b64: img.toJPEG(85).toString("base64") });
+      } else {
+        imageData.push({ mime: imageMime(p), b64: fs.readFileSync(p).toString("base64") });
+      }
+    } catch {
+      imageData.push({ mime: imageMime(p), b64: fs.readFileSync(p).toString("base64") });
+    }
+  }
+
+  // Content policy rule — explicit only for WAN 2.2 Explicit
+  const contentRule = vm.explicit
+    ? `EXPLICIT CONTENT IS ALLOWED and expected — describe nudity, explicit poses, and adult scenarios accurately and vividly. Do not sanitize.`
+    : `CONTENT SAFETY REQUIRED — this model has strict content moderation. NEVER use explicit sexual terms, genital names, sexual acts, or NSFW language. Use tasteful alternatives: "bare skin", "curves", "sensual pose", "intimate embrace", "alluring figure", "close together". Violating this will cause the generation to fail.`;
+
+  const instructionsLine = instructions?.trim()
+    ? `\nSPECIFIC DETAILS (mandatory, use exactly as given): ${instructions.trim()}`
+    : "";
+
+  const systemMessage = `You are an expert video prompt engineer for AI video generation. Analyze images and write precise, cinematic video generation prompts. Output ONLY the raw prompt text — no title, no explanation, no JSON, no quotes.`;
+
+  const userPrompt = `Analyze this image and write a video generation prompt for ${vm.name}.
+
+Requirements:
+- Maximum ${vm.maxWords} words. Be precise but concise.
+- Describe the subject(s): appearance, clothing (or lack thereof), pose, expression.
+- Describe the action and MOTION — what moves, how it moves (hair, fabric, body, environment).
+- Camera work: angle, movement (slow zoom, tracking shot, dolly, close-up, static).
+- Lighting: quality, direction, color temperature, shadows.
+- Atmosphere and mood: intimate, dramatic, playful, tense, ethereal — match the image energy.
+- Visual style: cinematic, photorealistic, high detail, film grain (if appropriate).
+${contentRule}${instructionsLine}
+
+Output ONLY the prompt text, nothing else.`;
+
+  let result = "";
+
+  if (provider === "openai" || provider === "grok") {
+    const hostname = provider === "grok" ? "api.x.ai" : "api.openai.com";
+    const content = [
+      { type: "text", text: userPrompt },
+      ...imageData.map((d) => ({ type: "image_url", image_url: { url: `data:${d.mime};base64,${d.b64}` } })),
+    ];
+    const r = await httpsPost(hostname, "/v1/chat/completions",
+      { "Authorization": `Bearer ${apiKey}` },
+      { model, max_tokens: maxTokens, messages: [
+        { role: "system", content: systemMessage },
+        { role: "user", content },
+      ]});
+    if (r.status !== 200) throw apiError(provider, r);
+    result = r.body.choices?.[0]?.message?.content ?? "";
+
+  } else if (provider === "anthropic") {
+    const content = [
+      ...imageData.map((d) => ({ type: "image", source: { type: "base64", media_type: d.mime, data: d.b64 } })),
+      { type: "text", text: userPrompt },
+    ];
+    const r = await httpsPost("api.anthropic.com", "/v1/messages",
+      { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      { model, max_tokens: maxTokens, system: systemMessage, messages: [{ role: "user", content }] });
+    if (r.status !== 200) throw apiError("anthropic", r);
+    result = r.body.content?.[0]?.text ?? "";
+
+  } else if (provider === "gemini") {
+    const parts = [
+      { text: userPrompt },
+      ...imageData.map((d) => ({ inline_data: { mime_type: d.mime, data: d.b64 } })),
+    ];
+    const r = await httpsPost("generativelanguage.googleapis.com",
+      `/v1beta/models/${model}:generateContent?key=${apiKey}`, {},
+      { systemInstruction: { parts: [{ text: systemMessage }] }, contents: [{ parts }] });
+    if (r.status !== 200) throw apiError("gemini", r);
+    result = r.body.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+  } else {
+    throw new Error(`Unknown AI provider: ${provider}`);
+  }
+
+  return result.trim();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 function startBridgeServer() {
@@ -1241,6 +1357,11 @@ app.whenReady().then(() => {
   // ── AI post generation ─────────────────────────────────────────────────────
   ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions) => {
     return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions);
+  });
+
+  // ── AI video prompt generation ─────────────────────────────────────────────
+  ipcMain.handle("ai:generate-video-prompt", async (_event, imagePaths, videoModel, instructions) => {
+    return generateVideoPrompt(imagePaths, videoModel, instructions);
   });
 
   ipcMain.handle("extension:open-chrome", () => {
