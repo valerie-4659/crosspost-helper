@@ -71,6 +71,7 @@ declare global {
           qtEventName?: string,
           qtTagger?: string,
           customMaxChars?: number | null,
+          aiInstructions?: string,
         ): Promise<{ title: string; description: string; tags: string[] }>;
       };
       scan: {
