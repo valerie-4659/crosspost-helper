@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.81",
+    date: "2026-06-03",
+    items: [
+      "feat: adding video prompt generation",
+    ],
+  },
+  {
     version: "0.2.80",
     date: "2026-06-03",
     items: [
