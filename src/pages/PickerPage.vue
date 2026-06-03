@@ -423,55 +423,46 @@ onMounted(async () => {
     <div v-else class="flex min-h-0 flex-1 gap-4">
       <ImagePreview :image="picker.currentImage" />
 
-      <aside class="surface flex w-96 shrink-0 flex-col gap-4 overflow-y-auto rounded-lg p-4">
-        <div>
-          <h2 class="text-base font-semibold text-white">Use image</h2>
-          <p class="mt-1 text-sm text-slate-400">Drag from Finder, copy the image, or reveal the file. Then mark the network.</p>
-        </div>
+      <aside class="surface flex w-96 shrink-0 flex-col gap-2 overflow-y-auto rounded-lg p-3">
+        <p class="text-xs font-semibold text-white">Use image</p>
 
-        <div class="grid grid-cols-2 gap-2">
-          <button class="button" :disabled="!picker.currentImage" @click="picker.openCurrentImage">
-            <FolderOpen class="h-4 w-4" />
-            Reveal
+        <div class="grid grid-cols-2 gap-1.5">
+          <button class="button h-7 gap-1.5 px-2 text-xs" :disabled="!picker.currentImage" @click="picker.openCurrentImage">
+            <FolderOpen class="h-3.5 w-3.5" />Reveal
           </button>
-          <button class="button" :disabled="!picker.currentImage" @click="picker.copyImage">
-            <Clipboard class="h-4 w-4" />
-            Image
+          <button class="button h-7 gap-1.5 px-2 text-xs" :disabled="!picker.currentImage" @click="picker.copyImage">
+            <Clipboard class="h-3.5 w-3.5" />Image
           </button>
-          <button class="button" :disabled="!picker.currentImage" @click="picker.copyPath">
-            <Copy class="h-4 w-4" />
-            Path
+          <button class="button h-7 gap-1.5 px-2 text-xs" :disabled="!picker.currentImage" @click="picker.copyPath">
+            <Copy class="h-3.5 w-3.5" />Path
           </button>
           <button
-            class="button"
+            class="button h-7 gap-1.5 px-2 text-xs"
             :disabled="!picker.currentImage || !targets.activeTargetId"
-            title="Skip for this session — image returns to the pool after ~40% of eligible images have been picked"
+            title="Skip for this session"
             @click="picker.markSkipped"
           >
-            <SkipForward class="h-4 w-4" />
-            Skip {{ activeTargetName }}
+            <SkipForward class="h-3.5 w-3.5" />Skip {{ activeTargetName }}
           </button>
         </div>
 
-        <!-- Global exclude — destructive action, full-width, visually distinct -->
+        <!-- Global exclude -->
         <button
-          class="button col-span-2 w-full gap-2 border-amber-800/50 bg-amber-900/20 text-amber-400 hover:border-amber-600 hover:bg-amber-900/40"
+          class="button h-7 w-full gap-1.5 px-2 text-xs border-amber-800/50 bg-amber-900/20 text-amber-400 hover:border-amber-600 hover:bg-amber-900/40"
           :disabled="!picker.currentImage"
-          title="Permanently exclude this image from ALL networks (sets is_archived). Cannot be undone from the picker."
+          title="Permanently exclude from ALL networks"
           @click="picker.excludeGlobally"
         >
-          <Ban class="h-4 w-4" />
-          Exclude globally
+          <Ban class="h-3.5 w-3.5" />Exclude globally
         </button>
 
         <!-- Cooldown indicator -->
-        <p v-if="picker.cooldownCount > 0" class="text-xs text-slate-500">
-          {{ picker.cooldownCount }} image{{ picker.cooldownCount === 1 ? '' : 's' }} on cooldown (skipped)
+        <p v-if="picker.cooldownCount > 0" class="text-[11px] text-slate-500">
+          {{ picker.cooldownCount }} image{{ picker.cooldownCount === 1 ? '' : 's' }} on cooldown
         </p>
 
-        <button class="button-primary rounded-md" :disabled="!picker.currentImage || !targets.activeTargetId" @click="picker.markPosted">
-          <Check class="h-4 w-4" />
-          Mark {{ activeTargetName }}
+        <button class="button-primary h-8 rounded-md text-sm" :disabled="!picker.currentImage || !targets.activeTargetId" @click="picker.markPosted">
+          <Check class="h-4 w-4" />Mark {{ activeTargetName }}
         </button>
 
         <!-- Send to Extension — split-button with send-mode dropdown -->
@@ -620,6 +611,18 @@ onMounted(async () => {
               :network-name="activeTargetName"
               :disabled="!picker.currentImage"
             />
+            <!-- Bottom send shortcut — avoids scrolling up after generating -->
+            <button
+              v-if="ai.generatedPost"
+              class="mt-2 button w-full gap-1.5 text-xs"
+              :class="sendDone ? 'border-mint/60 bg-mint/10 text-mint' : (EXTENSION_TYPES.has(targets.activeTarget?.type as any) ? 'border-accent/40' : '')"
+              :disabled="!picker.currentImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
+              @click="sendToExtension"
+            >
+              <Check v-if="sendDone" class="h-3 w-3" />
+              <Send v-else class="h-3 w-3" />
+              {{ sendDone ? 'Queued!' : 'Send to Plugin' }}
+            </button>
           </div>
         </div>
 

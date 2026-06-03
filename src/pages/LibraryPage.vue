@@ -87,12 +87,11 @@ function _loadLibState() {
 const _saved = _loadLibState();
 function saveLibState() {
   localStorage.setItem(LS_LIB, JSON.stringify({
-    sortMode:            sortMode.value,
-    sortAsc:             sortAsc.value,
-    currentDir:          currentDir.value,
-    hidePostedNetworkId: hidePostedNetworkId.value,
-    hidePostedTargetId:  imageStore.filters.hidePostedForTargetId ?? "",
-    collectionIds:       [...collectionImages.keys()],
+    sortMode:           sortMode.value,
+    sortAsc:            sortAsc.value,
+    currentDir:         currentDir.value,
+    hidePostedTargetId: imageStore.filters.hidePostedForTargetId ?? "",
+    collectionIds:      [...collectionImages.keys()],
   }));
 }
 
@@ -115,10 +114,9 @@ watch(() => folderHistory.history, () => {
 
 // Reload images whenever a filter or showExcludedFolders changes.
 onMounted(() => {
-  // Restore hide-posted filter before the first load
-  if (_saved.hidePostedTargetId) {
-    hidePostedNetworkId.value = _saved.hidePostedTargetId;
-    imageStore.filters.hidePostedForTargetId = _saved.hidePostedTargetId;
+  // Restore hide-posted filter before the first load — always use current active target.
+  if (_saved.hidePostedTargetId && targetStore.activeTargetId) {
+    imageStore.filters.hidePostedForTargetId = targetStore.activeTargetId;
   }
   // Pre-seed selected IDs so imageStore.load() retains them (it filters to valid IDs only)
   if (_saved.collectionIds?.length) {
@@ -140,21 +138,26 @@ watch(() => imageStore.filters, () => imageStore.load(), { deep: true });
 watch(() => imageStore.showExcludedFolders, () => imageStore.load());
 
 // ── Network hide-posted toggle ─────────────────────────────────────────────
-/** The target ID selected in the hide-posted dropdown (not yet applied). */
-const hidePostedNetworkId = ref<string>(_saved.hidePostedNetworkId ?? "");
-
-// Persist state on every relevant change (declared after hidePostedNetworkId)
-watch([sortMode, sortAsc, hidePostedNetworkId], saveLibState);
+// Persist state on every relevant change
+watch([sortMode, sortAsc], saveLibState);
 watch(() => imageStore.filters.hidePostedForTargetId, saveLibState);
 
 function toggleHidePosted() {
   if (imageStore.filters.hidePostedForTargetId) {
     // Already active → turn off
     imageStore.filters.hidePostedForTargetId = undefined;
-  } else {
-    imageStore.filters.hidePostedForTargetId = hidePostedNetworkId.value || undefined;
+  } else if (targetStore.activeTargetId) {
+    // Turn on for the currently active platform
+    imageStore.filters.hidePostedForTargetId = targetStore.activeTargetId;
   }
 }
+
+// When the active platform changes while hiding is on → follow the new platform.
+watch(() => targetStore.activeTargetId, (newId) => {
+  if (imageStore.filters.hidePostedForTargetId && newId) {
+    imageStore.filters.hidePostedForTargetId = newId;
+  }
+});
 
 // Active network for toolbar actions (mark / queue / AI) — shared with picker store.
 const libActiveTarget = computed(() => targetStore.enabledTargets.find((t) => t.id === targetStore.activeTargetId) ?? null);
@@ -328,6 +331,17 @@ const breadcrumbs = computed(() => {
   }
   return crumbs;
 });
+
+/** Flat sorted list of all folders for the quick-jump dropdown. */
+const sortedFolders = computed(() =>
+  imageStore.folders
+    .filter((f) => !f.isExcluded || imageStore.showExcludedFolders)
+    .map((f) => ({
+      path:  f.folderPath,
+      label: f.folderPath.slice(rootDir.value.length + 1) || f.folderPath.split("/").pop() || f.folderPath,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+);
 
 function navigateTo(path: string) {
   const prev = currentDir.value || rootDir.value;
@@ -704,30 +718,18 @@ async function fillSlot(slotId: string) {
           >{{ sortAsc ? '↑' : '↓' }}</button>
         </div>
 
-        <!-- Hide-posted-for-network: styled select + toggle -->
-        <div class="flex items-center rounded-lg border border-line overflow-hidden">
-          <div class="relative">
-            <select
-              v-model="hidePostedNetworkId"
-              class="h-8 appearance-none border-r border-line bg-panel pl-3 pr-7 text-xs text-slate-300 transition focus:outline-none cursor-pointer hover:bg-panelSoft"
-              title="Select network to hide already-posted images"
-            >
-              <option value="">All images</option>
-              <option v-for="t in targetStore.enabledTargets" :key="t.id" :value="t.id">{{ t.name }}</option>
-            </select>
-            <ChevronDown class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
-          </div>
-          <button
-            class="h-8 px-2.5 text-xs transition"
-            :class="imageStore.filters.hidePostedForTargetId ? 'bg-rose/10 text-rose' : 'bg-panel text-slate-400 hover:bg-panelSoft hover:text-white'"
-            :title="imageStore.filters.hidePostedForTargetId ? 'Click to show posted images again' : 'Hide already-posted images'"
-            :disabled="!hidePostedNetworkId"
-            @click="toggleHidePosted"
-          >
-            <EyeOff v-if="imageStore.filters.hidePostedForTargetId" class="h-3.5 w-3.5" />
-            <Eye v-else class="h-3.5 w-3.5" />
-          </button>
-        </div>
+        <!-- Hide posted for active platform toggle (no separate dropdown — follows active target) -->
+        <button
+          class="button h-8 gap-1.5 px-2.5 text-xs"
+          :class="imageStore.filters.hidePostedForTargetId ? 'border-rose/50 bg-rose/10 text-rose' : ''"
+          :title="imageStore.filters.hidePostedForTargetId ? `Showing: hide posted on ${libActiveTargetName} — click to show all` : `Hide images already posted on ${libActiveTargetName || 'active platform'}`"
+          :disabled="!targetStore.activeTargetId"
+          @click="toggleHidePosted"
+        >
+          <EyeOff v-if="imageStore.filters.hidePostedForTargetId" class="h-3.5 w-3.5" />
+          <Eye v-else class="h-3.5 w-3.5" />
+          {{ imageStore.filters.hidePostedForTargetId ? 'Hiding posted' : 'Hide posted' }}
+        </button>
 
         <button
           class="button gap-1.5"
@@ -746,20 +748,35 @@ async function fillSlot(slotId: string) {
       </div>
     </header>
 
-    <!-- ── Breadcrumb navigation ────────────────────────────────────── -->
-    <nav v-if="breadcrumbs.length" class="flex shrink-0 items-center gap-1 px-5 pt-3 text-sm">
-      <template v-for="(crumb, i) in breadcrumbs" :key="crumb.path">
-        <button
-          class="max-w-48 truncate transition"
-          :class="i === breadcrumbs.length - 1 ? 'font-medium text-white' : 'text-slate-400 hover:text-white'"
-          :title="crumb.path"
-          @click="navigateTo(crumb.path)"
+    <!-- ── Breadcrumb + folder jump dropdown ─────────────────────────── -->
+    <div v-if="breadcrumbs.length" class="flex shrink-0 items-center gap-2 px-5 pt-3">
+      <!-- Quick-jump folder dropdown -->
+      <div v-if="sortedFolders.length" class="relative shrink-0">
+        <select
+          :value="browsePath"
+          class="h-6 max-w-[11rem] appearance-none rounded-md border border-line bg-panelSoft pl-2 pr-6 text-xs text-slate-300 focus:border-accent/60 focus:outline-none cursor-pointer hover:border-slate-500 transition"
+          title="Jump to folder"
+          @change="navigateTo(($event.target as HTMLSelectElement).value)"
         >
-          {{ crumb.name }}
-        </button>
-        <ChevronRight v-if="i < breadcrumbs.length - 1" class="h-3.5 w-3.5 shrink-0 text-slate-600" />
-      </template>
-    </nav>
+          <option v-for="f in sortedFolders" :key="f.path" :value="f.path">{{ f.label }}</option>
+        </select>
+        <ChevronDown class="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
+      </div>
+      <!-- Breadcrumb trail -->
+      <nav class="flex min-w-0 items-center gap-1 text-sm overflow-hidden">
+        <template v-for="(crumb, i) in breadcrumbs" :key="crumb.path">
+          <button
+            class="max-w-36 truncate transition shrink-0"
+            :class="i === breadcrumbs.length - 1 ? 'font-medium text-white' : 'text-slate-400 hover:text-white'"
+            :title="crumb.path"
+            @click="navigateTo(crumb.path)"
+          >
+            {{ crumb.name }}
+          </button>
+          <ChevronRight v-if="i < breadcrumbs.length - 1" class="h-3.5 w-3.5 shrink-0 text-slate-600" />
+        </template>
+      </nav>
+    </div>
 
     <!-- ── Sticky action toolbar (only when viewing images) ──────── -->
     <section
