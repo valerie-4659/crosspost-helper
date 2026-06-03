@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.79 - 2026-06-03
+
+- fix(types): add aiInstructions param to desktop.d.ts generatePost signature
+- fix(types): add aiInstructions param to desktop.d.ts generatePost signature
+- feat(ai-panel): platform switcher, AI instructions, compact UI, prompt overhaul
+
+
 ## v0.2.78 - 2026-06-03
 
 - feat(ai-panel): platform switcher, AI instructions, compact UI, prompt overhaul

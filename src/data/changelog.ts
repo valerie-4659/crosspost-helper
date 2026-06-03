@@ -6,6 +6,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.79",
+    date: "2026-06-03",
+    items: [
+      "fix(types): add aiInstructions param to desktop.d.ts generatePost signature",
+      "fix(types): add aiInstructions param to desktop.d.ts generatePost signature",
+      "feat(ai-panel): platform switcher, AI instructions, compact UI, prompt overhaul",
+    ],
+  },
+  {
     version: "0.2.78",
     date: "2026-06-03",
     items: [
