@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.80",
+    date: "2026-06-03",
+    items: [
+      "fix(picker): compact sidebar UI, remove description text",
+    ],
+  },
+  {
     version: "0.2.79",
     date: "2026-06-03",
     items: [

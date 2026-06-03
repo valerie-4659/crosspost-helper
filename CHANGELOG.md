@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.80 - 2026-06-03
+
+- fix(picker): compact sidebar UI, remove description text
+
+
 ## v0.2.79 - 2026-06-03
 
 - fix(types): add aiInstructions param to desktop.d.ts generatePost signature
