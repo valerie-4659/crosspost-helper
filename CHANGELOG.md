@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.84 - 2026-06-04
+
+- fix(ai-panel): use window.setTimeout in blur handler for OC dropdown
+- feat(ai-panel): OC multi-select with chip UI and localStorage autocomplete
+
+
 ## v0.2.83 - 2026-06-04
 
 - feat(ai-panel): OC multi-select with chip UI and localStorage autocomplete

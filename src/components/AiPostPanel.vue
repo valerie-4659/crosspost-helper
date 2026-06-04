@@ -84,6 +84,10 @@ function onOcKeydown(e: KeyboardEvent) {
     ocDropdownOpen.value = false;
   }
 }
+
+function onOcBlur() {
+  setTimeout(() => { ocDropdownOpen.value = false; }, 150);
+}
 const qtEventName    = ref("");
 const qtTagger       = ref("");
 const customMaxChars = ref<number>(180);
@@ -358,7 +362,7 @@ onMounted(async () => {
               placeholder="Name + Enter…"
               @keydown="onOcKeydown"
               @focus="ocDropdownOpen = true"
-              @blur="() => window.setTimeout(() => (ocDropdownOpen = false), 150)"
+              @blur="onOcBlur"
             />
           </div>
           <!-- Autocomplete dropdown -->
