@@ -414,6 +414,7 @@ onMounted(async () => {
           :network="targets.activeTarget?.type ?? 'x'"
           :network-name="activeTargetName"
           :disabled="picker.multiPickSlots.every(s => !s)"
+          @mark="picker.markMultiPickPosted"
         />
         <p class="mt-2 text-[10px] text-slate-500">↑ Use "Send + AI" to queue with text.</p>
       </div>
@@ -610,6 +611,7 @@ onMounted(async () => {
               :network="targets.activeTarget?.type ?? 'x'"
               :network-name="activeTargetName"
               :disabled="!picker.currentImage"
+              @mark="picker.markPosted"
             />
             <!-- Bottom send shortcut — avoids scrolling up after generating -->
             <button

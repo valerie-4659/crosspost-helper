@@ -42,7 +42,48 @@ const aiInstructions = ref("");
 const postType    = ref<"engagement" | "qt" | "morning" | "goodnight" | "story">("engagement");
 /** "" = no perspective instruction, "i" = first-person, "oc" = OC name */
 const perspective = ref<"" | "i" | "oc">("");
-const ocName      = ref("");
+
+// ── OC Names multi-select (localStorage-backed) ────────────────────────────
+const LS_OC_NAMES = "crosspost_oc_names";
+const savedOcNames    = ref<string[]>(JSON.parse(localStorage.getItem(LS_OC_NAMES) ?? "[]"));
+const selectedOcNames = ref<string[]>([]);
+const ocInput         = ref("");
+const ocDropdownOpen  = ref(false);
+const ocInputEl       = ref<HTMLInputElement | null>(null);
+
+const filteredOcSuggestions = computed(() => {
+  const q = ocInput.value.trim().toLowerCase();
+  return savedOcNames.value.filter(
+    (n) => !selectedOcNames.value.includes(n) && (q === "" || n.toLowerCase().includes(q)),
+  );
+});
+
+function addOcName(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed || selectedOcNames.value.includes(trimmed)) return;
+  selectedOcNames.value.push(trimmed);
+  if (!savedOcNames.value.includes(trimmed)) {
+    savedOcNames.value.push(trimmed);
+    localStorage.setItem(LS_OC_NAMES, JSON.stringify(savedOcNames.value));
+  }
+  ocInput.value = "";
+  ocDropdownOpen.value = false;
+}
+
+function removeOcName(name: string) {
+  selectedOcNames.value = selectedOcNames.value.filter((n) => n !== name);
+}
+
+function onOcKeydown(e: KeyboardEvent) {
+  if (e.key === "Enter" || e.key === ",") {
+    e.preventDefault();
+    if (ocInput.value.trim()) addOcName(ocInput.value);
+  } else if (e.key === "Backspace" && !ocInput.value && selectedOcNames.value.length) {
+    selectedOcNames.value.pop();
+  } else if (e.key === "Escape") {
+    ocDropdownOpen.value = false;
+  }
+}
 const qtEventName    = ref("");
 const qtTagger       = ref("");
 const customMaxChars = ref<number>(180);
@@ -126,7 +167,7 @@ const POST_TYPES = [
 const PERSPECTIVES = [
   { value: "",   label: "—" },
   { value: "i",  label: "I / Me" },
-  { value: "oc", label: "OC name" },
+  { value: "oc", label: "OC(s)" },
 ] as const;
 
 const activeDecisions = computed(() =>
@@ -142,7 +183,7 @@ async function generate() {
     hint.value.trim() || undefined,
     postType.value,
     perspective.value || undefined,
-    perspective.value === "oc" ? ocName.value.trim() : "",
+    perspective.value === "oc" ? selectedOcNames.value.join(", ") : "",
     postType.value === "story" ? selectedStorylineId.value : undefined,
     postType.value === "story" && activeDecisions.value.length > 0 ? activeDecisions.value : undefined,
     postType.value === "qt" ? qtEventName.value.trim() || undefined : undefined,
@@ -294,12 +335,47 @@ onMounted(async () => {
             : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200'"
           @click="perspective = pv.value"
         >{{ pv.label }}</button>
-        <input
-          v-if="perspective === 'oc'"
-          v-model="ocName"
-          class="input ml-1 h-7 min-w-0 flex-1 text-xs"
-          placeholder="e.g. Valerie"
-        />
+        <!-- OC multi-name chip input -->
+        <div v-if="perspective === 'oc'" class="relative ml-1 min-w-0 flex-1">
+          <div
+            class="flex flex-wrap items-center gap-1 rounded-lg border border-line bg-panelSoft px-2 py-1 min-h-[28px] cursor-text transition focus-within:border-accent/60 focus-within:ring-1 focus-within:ring-accent/30"
+            @click="ocInputEl?.focus()"
+          >
+            <span
+              v-for="name in selectedOcNames"
+              :key="name"
+              class="flex items-center gap-0.5 rounded bg-accent/20 px-1.5 py-0.5 text-[10px] text-accent"
+            >
+              {{ name }}
+              <button type="button" class="hover:text-red-400 transition-colors" @click.stop="removeOcName(name)">
+                <X class="h-2.5 w-2.5" />
+              </button>
+            </span>
+            <input
+              ref="ocInputEl"
+              v-model="ocInput"
+              class="min-w-[80px] flex-1 bg-transparent text-xs text-slate-200 placeholder:text-slate-600 outline-none"
+              placeholder="Name + Enter…"
+              @keydown="onOcKeydown"
+              @focus="ocDropdownOpen = true"
+              @blur="() => setTimeout(() => (ocDropdownOpen = false), 150)"
+            />
+          </div>
+          <!-- Autocomplete dropdown -->
+          <ul
+            v-if="ocDropdownOpen && filteredOcSuggestions.length"
+            class="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-line bg-panel shadow-lg"
+          >
+            <li
+              v-for="name in filteredOcSuggestions"
+              :key="name"
+              class="cursor-pointer px-3 py-1.5 text-xs text-slate-300 hover:bg-accent/10 hover:text-accent transition-colors"
+              @mousedown.prevent="addOcName(name)"
+            >
+              {{ name }}
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
 
@@ -314,14 +390,14 @@ onMounted(async () => {
       />
     </div>
 
-    <!-- AI Instructions (character names, specific details) -->
+    <!-- AI Instructions (directives to the AI — not reflected verbatim in output) -->
     <div>
-      <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">AI Instructions <span class="normal-case text-slate-600">(optional — character names, key details)</span></p>
+      <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">AI Instructions <span class="normal-case text-slate-600">(directives — followed silently, never copied to output)</span></p>
       <textarea
         v-model="aiInstructions"
         rows="2"
         class="w-full resize-none rounded-lg border border-line bg-panelSoft px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
-        placeholder="e.g. The woman is Valerie, the man is Marcus. They are colleagues."
+        placeholder="e.g. Her name is Valerie. Write a spicy story. Keep it under 240 chars."
       />
     </div>
 

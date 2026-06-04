@@ -830,10 +830,11 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     ? `- THEME / MOOD — Use this as a creative framework and inspiration: "${hint.trim()}". Capture its spirit and energy. Do NOT copy it word-for-word. Always write the final post in English.`
     : "";
 
-  // AI instructions = specific factual details about the image (character names, relationships…).
-  // These are hard facts the AI must respect — different from the mood/theme hint above.
+  // AI instructions = author directives: story angle, character names, style notes.
+  // The AI must FOLLOW them creatively — never quote or paraphrase them in the output.
+  // Directives may be in any language — translate to English before applying.
   const aiInstructionsLine = aiInstructions?.trim()
-    ? `- IMAGE DETAILS — MANDATORY: Incorporate these specific details into the post. Use names and facts exactly as given: ${aiInstructions.trim()}`
+    ? `- AUTHOR DIRECTIVES — You MUST follow these creative instructions exactly when writing the post. The instructions may be written in any language — translate them to English internally before applying. CRITICAL: Do NOT copy, quote, or paraphrase these instructions in the output. Absorb them silently and let them shape the writing. The reader must never see these directives in the final text: ${aiInstructions.trim()}`
     : "";
 
   // ── Storyline context (optional) ──────────────────────────────────────────
@@ -1011,7 +1012,7 @@ Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night 
 
   const prompt = `Analyze the image(s) carefully, then write a ${networkLabel} post.
 Rules:
-- Language: English only. Always write the post in English regardless of the language of any instructions below.
+- Language: English ONLY. The final post MUST be in English regardless of what language the instructions, context, or directives below are written in. Translate everything internally — the output is always English.
 ${aiInstructionsLine ? aiInstructionsLine + "\n" : ""}${hintLine ? hintLine + "\n" : ""}${personaLine ? personaLine + "\n" : ""}${storylineContextLine ? storylineContextLine + "\n" : ""}- Post type: ${postTypeRule}
 - Description: max ${nc.descMax} characters. ${nc.notes}
 - Tags: ${tagInstruction} ${tagNote}
