@@ -358,7 +358,7 @@ onMounted(async () => {
               placeholder="Name + Enter…"
               @keydown="onOcKeydown"
               @focus="ocDropdownOpen = true"
-              @blur="() => setTimeout(() => (ocDropdownOpen = false), 150)"
+              @blur="() => window.setTimeout(() => (ocDropdownOpen = false), 150)"
             />
           </div>
           <!-- Autocomplete dropdown -->

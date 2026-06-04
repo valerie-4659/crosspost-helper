@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.83",
+    date: "2026-06-04",
+    items: [
+      "feat(ai-panel): OC multi-select with chip UI and localStorage autocomplete",
+    ],
+  },
+  {
     version: "0.2.82",
     date: "2026-06-03",
     items: [

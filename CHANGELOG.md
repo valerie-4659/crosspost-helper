@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.83 - 2026-06-04
+
+- feat(ai-panel): OC multi-select with chip UI and localStorage autocomplete
+
+
 ## v0.2.82 - 2026-06-03
 
 - Release v0.2.82
