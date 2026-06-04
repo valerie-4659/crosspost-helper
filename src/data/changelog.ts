@@ -6,6 +6,24 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.86",
+    date: "2026-06-04",
+    items: [
+      "fix(ai-panel): move OC blur handler to script to avoid template scope error",
+      "fix(ai-panel): use window.setTimeout in blur handler for OC dropdown",
+      "feat(ai-panel): OC multi-select with chip UI and localStorage autocomplete",
+    ],
+  },
+  {
+    version: "0.2.85",
+    date: "2026-06-04",
+    items: [
+      "fix(ai-panel): move OC blur handler to script to avoid template scope error",
+      "fix(ai-panel): use window.setTimeout in blur handler for OC dropdown",
+      "feat(ai-panel): OC multi-select with chip UI and localStorage autocomplete",
+    ],
+  },
+  {
     version: "0.2.84",
     date: "2026-06-04",
     items: [
