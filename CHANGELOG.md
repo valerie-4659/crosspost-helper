@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.89 - 2026-06-05
+
+- feat(picker): add Video Prompt Generator panel — reuses VideoPromptPanel component
+
+
 ## v0.2.88 - 2026-06-05
 
 - fix(library): move folder preview pin to image overlay (bottom-right), remove from action row
