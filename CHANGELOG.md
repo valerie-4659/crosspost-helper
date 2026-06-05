@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.88 - 2026-06-05
+
+- fix(library): move folder preview pin to image overlay (bottom-right), remove from action row
+
+
 ## v0.2.87 - 2026-06-05
 
 - Release v0.2.87

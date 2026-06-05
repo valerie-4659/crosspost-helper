@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.88",
+    date: "2026-06-05",
+    items: [
+      "fix(library): move folder preview pin to image overlay (bottom-right), remove from action row",
+    ],
+  },
+  {
     version: "0.2.87",
     date: "2026-06-05",
     items: [
