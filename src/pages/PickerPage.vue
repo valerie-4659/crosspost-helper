@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Ban, Check, ChevronDown, ChevronLeft, Clipboard, Copy, FolderOpen, Layers, Send, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
+import { Ban, Check, ChevronDown, ChevronLeft, Clapperboard, Clipboard, Copy, FolderOpen, Layers, Send, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
+import VideoPromptPanel from "@/components/VideoPromptPanel.vue";
 import { convertFileSrc } from "@/electron-shims/core";
 import FilterBar from "@/components/FilterBar.vue";
 import ImagePreview from "@/components/ImagePreview.vue";
@@ -203,7 +204,8 @@ watch(() => picker.currentImage, (img) => {
 });
 
 // ── AI panel ──────────────────────────────────────────────────────────────────
-const showAiPanel = ref(false);
+const showAiPanel    = ref(false);
+const showVideoPanel = ref(false);
 
 /** Collect current image paths for AI analysis. */
 function currentImagePaths(): string[] {
@@ -585,7 +587,7 @@ onMounted(async () => {
             :class="showAiPanel ? 'border-accent bg-accent/10 text-accent' : ''"
             :disabled="!picker.currentImage"
             title="Generate AI post text for the selected network"
-            @click="showAiPanel = !showAiPanel"
+            @click="showAiPanel = !showAiPanel; if (showAiPanel) showVideoPanel = false"
           >
             <Sparkles class="h-4 w-4" />
             AI Post Generator
@@ -625,6 +627,27 @@ onMounted(async () => {
               <Send v-else class="h-3 w-3" />
               {{ sendDone ? 'Queued!' : 'Send to Plugin' }}
             </button>
+          </div>
+        </div>
+
+        <!-- ── Video Prompt Generator ────────────────────────────────── -->
+        <div class="border-t border-line pt-3">
+          <button
+            class="button w-full gap-2"
+            :class="showVideoPanel ? 'border-violet-400/60 bg-violet-400/10 text-violet-300' : ''"
+            :disabled="!picker.currentImage"
+            title="Generate a video prompt from the current image"
+            @click="showVideoPanel = !showVideoPanel; if (showVideoPanel) showAiPanel = false"
+          >
+            <Clapperboard class="h-4 w-4" />
+            Video Prompt
+          </button>
+
+          <div v-if="showVideoPanel" class="mt-3">
+            <VideoPromptPanel
+              :image-paths="currentImagePaths()"
+              :disabled="!picker.currentImage"
+            />
           </div>
         </div>
 
