@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { deleteAllImages, deleteImages, deleteImagesInFolder, excludeFolder, includeFolder, listDistinctFolders, listFolderPostStats, listFolderThumbnails, listImages, setImageArchived } from "@/repositories/imageRepository";
+import { addFolderPreview, deleteAllImages, deleteImages, deleteImagesInFolder, excludeFolder, includeFolder, listDistinctFolders, listFolderPostStats, listFolderPreviewImageIds, listFolderThumbnails, listImages, removeFolderPreview, setImageArchived } from "@/repositories/imageRepository";
 import { markWithSiblings } from "@/repositories/postRecordRepository";
 import type { FolderEntry } from "@/repositories/imageRepository";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
@@ -33,8 +33,10 @@ export const useImageStore = defineStore("images", () => {
    * Holds how many images in each folder have been posted to each target.
    */
   const folderPostStats = ref(new Map<string, Map<string, number>>());
-  /** First thumbnail URL per exact folder path — used for folder card previews. */
-  const folderThumbnails = ref(new Map<string, string>());
+  /** Up to 3 thumbnail URLs per exact folder path — used for folder card previews. */
+  const folderThumbnails = ref(new Map<string, string[]>());
+  /** Image IDs currently set as folder previews for the active/leaf folder. */
+  const folderPreviewImageIds = ref<Set<string>>(new Set());
 
   async function loadFolders() {
     try {
@@ -224,11 +226,34 @@ export const useImageStore = defineStore("images", () => {
     message.value = `Folder "${folderPath.split("/").pop()}" is active again.`;
   }
 
+  /** Load the preview image IDs for a specific folder into folderPreviewImageIds. */
+  async function loadFolderPreviewIds(folderPath: string) {
+    const ids = await listFolderPreviewImageIds(folderPath);
+    folderPreviewImageIds.value = new Set(ids);
+  }
+
+  /**
+   * Toggle an image as a folder preview.
+   * If already a preview → remove it. Otherwise add it (up to 3 per folder).
+   * Refreshes folderThumbnails afterwards so the folder card updates immediately.
+   */
+  async function toggleFolderPreview(folderPath: string, imageId: string) {
+    if (folderPreviewImageIds.value.has(imageId)) {
+      await removeFolderPreview(folderPath, imageId);
+    } else {
+      await addFolderPreview(folderPath, imageId);
+    }
+    await loadFolderPreviewIds(folderPath);
+    // Refresh thumbnails so folder card mosaic updates
+    folderThumbnails.value = await listFolderThumbnails();
+  }
+
   return {
     images,
     folders,
     folderPostStats,
     folderThumbnails,
+    folderPreviewImageIds,
     loading,
     filters,
     message,
@@ -253,5 +278,7 @@ export const useImageStore = defineStore("images", () => {
     hardReset,
     excludeFolderFromLibrary,
     includeFolderInLibrary,
+    loadFolderPreviewIds,
+    toggleFolderPreview,
   };
 });

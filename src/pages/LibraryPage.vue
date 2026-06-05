@@ -272,10 +272,16 @@ const childFolders = computed(() => {
   }
   const entries = [...children.entries()]
     .map(([path, { count, isExcluded, postStats }]) => {
-      // Pick the first available thumbnail from any sub-folder of this child path.
-      let thumbnail: string | undefined;
-      for (const [fp, url] of imageStore.folderThumbnails) {
-        if (fp === path || fp.startsWith(path + "/")) { thumbnail = url; break; }
+      // Collect thumbnails from matching sub-folders (custom previews already merged in store).
+      const thumbnails: string[] = [];
+      for (const [fp, urls] of imageStore.folderThumbnails) {
+        if (fp === path || fp.startsWith(path + "/")) {
+          for (const u of urls) {
+            if (!thumbnails.includes(u)) thumbnails.push(u);
+            if (thumbnails.length >= 3) break;
+          }
+          if (thumbnails.length >= 3) break;
+        }
       }
       return {
         path,
@@ -283,7 +289,7 @@ const childFolders = computed(() => {
         count,
         isExcluded,
         postStats,
-        thumbnail,
+        thumbnails,
         isLastVisited: lastVisitedDir.value !== "" && lastVisitedDir.value.startsWith(path),
       };
     });
@@ -357,6 +363,13 @@ function navigateTo(path: string) {
     lastVisitedDir.value = "";
   }
   currentDir.value = path;
+  // Load folder preview IDs for the new folder so pin buttons reflect current state.
+  if (path) imageStore.loadFolderPreviewIds(path);
+}
+
+async function onToggleFolderPreview(imageId: string) {
+  if (!browsePath.value) return;
+  await imageStore.toggleFolderPreview(browsePath.value, imageId);
 }
 
 // Keep exactFolderPath in sync whenever the effective browse path changes.
@@ -945,14 +958,29 @@ async function fillSlot(slotId: string) {
           </span>
 
           <button class="flex w-full flex-col text-left" :title="folder.path" @click="navigateTo(folder.path)">
-            <!-- Thumbnail / icon area -->
+            <!-- Thumbnail / mosaic area -->
             <div class="relative aspect-[4/3] w-full overflow-hidden bg-panelSoft">
+              <!-- 1 preview -->
               <img
-                v-if="folder.thumbnail"
-                :src="folder.thumbnail"
+                v-if="folder.thumbnails.length === 1"
+                :src="folder.thumbnails[0]"
                 class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                 loading="lazy"
               />
+              <!-- 2 previews: side by side -->
+              <div v-else-if="folder.thumbnails.length === 2" class="flex h-full gap-px">
+                <img :src="folder.thumbnails[0]" alt="" class="h-full w-1/2 object-cover" loading="lazy" />
+                <img :src="folder.thumbnails[1]" alt="" class="h-full w-1/2 object-cover" loading="lazy" />
+              </div>
+              <!-- 3 previews: left full-height + right split -->
+              <div v-else-if="folder.thumbnails.length >= 3" class="flex h-full gap-px">
+                <img :src="folder.thumbnails[0]" alt="" class="h-full w-1/2 object-cover" loading="lazy" />
+                <div class="flex h-full w-1/2 flex-col gap-px">
+                  <img :src="folder.thumbnails[1]" alt="" class="h-1/2 w-full object-cover" loading="lazy" />
+                  <img :src="folder.thumbnails[2]" alt="" class="h-1/2 w-full object-cover" loading="lazy" />
+                </div>
+              </div>
+              <!-- No thumbnail fallback -->
               <div v-else class="flex h-full items-center justify-center">
                 <Folder
                   class="h-12 w-12 transition"
@@ -1031,6 +1059,7 @@ async function fillSlot(slotId: string) {
           :active-target-id="imageStore.filters.targetId"
           :selected-image-ids="imageStore.selectedImageIds"
           :selected-images="imageStore.selectedImages"
+          :folder-preview-ids="imageStore.folderPreviewImageIds"
           @toggle-selected="toggleCollection"
           @preview="previewImage = $event"
           @archive="imageStore.archive"
@@ -1039,6 +1068,7 @@ async function fillSlot(slotId: string) {
           @copy-image="(image: ImageWithPostState) => runAction(() => copyImageToClipboard(image), 'Image copied.')"
           @mark-posted="imageStore.markPosted"
           @mark-skipped="imageStore.markSkipped"
+          @toggle-folder-preview="onToggleFolderPreview"
         />
       </template>
 

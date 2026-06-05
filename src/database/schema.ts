@@ -8,3 +8,4 @@ export { default as xTagsV2Schema } from "./migrations/005_x_tags_v2.sql?raw";
 export { default as personasSchema } from "./migrations/006_personas.sql?raw";
 export { default as storylinesSchema } from "./migrations/007_storylines.sql?raw";
 export { default as pickerCooldownSchema } from "./migrations/008_picker_cooldown.sql?raw";
+export { default as folderPreviewsSchema } from "./migrations/009_folder_previews.sql?raw";

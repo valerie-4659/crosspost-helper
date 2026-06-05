@@ -9,6 +9,8 @@ defineProps<{
   activeTargetId?: string;
   selectedImageIds: Set<string>;
   selectedImages: ImageWithPostState[];
+  /** When provided, shows folder-preview pin button on each card. */
+  folderPreviewIds?: Set<string>;
 }>();
 
 const emit = defineEmits<{
@@ -20,6 +22,7 @@ const emit = defineEmits<{
   copyImage: [image: ImageWithPostState];
   markPosted: [imageId: string, targetId: string];
   markSkipped: [imageId: string, targetId: string];
+  toggleFolderPreview: [imageId: string];
 }>();
 </script>
 
@@ -33,6 +36,7 @@ const emit = defineEmits<{
       :active-target-id="activeTargetId"
       :selected="selectedImageIds.has(image.id)"
       :drag-images="selectedImages"
+      :is-folder-preview="folderPreviewIds !== undefined ? folderPreviewIds.has(image.id) : undefined"
       @toggle-selected="emit('toggleSelected', $event)"
       @preview="emit('preview', $event)"
       @archive="(imageId, archived) => emit('archive', imageId, archived)"
@@ -41,6 +45,7 @@ const emit = defineEmits<{
       @copy-image="emit('copyImage', $event)"
       @mark-posted="(imageId, targetId) => emit('markPosted', imageId, targetId)"
       @mark-skipped="(imageId, targetId) => emit('markSkipped', imageId, targetId)"
+      @toggle-folder-preview="emit('toggleFolderPreview', $event)"
     />
   </div>
   <div v-else class="surface flex h-72 items-center justify-center rounded-lg text-sm text-slate-400">

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Archive, Check, Clipboard, Copy, EyeOff, Expand, FolderOpen, RotateCcw } from "lucide-vue-next";
+import { Archive, Check, Clipboard, Copy, EyeOff, Expand, FolderOpen, Pin, PinOff, RotateCcw } from "lucide-vue-next";
 import { setImagesDragData } from "@/services/imageActionService";
 import PlatformIcon from "@/components/PlatformIcon.vue";
 
@@ -34,6 +34,8 @@ const props = defineProps<{
   activeTargetId?: string;
   selected?: boolean;
   dragImages?: ImageWithPostState[];
+  /** When defined, shows the folder-preview pin button. true = currently pinned. */
+  isFolderPreview?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -45,6 +47,7 @@ const emit = defineEmits<{
   copyImage: [image: ImageWithPostState];
   markPosted: [imageId: string, targetId: string];
   markSkipped: [imageId: string, targetId: string];
+  toggleFolderPreview: [imageId: string];
 }>();
 
 const imageUrl = computed(() => {
@@ -100,6 +103,19 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
       <span v-if="image.isArchived" class="absolute bottom-3 left-3 rounded-md border border-rose/50 bg-rose/20 px-2 py-1 text-xs text-rose">
         Excluded
       </span>
+      <!-- Folder preview pin — bottom-right of image, only in leaf folder view -->
+      <button
+        v-if="isFolderPreview !== undefined"
+        class="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-md border bg-ink/80 transition"
+        :class="isFolderPreview
+          ? 'border-violet-500/50 text-violet-400'
+          : 'border-line text-slate-400 hover:border-violet-500/50 hover:text-violet-400'"
+        :title="isFolderPreview ? 'Remove from folder preview' : 'Pin as folder preview (max 3)'"
+        @click.stop="emit('toggleFolderPreview', image.id)"
+      >
+        <PinOff v-if="isFolderPreview" class="h-4 w-4" />
+        <Pin v-else class="h-4 w-4" />
+      </button>
     </div>
     <div class="space-y-3 p-3">
       <div>

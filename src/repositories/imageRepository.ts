@@ -612,16 +612,77 @@ export async function listDistinctFolders(sourceId?: string): Promise<FolderEntr
   return rows.map((r) => ({ folderPath: r.folder_path, count: r.count, isExcluded: Boolean(r.is_excluded) }));
 }
 
-/** Returns the first available thumbnail URL per folder path (for folder card previews). */
-export async function listFolderThumbnails(): Promise<Map<string, string>> {
+/**
+ * Returns up to 3 thumbnail URLs per folder path for folder card previews.
+ * Folders with custom folder_previews entries use those (ordered by position).
+ * Folders without custom entries fall back to a single auto-picked thumbnail.
+ */
+export async function listFolderThumbnails(): Promise<Map<string, string[]>> {
   const db = await getDatabase();
-  const rows = await db.select<Array<{ folder_path: string; thumbnail_url: string }>>(
+
+  // Custom previews (user-selected, up to 3 per folder)
+  const customRows = await db.select<Array<{ folder_path: string; thumbnail_url: string }>>(
+    `SELECT fp.folder_path, i.thumbnail_url
+     FROM folder_previews fp
+     JOIN images i ON i.id = fp.image_id AND i.thumbnail_url IS NOT NULL
+     ORDER BY fp.folder_path, fp.position`,
+  );
+  const result = new Map<string, string[]>();
+  for (const row of customRows) {
+    if (!result.has(row.folder_path)) result.set(row.folder_path, []);
+    result.get(row.folder_path)!.push(row.thumbnail_url);
+  }
+
+  // Auto-fallback for folders without custom previews
+  const autoRows = await db.select<Array<{ folder_path: string; thumbnail_url: string }>>(
     `SELECT folder_path, MIN(thumbnail_url) AS thumbnail_url
      FROM images
      WHERE thumbnail_url IS NOT NULL AND is_archived = 0
      GROUP BY folder_path`,
   );
-  return new Map(rows.map((r) => [r.folder_path, r.thumbnail_url]));
+  for (const row of autoRows) {
+    if (!result.has(row.folder_path)) result.set(row.folder_path, [row.thumbnail_url]);
+  }
+
+  return result;
+}
+
+/** Return the image IDs currently set as folder previews for a given folder, ordered by position. */
+export async function listFolderPreviewImageIds(folderPath: string): Promise<string[]> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<{ image_id: string }>>(
+    "SELECT image_id FROM folder_previews WHERE folder_path = $1 ORDER BY position",
+    [folderPath],
+  );
+  return rows.map((r) => r.image_id);
+}
+
+/** Add an image as a folder preview (max 3). No-op if already set or folder is at limit. */
+export async function addFolderPreview(folderPath: string, imageId: string): Promise<void> {
+  const db = await getDatabase();
+  const countRows = await db.select<Array<{ cnt: number }>>(
+    "SELECT COUNT(*) AS cnt FROM folder_previews WHERE folder_path = $1",
+    [folderPath],
+  );
+  if ((countRows[0]?.cnt ?? 0) >= 3) return;
+  const posRows = await db.select<Array<{ maxpos: number | null }>>(
+    "SELECT MAX(position) AS maxpos FROM folder_previews WHERE folder_path = $1",
+    [folderPath],
+  );
+  const nextPos = (posRows[0]?.maxpos ?? -1) + 1;
+  await db.execute(
+    "INSERT OR IGNORE INTO folder_previews (folder_path, image_id, position) VALUES ($1, $2, $3)",
+    [folderPath, imageId, nextPos],
+  );
+}
+
+/** Remove an image from the folder_previews for a given folder. */
+export async function removeFolderPreview(folderPath: string, imageId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    "DELETE FROM folder_previews WHERE folder_path = $1 AND image_id = $2",
+    [folderPath, imageId],
+  );
 }
 
 /** Returns posted-image counts grouped by (folder_path, target_id). */
