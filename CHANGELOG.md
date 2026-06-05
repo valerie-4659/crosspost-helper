@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.87 - 2026-06-05
+
+- Release v0.2.87
+
+
 ## v0.2.86 - 2026-06-04
 
 - fix(ai-panel): move OC blur handler to script to avoid template scope error
