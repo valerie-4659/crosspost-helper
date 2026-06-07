@@ -26,6 +26,18 @@ const PLATFORM_LIMITS: Record<string, number> = { civitai: 20, x: 4, bluesky: 4,
 const ai = useAiStore();
 const showAiPanel    = ref(false);
 const showVideoPanel = ref(false);
+/** When set, the video modal analyses only this single image path (card button click). */
+const videoPromptSinglePath = ref<string | null>(null);
+
+function openVideoPromptForImage(localPath: string) {
+  videoPromptSinglePath.value = localPath;
+  showVideoPanel.value = true;
+}
+
+function closeVideoPanel() {
+  showVideoPanel.value = false;
+  videoPromptSinglePath.value = null;
+}
 const showCollection = ref(false);
 
 // Network stat badge styling per platform type.
@@ -1069,6 +1081,7 @@ async function fillSlot(slotId: string) {
           @mark-posted="imageStore.markPosted"
           @mark-skipped="imageStore.markSkipped"
           @toggle-folder-preview="onToggleFolderPreview"
+          @video-prompt="openVideoPromptForImage"
         />
       </template>
 
@@ -1327,14 +1340,16 @@ async function fillSlot(slotId: string) {
             <button
               class="button h-7 w-7 p-0 hover:border-rose/60 hover:text-rose"
               title="Close"
-              @click="showVideoPanel = false"
+              @click="closeVideoPanel"
             ><X class="h-3.5 w-3.5" /></button>
           </div>
           <!-- Scrollable body -->
           <div class="overflow-y-auto px-5 py-4">
             <VideoPromptPanel
-              :image-paths="(collectionArray.length ? collectionArray : imageStore.selectedImages).map(i => i.localPath).filter((p): p is string => !!p).slice(0, 1)"
-              :disabled="selectedCount === 0 && collectionArray.length === 0"
+              :image-paths="videoPromptSinglePath
+                ? [videoPromptSinglePath]
+                : (collectionArray.length ? collectionArray : imageStore.selectedImages).map(i => i.localPath).filter((p): p is string => !!p).slice(0, 1)"
+              :disabled="!videoPromptSinglePath && selectedCount === 0 && collectionArray.length === 0"
             />
           </div>
         </div>
