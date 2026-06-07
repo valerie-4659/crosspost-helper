@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { Check, Clapperboard, Copy, Sparkles, X } from "lucide-vue-next";
+import { Check, Clapperboard, Copy, FolderOpen, Sparkles, X } from "lucide-vue-next";
 
 const props = defineProps<{
   imagePaths: string[];
@@ -45,6 +45,13 @@ async function copyPrompt() {
   await navigator.clipboard.writeText(generatedPrompt.value).catch(() => {});
   copied.value = true;
   setTimeout(() => (copied.value = false), 2000);
+}
+
+function revealSourceImage() {
+  const path = props.imagePaths[0];
+  if (path && window.desktop?.opener?.revealItemInDir) {
+    window.desktop.opener.revealItemInDir(path);
+  }
 }
 </script>
 
@@ -91,15 +98,25 @@ async function copyPrompt() {
       />
     </div>
 
-    <!-- Generate button -->
-    <button
-      class="button-primary w-full rounded-lg py-2"
-      :disabled="generating || disabled || !imagePaths.length"
-      @click="generate"
-    >
-      <Clapperboard class="h-4 w-4" :class="generating ? 'animate-pulse' : ''" />
-      {{ generating ? 'Generating…' : 'Generate Video Prompt' }}
-    </button>
+    <!-- Generate + Reveal row -->
+    <div class="flex gap-2">
+      <button
+        class="button-primary flex-1 rounded-lg py-2"
+        :disabled="generating || disabled || !imagePaths.length"
+        @click="generate"
+      >
+        <Clapperboard class="h-4 w-4" :class="generating ? 'animate-pulse' : ''" />
+        {{ generating ? 'Generating…' : 'Generate Video Prompt' }}
+      </button>
+      <button
+        v-if="imagePaths.length"
+        class="button h-10 w-10 shrink-0 p-0"
+        title="Reveal source image in Finder / Explorer"
+        @click="revealSourceImage"
+      >
+        <FolderOpen class="h-4 w-4" />
+      </button>
+    </div>
 
     <!-- Error -->
     <div v-if="generateError" class="rounded-lg border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">

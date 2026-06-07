@@ -32,9 +32,11 @@ contextBridge.exposeInMainWorld("desktop", {
       const p = fwd.startsWith("/") ? fwd : "/" + fwd;
       return "localfile://" + encodeURI(p);
     },
-    // Native OS drag — sends real files to external apps (browsers, native apps).
-    // iconPath is optional: path to a small thumbnail to use as the drag cursor icon.
-    startDrag: (filePaths, iconPath) => ipcRenderer.send("drag:start", filePaths, iconPath),
+    // Native OS drag — sends real files to external apps (browsers, Finder, etc).
+    // Uses sendSync so the main process calls webContents.startDrag() before the
+    // renderer's dragstart handler returns — ensuring the OS drag session is still
+    // active at the moment startDrag() is called.
+    startDrag: (filePaths, iconPath) => ipcRenderer.sendSync("drag:start", filePaths, iconPath),
   },
   upload: {
     // Save an image file to a local folder and index it in the library.
