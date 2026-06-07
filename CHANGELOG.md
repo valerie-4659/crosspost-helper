@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.90 - 2026-06-07
+
+- feat: update
+- fix(drag): native OS file drag — sendSync timing fix, img draggable=false; feat(video-prompt): Reveal in Finder button
+
+
 ## v0.2.89 - 2026-06-05
 
 - feat(picker): add Video Prompt Generator panel — reuses VideoPromptPanel component

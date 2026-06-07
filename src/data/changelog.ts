@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.90",
+    date: "2026-06-07",
+    items: [
+      "feat: update",
+      "fix(drag): native OS file drag — sendSync timing fix, img draggable=false; feat(video-prompt): Reveal in Finder button",
+    ],
+  },
+  {
     version: "0.2.89",
     date: "2026-06-05",
     items: [
