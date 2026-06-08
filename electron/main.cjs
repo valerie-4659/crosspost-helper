@@ -61,6 +61,7 @@ function migrationSql() {
     "007_storylines.sql",
     "008_picker_cooldown.sql",
     "009_folder_previews.sql",
+    "010_wavespeed_jobs.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
@@ -1369,26 +1370,95 @@ app.whenReady().then(() => {
     if (!res.ok) {
       throw new Error(`Wavespeed error ${res.status}: ${json.message || JSON.stringify(json)}`);
     }
-    return json.data; // { id, status, outputs, urls, ... }
+    const jobData = json.data; // { id, status, outputs, urls, ... }
+
+    // Persist the job so the background poller & queue panel can track it.
+    const localId = `wsjob_${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    const insertStmt = db.prepare(
+      `INSERT INTO wavespeed_jobs (id, job_id, image_path, prompt, model, resolution, duration, status, video_url, error_msg, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    insertStmt.run([
+      localId, jobData.id, imagePath || "",
+      prompt || "", videoModel || "wan_2_2_explicit",
+      resolution || "720p", duration || 8,
+      jobData.status || "created", null, null, now, now,
+    ]);
+    insertStmt.free();
+    persistDatabase();
+
+    return { ...jobData, localId }; // localId lets the frontend reference the DB row
   });
 
-  ipcMain.handle("wavespeed:poll", async (_event, requestId) => {
+  // wavespeed:getJobs — return all jobs ordered newest-first.
+  ipcMain.handle("wavespeed:getJobs", async () => {
     const db = await getDatabase();
-    const rows = db.exec("SELECT key, value FROM ai_config");
-    const cfg = {};
-    if (rows.length && rows[0].values) {
-      for (const [k, v] of rows[0].values) cfg[k] = v;
-    }
-    const apiKey = cfg["wavespeed_api_key"] || "";
-    if (!apiKey) throw new Error("No Wavespeed API key.");
-
-    const res = await fetch(`https://api.wavespeed.ai/api/v3/predictions/${requestId}/result`, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(`Poll error ${res.status}: ${json.message || ""}`);
-    return json.data; // { status, outputs, error, timings }
+    const stmt = db.prepare(
+      "SELECT * FROM wavespeed_jobs ORDER BY created_at DESC LIMIT 100"
+    );
+    const jobs = [];
+    while (stmt.step()) jobs.push(stmt.getAsObject());
+    stmt.free();
+    return jobs;
   });
+
+  // wavespeed:deleteJob — remove a single job by its local DB id.
+  ipcMain.handle("wavespeed:deleteJob", async (_event, localId) => {
+    const db = await getDatabase();
+    db.run("DELETE FROM wavespeed_jobs WHERE id = ?", [localId]);
+    persistDatabase();
+    return { ok: true };
+  });
+
+  // ── Background poller — polls all pending jobs every 12 s ─────────────────
+  // Runs in main process so jobs are tracked even when queue panel is closed.
+  async function pollPendingWavespeedJobs() {
+    let db;
+    try { db = await getDatabase(); } catch { return; }
+
+    const stmt = db.prepare(
+      "SELECT id, job_id FROM wavespeed_jobs WHERE status IN ('created', 'processing')"
+    );
+    const pending = [];
+    while (stmt.step()) pending.push(stmt.getAsObject());
+    stmt.free();
+    if (!pending.length) return;
+
+    const cfgRows = db.exec("SELECT key, value FROM ai_config WHERE key = 'wavespeed_api_key'");
+    const apiKey = cfgRows[0]?.values?.[0]?.[1] ?? "";
+    if (!apiKey) return;
+
+    for (const job of pending) {
+      try {
+        const r = await fetch(`https://api.wavespeed.ai/api/v3/predictions/${job.job_id}/result`, {
+          headers: { "Authorization": `Bearer ${apiKey}` },
+        });
+        const data = (await r.json()).data;
+        if (!r.ok || !data) continue;
+
+        const now = new Date().toISOString();
+        const videoUrl  = (data.status === "completed" && data.outputs?.length) ? data.outputs[0] : null;
+        const errorMsg  = data.error || null;
+
+        db.run(
+          "UPDATE wavespeed_jobs SET status = ?, video_url = ?, error_msg = ?, updated_at = ? WHERE id = ?",
+          [data.status, videoUrl, errorMsg, now, job.id]
+        );
+        persistDatabase();
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("wavespeed:jobUpdated", {
+            id: job.id, job_id: job.job_id,
+            status: data.status, video_url: videoUrl, error_msg: errorMsg, updated_at: now,
+          });
+        }
+      } catch (e) {
+        console.warn("[wavespeed poller] job", job.job_id, e.message);
+      }
+    }
+  }
+  setInterval(pollPendingWavespeedJobs, 12000);
 
   ipcMain.handle("core:invoke", (_event, command, args = {}) => {
     const onProgress = (mainWindow && !mainWindow.isDestroyed())

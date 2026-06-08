@@ -1,6 +1,7 @@
 export {};
 
 declare global {
+  /** Shape returned by the Wavespeed REST API. */
   interface WavespeedJob {
     id: string;
     model: string;
@@ -10,6 +11,24 @@ declare global {
     urls?: { get: string };
     timings?: { inference: number };
     created_at?: string;
+    /** Local DB row id — added by the IPC handler after persisting. */
+    localId?: string;
+  }
+
+  /** A row from the wavespeed_jobs SQLite table. */
+  interface WavespeedJobRecord {
+    id: string;
+    job_id: string;
+    image_path: string;
+    prompt: string;
+    model: string;
+    resolution: string;
+    duration: number;
+    status: "created" | "processing" | "completed" | "failed";
+    video_url: string | null;
+    error_msg: string | null;
+    created_at: string;
+    updated_at: string;
   }
 
   interface Window {
@@ -100,7 +119,10 @@ declare global {
           duration?: 5 | 8;
           seed?: number;
         }): Promise<WavespeedJob>;
-        poll(requestId: string): Promise<WavespeedJob>;
+        getJobs(): Promise<WavespeedJobRecord[]>;
+        deleteJob(localId: string): Promise<{ ok: boolean }>;
+        onJobUpdated(cb: (data: Partial<WavespeedJobRecord>) => void): void;
+        offJobUpdated(): void;
       };
       scan: {
         /**

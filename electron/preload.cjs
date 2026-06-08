@@ -71,10 +71,16 @@ contextBridge.exposeInMainWorld("desktop", {
       ipcRenderer.invoke("ai:generate-video-prompt", imagePaths, videoModel, instructions),
   },
   wavespeed: {
-    // Submit an image-to-video job. Returns the initial job object { id, status, … }.
+    /** Submit an image-to-video job. Returns the initial job object + localId. */
     submit: (params) => ipcRenderer.invoke("wavespeed:submit", params),
-    // Poll a previously submitted job. Returns { status, outputs, error }.
-    poll: (requestId) => ipcRenderer.invoke("wavespeed:poll", requestId),
+    /** Return all jobs from the DB, newest first. */
+    getJobs: () => ipcRenderer.invoke("wavespeed:getJobs"),
+    /** Delete a job by its local DB id. */
+    deleteJob: (localId) => ipcRenderer.invoke("wavespeed:deleteJob", localId),
+    /** Subscribe to background-poller job-update events. */
+    onJobUpdated: (cb) => ipcRenderer.on("wavespeed:jobUpdated", (_e, data) => cb(data)),
+    /** Remove all job-update listeners. */
+    offJobUpdated: () => ipcRenderer.removeAllListeners("wavespeed:jobUpdated"),
   },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),

@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { Archive, Check, ChevronDown, ChevronRight, Clapperboard, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Send, Sparkles, Trash2, Upload, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import VideoPromptPanel from "@/components/VideoPromptPanel.vue";
+import VideoQueuePanel from "@/components/VideoQueuePanel.vue";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import ImageLightbox from "@/components/ImageLightbox.vue";
@@ -26,6 +27,7 @@ const PLATFORM_LIMITS: Record<string, number> = { civitai: 20, x: 4, bluesky: 4,
 const ai = useAiStore();
 const showAiPanel    = ref(false);
 const showVideoPanel = ref(false);
+const showVideoQueue = ref(false);
 /** When set, the video modal analyses only this single image path (card button click). */
 const videoPromptSinglePath = ref<string | null>(null);
 
@@ -886,6 +888,15 @@ async function fillSlot(slotId: string) {
           <Clapperboard class="h-3.5 w-3.5" />Video Prompt
         </button>
 
+        <button
+          class="button h-7 gap-1.5 px-2 text-xs"
+          :class="showVideoQueue ? 'border-violet-400/60 bg-violet-400/10 text-violet-300' : ''"
+          title="View Wavespeed video generation jobs"
+          @click="showVideoQueue = true"
+        >
+          <Clapperboard class="h-3.5 w-3.5" />Video Queue
+        </button>
+
         <!-- Upload button — always available when inside a folder -->
         <button
           class="button h-7 gap-1.5 px-2 text-xs ml-auto"
@@ -1350,7 +1361,42 @@ async function fillSlot(slotId: string) {
                 ? [videoPromptSinglePath]
                 : (collectionArray.length ? collectionArray : imageStore.selectedImages).map(i => i.localPath).filter((p): p is string => !!p).slice(0, 1)"
               :disabled="!videoPromptSinglePath && selectedCount === 0 && collectionArray.length === 0"
+              @open-queue="closeVideoPanel(); showVideoQueue = true"
             />
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- ── Video Queue Modal ────────────────────────────────────────────────── -->
+  <Teleport to="body">
+    <Transition
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0 scale-95"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="opacity-100 scale-100"
+      leave-to-class="opacity-0 scale-95"
+    >
+      <div
+        v-if="showVideoQueue"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+        @click.self="showVideoQueue = false"
+      >
+        <div class="relative mx-4 flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-panelSoft shadow-2xl">
+          <div class="flex shrink-0 items-center justify-between border-b border-line px-5 py-3">
+            <div class="flex items-center gap-2">
+              <Clapperboard class="h-4 w-4 text-violet-300" />
+              <p class="text-sm font-semibold text-white">Video Queue</p>
+            </div>
+            <button
+              class="button h-7 w-7 p-0 hover:border-rose/60 hover:text-rose"
+              @click="showVideoQueue = false"
+            ><X class="h-3.5 w-3.5" /></button>
+          </div>
+          <div class="overflow-y-auto px-5 py-4">
+            <VideoQueuePanel />
           </div>
         </div>
       </div>

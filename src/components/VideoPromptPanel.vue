@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { Check, Clapperboard, Copy, ExternalLink, FolderOpen, X } from "lucide-vue-next";
+import { Check, Clapperboard, Copy, FolderOpen, X } from "lucide-vue-next";
 
 const props = defineProps<{
   imagePaths: string[];
@@ -30,19 +30,8 @@ const wavespeedAvailable = ref(false);
 const wsResolution = ref<"720p" | "480p">("720p");
 const wsDuration   = ref<5 | 8>(8);
 const wsSubmitting = ref(false);
-const wsJobId      = ref<string | null>(null);
-const wsStatus     = ref<string>("");
-const wsVideoUrl   = ref<string | null>(null);
+const wsSubmitted  = ref(false);   // true after job was queued successfully
 const wsError      = ref("");
-let wsPoller: ReturnType<typeof setInterval> | null = null;
-
-const WS_STATUS_LABELS: Record<string, string> = {
-  created:    "Queued — waiting for a GPU…",
-  processing: "Rendering… this usually takes 1–3 min",
-  completed:  "Done! Video ready.",
-  failed:     "Generation failed.",
-};
-const wsStatusLabel = ref("");
 
 onMounted(async () => {
   const rows = await window.desktop.db.select<Array<{ value: string }>>(
@@ -84,33 +73,23 @@ function revealSourceImage() {
   }
 }
 
+const emit = defineEmits<{ "open-queue": [] }>();
+
 async function submitToWavespeed() {
   const imagePath = props.imagePaths[0];
   if (!imagePath || !generatedPrompt.value) return;
   wsSubmitting.value = true;
-  wsError.value = "";
-  wsVideoUrl.value = null;
-  wsJobId.value = null;
-  wsStatus.value = "";
-  wsStatusLabel.value = "";
+  wsSubmitted.value  = false;
+  wsError.value      = "";
   try {
-    const job = await window.desktop.wavespeed.submit({
+    await window.desktop.wavespeed.submit({
       imagePath,
       prompt:     generatedPrompt.value,
       videoModel: selectedModel.value,
       resolution: wsResolution.value,
       duration:   wsDuration.value,
     });
-    wsJobId.value = job.id;
-    wsStatus.value = job.status;
-    wsStatusLabel.value = WS_STATUS_LABELS[job.status] ?? job.status;
-    if (job.status === "completed" && job.outputs?.length) {
-      wsVideoUrl.value = job.outputs[0];
-    } else if (job.status !== "failed") {
-      startPolling();
-    } else {
-      wsError.value = job.error || "Generation failed.";
-    }
+    wsSubmitted.value = true;
   } catch (err) {
     wsError.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -118,44 +97,10 @@ async function submitToWavespeed() {
   }
 }
 
-function startPolling() {
-  stopPolling();
-  wsPoller = setInterval(async () => {
-    if (!wsJobId.value) { stopPolling(); return; }
-    try {
-      const job = await window.desktop.wavespeed.poll(wsJobId.value);
-      wsStatus.value = job.status;
-      wsStatusLabel.value = WS_STATUS_LABELS[job.status] ?? job.status;
-      if (job.status === "completed") {
-        stopPolling();
-        if (job.outputs?.length) wsVideoUrl.value = job.outputs[0];
-      } else if (job.status === "failed") {
-        stopPolling();
-        wsError.value = job.error || "Generation failed.";
-      }
-    } catch (err) {
-      wsError.value = err instanceof Error ? err.message : String(err);
-      stopPolling();
-    }
-  }, 4000);
-}
-
-function stopPolling() {
-  if (wsPoller) { clearInterval(wsPoller); wsPoller = null; }
-}
-
 function resetWavespeed() {
-  stopPolling();
-  wsJobId.value = null;
-  wsStatus.value = "";
-  wsStatusLabel.value = "";
-  wsVideoUrl.value = null;
-  wsError.value = "";
+  wsSubmitted.value  = false;
+  wsError.value      = "";
   wsSubmitting.value = false;
-}
-
-function openVideoUrl() {
-  if (wsVideoUrl.value) window.desktop.opener.openUrl(wsVideoUrl.value);
 }
 </script>
 
@@ -280,9 +225,9 @@ function openVideoUrl() {
         </div>
       </div>
 
-      <!-- Submit button (shown before job is sent) -->
+      <!-- Submit / submitting / submitted states -->
       <button
-        v-if="!wsJobId && !wsSubmitting"
+        v-if="!wsSubmitted && !wsSubmitting"
         class="w-full rounded-lg bg-violet-600 hover:bg-violet-500 active:bg-violet-700 py-2 text-xs font-semibold text-white transition flex items-center justify-center gap-2"
         :disabled="!props.imagePaths[0]"
         @click="submitToWavespeed"
@@ -299,38 +244,27 @@ function openVideoUrl() {
         Uploading &amp; submitting…
       </button>
 
-      <!-- Job status -->
-      <div v-if="wsJobId" class="space-y-2">
-        <div class="flex items-center gap-2">
-          <span
-            class="h-2 w-2 shrink-0 rounded-full"
-            :class="{
-              'bg-mint': wsStatus === 'completed',
-              'bg-rose': wsStatus === 'failed',
-              'bg-gold animate-pulse': wsStatus === 'created' || wsStatus === 'processing',
-            }"
-          />
-          <span class="text-xs text-slate-300">{{ wsStatusLabel }}</span>
+      <!-- Success: job queued -->
+      <div v-if="wsSubmitted" class="space-y-2">
+        <div class="flex items-center gap-2 rounded-lg border border-mint/30 bg-mint/10 px-3 py-2">
+          <span class="h-2 w-2 rounded-full bg-mint" />
+          <span class="text-xs text-mint font-medium">Job queued — rendering in background</span>
         </div>
-
-        <!-- Open video when done -->
-        <button
-          v-if="wsVideoUrl"
-          class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-mint/40 bg-mint/10 py-2 text-xs font-semibold text-mint transition hover:bg-mint/20"
-          @click="openVideoUrl"
-        >
-          <ExternalLink class="h-3.5 w-3.5" />
-          Open Video
-        </button>
-
-        <!-- Error -->
-        <p v-if="wsError" class="text-xs text-rose">{{ wsError }}</p>
-
-        <!-- Retry -->
-        <button class="button h-7 gap-1 px-2.5 text-xs" @click="resetWavespeed">
-          <X class="h-3 w-3" /> Reset
-        </button>
+        <div class="flex gap-2">
+          <button
+            class="button h-7 flex-1 gap-1.5 px-2 text-xs border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20"
+            @click="emit('open-queue')"
+          >
+            <Clapperboard class="h-3 w-3" /> Open Video Queue
+          </button>
+          <button class="button h-7 gap-1 px-2.5 text-xs" @click="resetWavespeed">
+            <X class="h-3 w-3" />New
+          </button>
+        </div>
       </div>
+
+      <!-- Error -->
+      <p v-if="wsError" class="text-xs text-rose">{{ wsError }}</p>
     </div>
 
     <!-- Wavespeed not configured hint -->
