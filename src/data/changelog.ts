@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.95",
+    date: "2026-06-08",
+    items: [
+      "fix(video-queue): move to dedicated nav page — remove misplaced modal buttons from Library/Picker sidebar",
+    ],
+  },
+  {
     version: "0.2.94",
     date: "2026-06-08",
     items: [
