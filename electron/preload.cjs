@@ -73,14 +73,25 @@ contextBridge.exposeInMainWorld("desktop", {
   wavespeed: {
     /** Submit an image-to-video job. Returns the initial job object + localId. */
     submit: (params) => ipcRenderer.invoke("wavespeed:submit", params),
-    /** Return all jobs from the DB, newest first. */
+    /** Return all video jobs from the DB, newest first. */
     getJobs: () => ipcRenderer.invoke("wavespeed:getJobs"),
-    /** Delete a job by its local DB id. */
+    /** Delete a video job by its local DB id. */
     deleteJob: (localId) => ipcRenderer.invoke("wavespeed:deleteJob", localId),
-    /** Subscribe to background-poller job-update events. */
+    /** Subscribe to background-poller video job-update events. */
     onJobUpdated: (cb) => ipcRenderer.on("wavespeed:jobUpdated", (_e, data) => cb(data)),
-    /** Remove all job-update listeners. */
+    /** Remove all video job-update listeners. */
     offJobUpdated: () => ipcRenderer.removeAllListeners("wavespeed:jobUpdated"),
+
+    /** Submit an image-recreation job. Returns the initial job object + localId. */
+    submitImage: (params) => ipcRenderer.invoke("wavespeed:submitImage", params),
+    /** Return all image jobs from the DB, newest first. */
+    getImageJobs: () => ipcRenderer.invoke("wavespeed:getImageJobs"),
+    /** Delete an image job by its local DB id. */
+    deleteImageJob: (localId) => ipcRenderer.invoke("wavespeed:deleteImageJob", localId),
+    /** Subscribe to background-poller image job-update events. */
+    onImageJobUpdated: (cb) => ipcRenderer.on("wavespeed:imageJobUpdated", (_e, data) => cb(data)),
+    /** Remove all image job-update listeners. */
+    offImageJobUpdated: () => ipcRenderer.removeAllListeners("wavespeed:imageJobUpdated"),
   },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),

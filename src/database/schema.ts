@@ -10,3 +10,4 @@ export { default as storylinesSchema } from "./migrations/007_storylines.sql?raw
 export { default as pickerCooldownSchema } from "./migrations/008_picker_cooldown.sql?raw";
 export { default as folderPreviewsSchema } from "./migrations/009_folder_previews.sql?raw";
 export { default as wavespeedJobsSchema } from "./migrations/010_wavespeed_jobs.sql?raw";
+export { default as wavespeedImageJobsSchema } from "./migrations/011_wavespeed_image_jobs.sql?raw";

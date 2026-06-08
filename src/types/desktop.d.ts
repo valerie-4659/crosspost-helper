@@ -31,6 +31,21 @@ declare global {
     updated_at: string;
   }
 
+  /** A row from the wavespeed_image_jobs SQLite table. */
+  interface WavespeedImageJobRecord {
+    id: string;
+    job_id: string;
+    image_path: string;
+    prompt: string;
+    model: string;
+    size: string;
+    status: "created" | "processing" | "completed" | "failed";
+    result_url: string | null;
+    error_msg: string | null;
+    created_at: string;
+    updated_at: string;
+  }
+
   interface Window {
     desktop: {
       db: {
@@ -115,14 +130,25 @@ declare global {
           imagePath: string;
           prompt: string;
           videoModel?: string;
-          resolution?: "480p" | "720p";
-          duration?: 5 | 8;
+          resolution?: string;
+          duration?: number;
           seed?: number;
         }): Promise<WavespeedJob>;
         getJobs(): Promise<WavespeedJobRecord[]>;
         deleteJob(localId: string): Promise<{ ok: boolean }>;
         onJobUpdated(cb: (data: Partial<WavespeedJobRecord>) => void): void;
         offJobUpdated(): void;
+
+        submitImage(params: {
+          imagePath: string;
+          prompt: string;
+          imageModel?: string;
+          size?: string;
+        }): Promise<WavespeedJob>;
+        getImageJobs(): Promise<WavespeedImageJobRecord[]>;
+        deleteImageJob(localId: string): Promise<{ ok: boolean }>;
+        onImageJobUpdated(cb: (data: Partial<WavespeedImageJobRecord>) => void): void;
+        offImageJobUpdated(): void;
       };
       scan: {
         /**

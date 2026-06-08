@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Archive, Check, Clapperboard, Clipboard, Copy, EyeOff, Expand, FolderOpen, Pin, PinOff, RotateCcw } from "lucide-vue-next";
+import { Archive, Check, Clapperboard, Clipboard, Copy, EyeOff, Expand, FolderOpen, Image, Pin, PinOff, RotateCcw } from "lucide-vue-next";
 import { setImagesDragData } from "@/services/imageActionService";
 import PlatformIcon from "@/components/PlatformIcon.vue";
 
@@ -49,6 +49,7 @@ const emit = defineEmits<{
   markSkipped: [imageId: string, targetId: string];
   toggleFolderPreview: [imageId: string];
   videoPrompt: [localPath: string];
+  recreateImage: [localPath: string];
 }>();
 
 const imageUrl = computed(() => {
@@ -105,15 +106,23 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
       <span v-if="image.isArchived" class="absolute bottom-3 left-3 rounded-md border border-rose/50 bg-rose/20 px-2 py-1 text-xs text-rose">
         Excluded
       </span>
-      <!-- Video prompt — bottom-left of image, only when not excluded and has a local file -->
-      <button
-        v-if="!image.isArchived && image.localPath"
-        class="absolute bottom-3 left-3 flex h-8 w-8 items-center justify-center rounded-md border border-line bg-ink/80 text-slate-400 transition hover:border-violet-500/50 hover:text-violet-400"
-        title="Generate video prompt for this image"
-        @click.stop="emit('videoPrompt', image.localPath!)"
-      >
-        <Clapperboard class="h-4 w-4" />
-      </button>
+      <!-- Video prompt + Recreate — bottom-left of image, only when not excluded and has a local file -->
+      <div v-if="!image.isArchived && image.localPath" class="absolute bottom-3 left-3 flex gap-1.5">
+        <button
+          class="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-ink/80 text-slate-400 transition hover:border-violet-500/50 hover:text-violet-400"
+          title="Generate video prompt for this image"
+          @click.stop="emit('videoPrompt', image.localPath!)"
+        >
+          <Clapperboard class="h-4 w-4" />
+        </button>
+        <button
+          class="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-ink/80 text-slate-400 transition hover:border-sky-500/50 hover:text-sky-400"
+          title="Recreate this image with AI"
+          @click.stop="emit('recreateImage', image.localPath!)"
+        >
+          <Image class="h-4 w-4" />
+        </button>
+      </div>
       <!-- Folder preview pin — bottom-right of image, only in leaf folder view -->
       <button
         v-if="isFolderPreview !== undefined"

@@ -62,6 +62,7 @@ function migrationSql() {
     "008_picker_cooldown.sql",
     "009_folder_previews.sql",
     "010_wavespeed_jobs.sql",
+    "011_wavespeed_image_jobs.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
@@ -1319,11 +1320,46 @@ app.whenReady().then(() => {
   });
   // ── Wavespeed AI — Image-to-Video submission ─────────────────────────────
   // Maps the app's video model keys to Wavespeed REST API endpoint slugs.
-  const WAVESPEED_ENDPOINT_MAP = {
-    wan_2_2_explicit: "wavespeed-ai/wan-2.2-spicy/image-to-video",
-    wan_2_5:          "wavespeed-ai/wan-2.5/image-to-video",
-    wan_2_7:          "wavespeed-ai/wan-2.7/image-to-video",
+  const WAVESPEED_VIDEO_ENDPOINT_MAP = {
+    // ── WAN family ──────────────────────────────────────────────────────────
+    wan_2_2_explicit:  "wavespeed-ai/wan-2.2-spicy/image-to-video",
+    wan_2_5:           "alibaba/wan-2.5/image-to-video",
+    wan_2_6_spicy:     "alibaba/wan-2.6/image-to-video-spicy",
+    wan_2_7:           "alibaba/wan-2.7/image-to-video",
+    wan_2_7_spicy:     "alibaba/wan-2.7/image-to-video-spicy",
+    // ── Kling family ────────────────────────────────────────────────────────
+    // duration: 5 or 10 s; no resolution/seed param; uses guidance_scale
+    kling_v2_5:        "kwaivgi/kling-v2.5-turbo-pro/image-to-video",
+    kling_v3_0_pro:    "kwaivgi/kling-v3.0-pro/image-to-video",
+    // ── Grok ────────────────────────────────────────────────────────────────
+    grok_imagine:      "x-ai/grok-imagine-video/image-to-video",
+    // ── Seedance family ─────────────────────────────────────────────────────
+    // duration: 4–15 s; resolution 720p or 1080p; adds generate_audio
+    seedance_2_0:      "bytedance/seedance-2.0/image-to-video",
+    seedance_1_5_pro:  "bytedance/seedance-v1.5-pro/image-to-video",
   };
+
+  /** Build a model-specific request body for image-to-video. */
+  function buildVideoBody(videoModel, imageDataUri, prompt, resolution, duration, seed) {
+    const base = { prompt: prompt || "", image: imageDataUri };
+    if (videoModel && videoModel.startsWith("kling")) {
+      // Kling: guidance_scale, duration 5 or 10, no resolution/seed
+      const klDuration = [5, 10].includes(Number(duration)) ? Number(duration) : 5;
+      return { ...base, guidance_scale: 0.5, duration: klDuration };
+    }
+    if (videoModel === "grok_imagine") {
+      // Grok: just prompt + image
+      return base;
+    }
+    if (videoModel && videoModel.startsWith("seedance")) {
+      // Seedance: resolution 720p/1080p, duration 4-15, generate_audio
+      const sdDuration = Math.min(15, Math.max(4, Number(duration) || 5));
+      const sdRes = ["720p", "1080p"].includes(resolution) ? resolution : "720p";
+      return { ...base, resolution: sdRes, duration: sdDuration, generate_audio: true };
+    }
+    // WAN family (default): resolution, duration, seed
+    return { ...base, resolution: resolution || "720p", duration: Number(duration) || 8, seed: seed ?? -1 };
+  }
 
   ipcMain.handle("wavespeed:submit", async (_event, { imagePath, prompt, videoModel, resolution, duration, seed }) => {
     const db = await getDatabase();
@@ -1352,14 +1388,8 @@ app.whenReady().then(() => {
       imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
     }
 
-    const endpointSlug = WAVESPEED_ENDPOINT_MAP[videoModel] ?? WAVESPEED_ENDPOINT_MAP["wan_2_2_explicit"];
-    const body = {
-      prompt:     prompt || "",
-      image:      imageDataUri,
-      resolution: resolution || "720p",
-      duration:   duration   || 8,
-      seed:       seed       ?? -1,
-    };
+    const endpointSlug = WAVESPEED_VIDEO_ENDPOINT_MAP[videoModel] ?? WAVESPEED_VIDEO_ENDPOINT_MAP["wan_2_2_explicit"];
+    const body = buildVideoBody(videoModel, imageDataUri, prompt, resolution, duration, seed);
 
     const res = await fetch(`https://api.wavespeed.ai/api/v3/${endpointSlug}`, {
       method:  "POST",
@@ -1411,6 +1441,103 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
+  // ── Wavespeed AI — Image-generation submission ────────────────────────────
+  // Maps the app's image model keys to Wavespeed REST API endpoint slugs.
+  // All endpoints accept: prompt (string), images (array of base64 data URIs), size (optional)
+  const WAVESPEED_IMAGE_ENDPOINT_MAP = {
+    flux_2_klein:    "wavespeed-ai/flux-2-klein-4b/edit",
+    flux_2_dev:      "wavespeed-ai/flux-2-dev/edit",
+    flux_2_turbo:    "wavespeed-ai/flux-2-turbo/edit",
+    qwen_image_edit: "wavespeed-ai/qwen-image-edit-plus",
+    nano_banana:     "google/nano-banana-pro-edit",
+    gpt_image_2:     "openai/gpt-image-2/edit",
+    wan_2_7_img:     "alibaba/wan-2.7/image-edit",
+    z_image_turbo:   "wavespeed-ai/z-image-turbo/image-to-image",
+  };
+
+  ipcMain.handle("wavespeed:submitImage", async (_event, { imagePath, prompt, imageModel, size }) => {
+    const db = await getDatabase();
+    const rows = db.exec("SELECT key, value FROM ai_config");
+    const cfg = {};
+    if (rows.length && rows[0].values) {
+      for (const [k, v] of rows[0].values) cfg[k] = v;
+    }
+    const apiKey = cfg["wavespeed_api_key"] || "";
+    if (!apiKey) throw new Error("No Wavespeed API key configured. Add it in Settings → Wavespeed AI.");
+
+    // Resize image to max 1024 px for image generation
+    let imageDataUri;
+    try {
+      if (!imagePath || !fs.existsSync(imagePath)) throw new Error("Image not found: " + imagePath);
+      const img = await nativeImage.createThumbnailFromPath(imagePath, { width: 1024, height: 1024 });
+      if (!img.isEmpty()) {
+        imageDataUri = "data:image/jpeg;base64," + img.toJPEG(90).toString("base64");
+      } else {
+        const raw = fs.readFileSync(imagePath);
+        imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
+      }
+    } catch (e) {
+      const raw = fs.readFileSync(imagePath);
+      imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
+    }
+
+    const endpointSlug = WAVESPEED_IMAGE_ENDPOINT_MAP[imageModel] ?? WAVESPEED_IMAGE_ENDPOINT_MAP["flux_2_klein"];
+    const body = {
+      prompt:  prompt || "",
+      images:  [imageDataUri],
+      size:    size || "1024*1024",
+      seed:    -1,
+    };
+
+    const res = await fetch(`https://api.wavespeed.ai/api/v3/${endpointSlug}`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body:    JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(`Wavespeed error ${res.status}: ${json.message || JSON.stringify(json)}`);
+    }
+    const jobData = json.data;
+
+    const localId = `wsimgjob_${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    const insertStmt = db.prepare(
+      `INSERT INTO wavespeed_image_jobs (id, job_id, image_path, prompt, model, size, status, result_url, error_msg, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    insertStmt.run([
+      localId, jobData.id, imagePath || "",
+      prompt || "", imageModel || "flux_2_klein",
+      size || "1024*1024",
+      jobData.status || "created", null, null, now, now,
+    ]);
+    insertStmt.free();
+    persistDatabase();
+
+    return { ...jobData, localId };
+  });
+
+  // wavespeed:getImageJobs — return all image jobs ordered newest-first.
+  ipcMain.handle("wavespeed:getImageJobs", async () => {
+    const db = await getDatabase();
+    const stmt = db.prepare(
+      "SELECT * FROM wavespeed_image_jobs ORDER BY created_at DESC LIMIT 100"
+    );
+    const jobs = [];
+    while (stmt.step()) jobs.push(stmt.getAsObject());
+    stmt.free();
+    return jobs;
+  });
+
+  // wavespeed:deleteImageJob — remove a single image job by its local DB id.
+  ipcMain.handle("wavespeed:deleteImageJob", async (_event, localId) => {
+    const db = await getDatabase();
+    db.run("DELETE FROM wavespeed_image_jobs WHERE id = ?", [localId]);
+    persistDatabase();
+    return { ok: true };
+  });
+
   // ── Background poller — polls all pending jobs every 12 s ─────────────────
   // Runs in main process so jobs are tracked even when queue panel is closed.
   async function pollPendingWavespeedJobs() {
@@ -1458,7 +1585,54 @@ app.whenReady().then(() => {
       }
     }
   }
+  async function pollPendingWavespeedImageJobs() {
+    let db;
+    try { db = await getDatabase(); } catch { return; }
+
+    const stmt = db.prepare(
+      "SELECT id, job_id FROM wavespeed_image_jobs WHERE status IN ('created', 'processing')"
+    );
+    const pending = [];
+    while (stmt.step()) pending.push(stmt.getAsObject());
+    stmt.free();
+    if (!pending.length) return;
+
+    const cfgRows = db.exec("SELECT key, value FROM ai_config WHERE key = 'wavespeed_api_key'");
+    const apiKey = cfgRows[0]?.values?.[0]?.[1] ?? "";
+    if (!apiKey) return;
+
+    for (const job of pending) {
+      try {
+        const r = await fetch(`https://api.wavespeed.ai/api/v3/predictions/${job.job_id}/result`, {
+          headers: { "Authorization": `Bearer ${apiKey}` },
+        });
+        const data = (await r.json()).data;
+        if (!r.ok || !data) continue;
+
+        const now = new Date().toISOString();
+        const resultUrl = (data.status === "completed" && data.outputs?.length) ? data.outputs[0] : null;
+        const errorMsg  = data.error || null;
+
+        db.run(
+          "UPDATE wavespeed_image_jobs SET status = ?, result_url = ?, error_msg = ?, updated_at = ? WHERE id = ?",
+          [data.status, resultUrl, errorMsg, now, job.id]
+        );
+        persistDatabase();
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("wavespeed:imageJobUpdated", {
+            id: job.id, job_id: job.job_id,
+            status: data.status, result_url: resultUrl, error_msg: errorMsg, updated_at: now,
+          });
+        }
+      } catch (e) {
+        console.warn("[wavespeed image poller] job", job.job_id, e.message);
+      }
+    }
+  }
+
   setInterval(pollPendingWavespeedJobs, 12000);
+  setInterval(pollPendingWavespeedImageJobs, 12000);
 
   ipcMain.handle("core:invoke", (_event, command, args = {}) => {
     const onProgress = (mainWindow && !mainWindow.isDestroyed())

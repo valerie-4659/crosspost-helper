@@ -24,6 +24,7 @@ const emit = defineEmits<{
   markSkipped: [imageId: string, targetId: string];
   toggleFolderPreview: [imageId: string];
   videoPrompt: [localPath: string];
+  recreateImage: [localPath: string];
 }>();
 </script>
 
@@ -48,6 +49,7 @@ const emit = defineEmits<{
       @mark-skipped="(imageId, targetId) => emit('markSkipped', imageId, targetId)"
       @toggle-folder-preview="emit('toggleFolderPreview', $event)"
       @video-prompt="emit('videoPrompt', $event)"
+      @recreate-image="emit('recreateImage', $event)"
     />
   </div>
   <div v-else class="surface flex h-72 items-center justify-center rounded-lg text-sm text-slate-400">

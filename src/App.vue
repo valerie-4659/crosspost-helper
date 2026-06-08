@@ -4,6 +4,7 @@ import PickerPage from "@/pages/PickerPage.vue";
 import LibraryPage from "@/pages/LibraryPage.vue";
 import QueuePage from "@/pages/QueuePage.vue";
 import VideoQueuePage from "@/pages/VideoQueuePage.vue";
+import ImageQueuePage from "@/pages/ImageQueuePage.vue";
 import ScanPage from "@/pages/ScanPage.vue";
 import SettingsPage from "@/pages/SettingsPage.vue";
 import AboutPage from "@/pages/AboutPage.vue";
@@ -39,6 +40,7 @@ onMounted(async () => {
       <LibraryPage v-else-if="currentPage === 'library'" />
       <QueuePage v-else-if="currentPage === 'queue'" />
       <VideoQueuePage v-else-if="currentPage === 'video-queue'" />
+      <ImageQueuePage v-else-if="currentPage === 'image-queue'" />
       <ScanPage v-else-if="currentPage === 'scan'" />
       <SettingsPage v-else-if="currentPage === 'settings'" />
       <BrowserExtensionPage v-else-if="currentPage === 'extension'" />

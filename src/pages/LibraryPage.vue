@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { Archive, Check, ChevronDown, ChevronRight, Clapperboard, Download, Eye, EyeOff, Folder, FolderX, RefreshCcw, RotateCcw, Send, Sparkles, Trash2, Upload, X } from "lucide-vue-next";
+import { Archive, Check, ChevronDown, ChevronRight, Clapperboard, Download, Eye, EyeOff, Folder, FolderX, Image, RefreshCcw, RotateCcw, Send, Sparkles, Trash2, Upload, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import VideoPromptPanel from "@/components/VideoPromptPanel.vue";
+import ImageGeneratePanel from "@/components/ImageGeneratePanel.vue";
 import FilterBar from "@/components/FilterBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import ImageLightbox from "@/components/ImageLightbox.vue";
@@ -37,6 +38,20 @@ function openVideoPromptForImage(localPath: string) {
 function closeVideoPanel() {
   showVideoPanel.value = false;
   videoPromptSinglePath.value = null;
+}
+
+const showImagePanel = ref(false);
+/** When set, the image recreate modal analyses only this single image path. */
+const imageRecreateSinglePath = ref<string | null>(null);
+
+function openImageRecreateForImage(localPath: string) {
+  imageRecreateSinglePath.value = localPath;
+  showImagePanel.value = true;
+}
+
+function closeImagePanel() {
+  showImagePanel.value = false;
+  imageRecreateSinglePath.value = null;
 }
 const showCollection = ref(false);
 
@@ -1082,6 +1097,7 @@ async function fillSlot(slotId: string) {
           @mark-skipped="imageStore.markSkipped"
           @toggle-folder-preview="onToggleFolderPreview"
           @video-prompt="openVideoPromptForImage"
+          @recreate-image="openImageRecreateForImage"
         />
       </template>
 
@@ -1351,6 +1367,45 @@ async function fillSlot(slotId: string) {
                 : (collectionArray.length ? collectionArray : imageStore.selectedImages).map(i => i.localPath).filter((p): p is string => !!p).slice(0, 1)"
               :disabled="!videoPromptSinglePath && selectedCount === 0 && collectionArray.length === 0"
 
+            />
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- ── Image Recreate Modal ──────────────────────────────────────────────── -->
+  <Teleport to="body">
+    <Transition
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0 scale-95"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="opacity-100 scale-100"
+      leave-to-class="opacity-0 scale-95"
+    >
+      <div
+        v-if="showImagePanel"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      >
+        <div class="relative mx-4 flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-panelSoft shadow-2xl">
+          <!-- Header -->
+          <div class="flex shrink-0 items-center justify-between border-b border-line px-5 py-3">
+            <div class="flex items-center gap-2">
+              <Image class="h-4 w-4 text-sky-300" />
+              <p class="text-sm font-semibold text-white">Recreate Image</p>
+            </div>
+            <button
+              class="button h-7 w-7 p-0 hover:border-rose/60 hover:text-rose"
+              title="Close"
+              @click="closeImagePanel"
+            ><X class="h-3.5 w-3.5" /></button>
+          </div>
+          <!-- Scrollable body -->
+          <div class="overflow-y-auto px-5 py-4">
+            <ImageGeneratePanel
+              :image-paths="imageRecreateSinglePath ? [imageRecreateSinglePath] : []"
+              :disabled="!imageRecreateSinglePath"
             />
           </div>
         </div>

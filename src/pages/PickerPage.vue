@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Ban, Check, ChevronDown, ChevronLeft, Clapperboard, Clipboard, Copy, FolderOpen, Layers, Send, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
+import { Ban, Check, ChevronDown, ChevronLeft, Clapperboard, Clipboard, Copy, FolderOpen, Image, Layers, Send, SkipForward, Shuffle, Sparkles, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import VideoPromptPanel from "@/components/VideoPromptPanel.vue";
+import ImageGeneratePanel from "@/components/ImageGeneratePanel.vue";
 import { convertFileSrc } from "@/electron-shims/core";
 import FilterBar from "@/components/FilterBar.vue";
 import ImagePreview from "@/components/ImagePreview.vue";
@@ -206,6 +207,7 @@ watch(() => picker.currentImage, (img) => {
 // ── AI panel ──────────────────────────────────────────────────────────────────
 const showAiPanel    = ref(false);
 const showVideoPanel = ref(false);
+const showImagePanel = ref(false);
 
 /** Collect current image paths for AI analysis. */
 function currentImagePaths(): string[] {
@@ -587,7 +589,7 @@ onMounted(async () => {
             :class="showAiPanel ? 'border-accent bg-accent/10 text-accent' : ''"
             :disabled="!picker.currentImage"
             title="Generate AI post text for the selected network"
-            @click="showAiPanel = !showAiPanel; if (showAiPanel) showVideoPanel = false"
+            @click="showAiPanel = !showAiPanel; if (showAiPanel) { showVideoPanel = false; showImagePanel = false; }"
           >
             <Sparkles class="h-4 w-4" />
             AI Post Generator
@@ -637,7 +639,7 @@ onMounted(async () => {
             :class="showVideoPanel ? 'border-violet-400/60 bg-violet-400/10 text-violet-300' : ''"
             :disabled="!picker.currentImage"
             title="Generate a video prompt from the current image"
-            @click="showVideoPanel = !showVideoPanel; if (showVideoPanel) showAiPanel = false"
+            @click="showVideoPanel = !showVideoPanel; if (showVideoPanel) { showAiPanel = false; showImagePanel = false; }"
           >
             <Clapperboard class="h-4 w-4" />
             Video Prompt
@@ -645,6 +647,27 @@ onMounted(async () => {
 
           <div v-if="showVideoPanel" class="mt-3">
             <VideoPromptPanel
+              :image-paths="currentImagePaths()"
+              :disabled="!picker.currentImage"
+            />
+          </div>
+        </div>
+
+        <!-- ── Recreate Image ─────────────────────────────────────── -->
+        <div class="border-t border-line pt-3">
+          <button
+            class="button w-full gap-2"
+            :class="showImagePanel ? 'border-sky-400/60 bg-sky-400/10 text-sky-300' : ''"
+            :disabled="!picker.currentImage"
+            title="Recreate this image with AI via Wavespeed"
+            @click="showImagePanel = !showImagePanel; if (showImagePanel) { showAiPanel = false; showVideoPanel = false; }"
+          >
+            <Image class="h-4 w-4" />
+            Recreate Image
+          </button>
+
+          <div v-if="showImagePanel" class="mt-3">
+            <ImageGeneratePanel
               :image-paths="currentImagePaths()"
               :disabled="!picker.currentImage"
             />

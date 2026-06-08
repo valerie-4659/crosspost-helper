@@ -9,15 +9,28 @@ const props = defineProps<{
 }>();
 
 const VIDEO_MODELS = [
-  { value: "wan_2_2_explicit", label: "WAN 2.2 Spicy", nsfw: true  },
-  { value: "wan_2_5",          label: "WAN 2.5",        nsfw: false },
-  { value: "wan_2_7",          label: "WAN 2.7",        nsfw: false },
-  { value: "grok_imagine",     label: "GROK Imagine",   nsfw: false },
-  { value: "seedance",         label: "Seedance",        nsfw: false },
+  // WAN family
+  { value: "wan_2_2_explicit", label: "WAN 2.2 Spicy",    nsfw: true,  wavespeed: true,  durationOptions: [5, 8],    resolutionOptions: ["480p","720p"] },
+  { value: "wan_2_5",          label: "WAN 2.5",           nsfw: false, wavespeed: true,  durationOptions: [5, 8],    resolutionOptions: ["480p","720p"] },
+  { value: "wan_2_6_spicy",    label: "WAN 2.6 Spicy",     nsfw: true,  wavespeed: true,  durationOptions: [5, 8],    resolutionOptions: ["480p","720p"] },
+  { value: "wan_2_7",          label: "WAN 2.7",           nsfw: false, wavespeed: true,  durationOptions: [5, 8],    resolutionOptions: ["480p","720p"] },
+  { value: "wan_2_7_spicy",    label: "WAN 2.7 Spicy",     nsfw: true,  wavespeed: true,  durationOptions: [5, 8],    resolutionOptions: ["480p","720p"] },
+  // Kling family — duration 5 or 10 s, no resolution param
+  { value: "kling_v2_5",       label: "Kling V2.5 Turbo",  nsfw: false, wavespeed: true,  durationOptions: [5, 10],   resolutionOptions: [] },
+  { value: "kling_v3_0_pro",   label: "Kling V3.0 Pro",    nsfw: false, wavespeed: true,  durationOptions: [5, 10],   resolutionOptions: [] },
+  // Grok
+  { value: "grok_imagine",     label: "Grok Imagine",      nsfw: false, wavespeed: true,  durationOptions: [5],       resolutionOptions: [] },
+  // Seedance family — duration 4-15 s, resolution 720p or 1080p
+  { value: "seedance_2_0",     label: "Seedance 2.0",      nsfw: false, wavespeed: true,  durationOptions: [5,8,10,15], resolutionOptions: ["720p","1080p"] },
+  { value: "seedance_1_5_pro", label: "Seedance 1.5 Pro",  nsfw: false, wavespeed: true,  durationOptions: [5,8,10],  resolutionOptions: ["720p","1080p"] },
 ];
 
-// Models that have a direct Wavespeed endpoint
-const WAVESPEED_SUPPORTED = new Set(["wan_2_2_explicit", "wan_2_5", "wan_2_7"]);
+type VideoModel = typeof VIDEO_MODELS[number];
+
+// Computed model config for currently selected model
+function currentModelCfg(): VideoModel {
+  return VIDEO_MODELS.find((m) => m.value === selectedModel.value) ?? VIDEO_MODELS[0];
+}
 
 const selectedModel   = ref("wan_2_2_explicit");
 const instructions    = ref("");
@@ -28,8 +41,8 @@ const copied          = ref(false);
 
 // ── Wavespeed ──────────────────────────────────────────────────────────────
 const wavespeedAvailable = ref(false);
-const wsResolution = ref<"720p" | "480p">("720p");
-const wsDuration   = ref<5 | 8>(8);
+const wsResolution = ref("720p");
+const wsDuration   = ref(8);
 const wsSubmitting = ref(false);
 const wsSubmitted  = ref(false);   // true after job was queued successfully
 const wsError      = ref("");
@@ -129,11 +142,12 @@ function resetWavespeed() {
         </button>
       </div>
       <!-- NSFW warning -->
-      <p v-if="VIDEO_MODELS.find(m => m.value === selectedModel)?.nsfw" class="mt-1 text-[11px] text-rose/70">
+      <p v-if="currentModelCfg().nsfw" class="mt-1 text-[11px] text-rose/70">
         Explicit content allowed — prompt will include uncensored descriptions.
       </p>
       <p v-else class="mt-1 text-[11px] text-slate-600">
         Content-safe — explicit terms replaced with tasteful alternatives.
+        <span v-if="!currentModelCfg().wavespeed" class="text-amber-500/70"> (Wavespeed not supported)</span>
       </p>
     </div>
 
@@ -200,7 +214,7 @@ function resetWavespeed() {
 
     <!-- ── Send to Wavespeed ─────────────────────────────────────────────── -->
     <div
-      v-if="generatedPrompt && wavespeedAvailable && WAVESPEED_SUPPORTED.has(selectedModel)"
+      v-if="generatedPrompt && wavespeedAvailable && currentModelCfg().wavespeed"
       class="space-y-2.5 rounded-xl border border-violet-500/20 bg-panel p-4"
     >
       <p class="text-[10px] font-semibold uppercase tracking-wide text-violet-400/70">
@@ -208,20 +222,18 @@ function resetWavespeed() {
         <span class="normal-case font-normal text-slate-600"> — start a render job directly</span>
       </p>
 
-      <!-- Resolution + Duration -->
+      <!-- Resolution + Duration (dynamic per model) -->
       <div class="flex gap-2">
-        <div class="flex-1 flex flex-col gap-1">
+        <div v-if="currentModelCfg().resolutionOptions.length" class="flex-1 flex flex-col gap-1">
           <label class="text-[11px] text-slate-500">Resolution</label>
           <select v-model="wsResolution" class="field text-xs py-1">
-            <option value="720p">720p — $0.48</option>
-            <option value="480p">480p — $0.24</option>
+            <option v-for="r in currentModelCfg().resolutionOptions" :key="r" :value="r">{{ r }}</option>
           </select>
         </div>
         <div class="flex-1 flex flex-col gap-1">
           <label class="text-[11px] text-slate-500">Duration</label>
           <select v-model="wsDuration" class="field text-xs py-1">
-            <option :value="8">8 seconds</option>
-            <option :value="5">5 seconds</option>
+            <option v-for="d in currentModelCfg().durationOptions" :key="d" :value="d">{{ d }} seconds</option>
           </select>
         </div>
       </div>
