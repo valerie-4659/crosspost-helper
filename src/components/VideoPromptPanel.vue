@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { inject, onMounted, ref } from "vue";
+import type { AppPage } from "@/components/SidebarNavigation.vue";
 import { Check, Clapperboard, Copy, FolderOpen, X } from "lucide-vue-next";
 
 const props = defineProps<{
@@ -73,7 +74,7 @@ function revealSourceImage() {
   }
 }
 
-const emit = defineEmits<{ "open-queue": [] }>();
+const setPage = inject<(page: AppPage) => void>("setPage");
 
 async function submitToWavespeed() {
   const imagePath = props.imagePaths[0];
@@ -253,7 +254,7 @@ function resetWavespeed() {
         <div class="flex gap-2">
           <button
             class="button h-7 flex-1 gap-1.5 px-2 text-xs border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20"
-            @click="emit('open-queue')"
+            @click="setPage?.('video-queue')"
           >
             <Clapperboard class="h-3 w-3" /> Open Video Queue
           </button>

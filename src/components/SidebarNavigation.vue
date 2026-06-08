@@ -1,21 +1,22 @@
 <script setup lang="ts">
-import { Clock, Images, ListChecks, Moon, Puzzle, Search, Settings, Shuffle, Sun } from "lucide-vue-next";
+import { Clapperboard, Clock, Images, ListChecks, Moon, Puzzle, Search, Settings, Shuffle, Sun } from "lucide-vue-next";
 import { useSettingsStore } from "@/stores/settingsStore";
 
-export type AppPage = "picker" | "library" | "queue" | "scan" | "history" | "settings" | "extension" | "about";
+export type AppPage = "picker" | "library" | "queue" | "video-queue" | "scan" | "history" | "settings" | "extension" | "about";
 
 const page = defineModel<AppPage>("page", { required: true });
 const settingsStore = useSettingsStore();
 const version = __APP_VERSION__;
 
 const items = [
-  { id: "picker",    label: "Picker",           icon: Shuffle },
-  { id: "library",   label: "Library",           icon: Images },
-  { id: "queue",     label: "Job Queue",         icon: ListChecks },
-  { id: "history",   label: "History",           icon: Clock },
-  { id: "scan",      label: "Scan",              icon: Search },
-  { id: "settings",  label: "Settings",          icon: Settings },
-  { id: "extension", label: "Browser Extension", icon: Puzzle },
+  { id: "picker",      label: "Picker",           icon: Shuffle },
+  { id: "library",     label: "Library",           icon: Images },
+  { id: "queue",       label: "Job Queue",         icon: ListChecks },
+  { id: "video-queue", label: "Video Queue",       icon: Clapperboard },
+  { id: "history",     label: "History",           icon: Clock },
+  { id: "scan",        label: "Scan",              icon: Search },
+  { id: "settings",    label: "Settings",          icon: Settings },
+  { id: "extension",   label: "Browser Extension", icon: Puzzle },
 ] as const;
 </script>
 
