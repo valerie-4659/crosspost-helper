@@ -55,6 +55,10 @@ async function loadWavespeedKey() {
   wavespeedApiKey.value = rows[0]?.value ?? "";
 }
 
+function openWavespeedDashboard() {
+  window.desktop.opener.openUrl("https://wavespeed.ai/settings/api-keys");
+}
+
 async function saveWavespeedSettings() {
   await window.desktop.db.execute(
     "INSERT INTO ai_config (key, value) VALUES ('wavespeed_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = ?",
@@ -245,7 +249,7 @@ onMounted(async () => {
       <h2 class="text-base font-semibold text-white">Wavespeed AI — Video Generation</h2>
       <p class="mt-1 text-sm text-slate-400">
         API key enables the "Send to Wavespeed" button in the Video Prompt panel.
-        Get your key at <button class="text-accent underline" @click="() => window.desktop.opener.openUrl('https://wavespeed.ai/settings/api-keys')">wavespeed.ai/settings/api-keys</button>.
+        Get your key at <button class="text-accent underline" @click="openWavespeedDashboard">wavespeed.ai/settings/api-keys</button>.
       </p>
       <div class="mt-4 flex flex-col gap-1">
         <label class="text-xs text-slate-400">API Key</label>
