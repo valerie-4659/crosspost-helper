@@ -1316,6 +1316,80 @@ app.whenReady().then(() => {
     // REQUIRED: unblock ipcRenderer.sendSync in the renderer.
     event.returnValue = null;
   });
+  // ── Wavespeed AI — Image-to-Video submission ─────────────────────────────
+  // Maps the app's video model keys to Wavespeed REST API endpoint slugs.
+  const WAVESPEED_ENDPOINT_MAP = {
+    wan_2_2_explicit: "wavespeed-ai/wan-2.2-spicy/image-to-video",
+    wan_2_5:          "wavespeed-ai/wan-2.5/image-to-video",
+    wan_2_7:          "wavespeed-ai/wan-2.7/image-to-video",
+  };
+
+  ipcMain.handle("wavespeed:submit", async (_event, { imagePath, prompt, videoModel, resolution, duration, seed }) => {
+    const db = await getDatabase();
+    const rows = db.exec("SELECT key, value FROM ai_config");
+    const cfg = {};
+    if (rows.length && rows[0].values) {
+      for (const [k, v] of rows[0].values) cfg[k] = v;
+    }
+    const apiKey = cfg["wavespeed_api_key"] || "";
+    if (!apiKey) throw new Error("No Wavespeed API key configured. Add it in Settings → Wavespeed AI.");
+
+    // Resize image to max 1536 px — keeps payload ≤ ~4 MB while preserving
+    // enough detail for the I2V model to work from.
+    let imageDataUri;
+    try {
+      if (!imagePath || !fs.existsSync(imagePath)) throw new Error("Image not found: " + imagePath);
+      const img = await nativeImage.createThumbnailFromPath(imagePath, { width: 1536, height: 1536 });
+      if (!img.isEmpty()) {
+        imageDataUri = "data:image/jpeg;base64," + img.toJPEG(92).toString("base64");
+      } else {
+        const raw = fs.readFileSync(imagePath);
+        imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
+      }
+    } catch (e) {
+      const raw = fs.readFileSync(imagePath);
+      imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
+    }
+
+    const endpointSlug = WAVESPEED_ENDPOINT_MAP[videoModel] ?? WAVESPEED_ENDPOINT_MAP["wan_2_2_explicit"];
+    const body = {
+      prompt:     prompt || "",
+      image:      imageDataUri,
+      resolution: resolution || "720p",
+      duration:   duration   || 8,
+      seed:       seed       ?? -1,
+    };
+
+    const res = await fetch(`https://api.wavespeed.ai/api/v3/${endpointSlug}`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body:    JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(`Wavespeed error ${res.status}: ${json.message || JSON.stringify(json)}`);
+    }
+    return json.data; // { id, status, outputs, urls, ... }
+  });
+
+  ipcMain.handle("wavespeed:poll", async (_event, requestId) => {
+    const db = await getDatabase();
+    const rows = db.exec("SELECT key, value FROM ai_config");
+    const cfg = {};
+    if (rows.length && rows[0].values) {
+      for (const [k, v] of rows[0].values) cfg[k] = v;
+    }
+    const apiKey = cfg["wavespeed_api_key"] || "";
+    if (!apiKey) throw new Error("No Wavespeed API key.");
+
+    const res = await fetch(`https://api.wavespeed.ai/api/v3/predictions/${requestId}/result`, {
+      headers: { "Authorization": `Bearer ${apiKey}` },
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(`Poll error ${res.status}: ${json.message || ""}`);
+    return json.data; // { status, outputs, error, timings }
+  });
+
   ipcMain.handle("core:invoke", (_event, command, args = {}) => {
     const onProgress = (mainWindow && !mainWindow.isDestroyed())
       ? (data) => mainWindow.webContents.send("scan:progress", data)

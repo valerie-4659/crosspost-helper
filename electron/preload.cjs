@@ -70,6 +70,12 @@ contextBridge.exposeInMainWorld("desktop", {
     generateVideoPrompt: (imagePaths, videoModel, instructions) =>
       ipcRenderer.invoke("ai:generate-video-prompt", imagePaths, videoModel, instructions),
   },
+  wavespeed: {
+    // Submit an image-to-video job. Returns the initial job object { id, status, … }.
+    submit: (params) => ipcRenderer.invoke("wavespeed:submit", params),
+    // Poll a previously submitted job. Returns { status, outputs, error }.
+    poll: (requestId) => ipcRenderer.invoke("wavespeed:poll", requestId),
+  },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),
     offProgress: () => ipcRenderer.removeAllListeners("scan:progress"),

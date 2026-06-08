@@ -1,6 +1,17 @@
 export {};
 
 declare global {
+  interface WavespeedJob {
+    id: string;
+    model: string;
+    status: "created" | "processing" | "completed" | "failed";
+    outputs: string[];
+    error?: string;
+    urls?: { get: string };
+    timings?: { inference: number };
+    created_at?: string;
+  }
+
   interface Window {
     desktop: {
       db: {
@@ -79,6 +90,17 @@ declare global {
           videoModel: string,
           instructions?: string,
         ): Promise<string>;
+      };
+      wavespeed: {
+        submit(params: {
+          imagePath: string;
+          prompt: string;
+          videoModel?: string;
+          resolution?: "480p" | "720p";
+          duration?: 5 | 8;
+          seed?: number;
+        }): Promise<WavespeedJob>;
+        poll(requestId: string): Promise<WavespeedJob>;
       };
       scan: {
         /**
