@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.94",
+    date: "2026-06-08",
+    items: [
+      "feat(video-queue): persistent Wavespeed job queue — DB storage, background poller in main, VideoQueuePanel with live updates",
+    ],
+  },
+  {
     version: "0.2.93",
     date: "2026-06-08",
     items: [

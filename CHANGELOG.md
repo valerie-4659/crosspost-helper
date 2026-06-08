@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.94 - 2026-06-08
+
+- feat(video-queue): persistent Wavespeed job queue — DB storage, background poller in main, VideoQueuePanel with live updates
+
+
 ## v0.2.93 - 2026-06-08
 
 - fix(settings): use named method for Wavespeed dashboard link to avoid template window scope error
