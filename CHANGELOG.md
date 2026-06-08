@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.96 - 2026-06-08
+
+- feat(image-recreate): Wavespeed image generation pipeline — ImageGeneratePanel, ImageQueuePanel, ImageQueuePage, 🖼 card button, Library modal, Picker sidebar section, dual-queue background poller
+
+
 ## v0.2.95 - 2026-06-08
 
 - fix(video-queue): move to dedicated nav page — remove misplaced modal buttons from Library/Picker sidebar

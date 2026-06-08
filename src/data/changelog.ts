@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.96",
+    date: "2026-06-08",
+    items: [
+      "feat(image-recreate): Wavespeed image generation pipeline — ImageGeneratePanel, ImageQueuePanel, ImageQueuePage, 🖼 card button, Library modal, Picker sidebar section, dual-queue background poller",
+    ],
+  },
+  {
     version: "0.2.95",
     date: "2026-06-08",
     items: [
