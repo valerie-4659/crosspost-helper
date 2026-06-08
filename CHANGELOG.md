@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.97 - 2026-06-08
+
+- Release v0.2.97
+
+
 ## v0.2.96 - 2026-06-08
 
 - feat(image-recreate): Wavespeed image generation pipeline — ImageGeneratePanel, ImageQueuePanel, ImageQueuePage, 🖼 card button, Library modal, Picker sidebar section, dual-queue background poller
