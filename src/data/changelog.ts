@@ -6,6 +6,28 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.93",
+    date: "2026-06-08",
+    items: [
+      "fix(settings): use named method for Wavespeed dashboard link to avoid template window scope error",
+      "feat(wavespeed): direct image-to-video submission — API key in Settings, Send to Wavespeed in VideoPromptPanel with polling",
+    ],
+  },
+  {
+    version: "0.2.92",
+    date: "2026-06-08",
+    items: [
+      "feat(wavespeed): direct image-to-video submission — API key in Settings, Send to Wavespeed in VideoPromptPanel with polling",
+    ],
+  },
+  {
+    version: "0.2.91",
+    date: "2026-06-08",
+    items: [
+      "feat(wavespeed): direct image-to-video submission — API key in Settings, Send to Wavespeed in VideoPromptPanel with polling",
+    ],
+  },
+  {
     version: "0.2.90",
     date: "2026-06-07",
     items: [

@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.93 - 2026-06-08
+
+- fix(settings): use named method for Wavespeed dashboard link to avoid template window scope error
+- feat(wavespeed): direct image-to-video submission — API key in Settings, Send to Wavespeed in VideoPromptPanel with polling
+
+
+## v0.2.92 - 2026-06-08
+
+- feat(wavespeed): direct image-to-video submission — API key in Settings, Send to Wavespeed in VideoPromptPanel with polling
+
+
+## v0.2.91 - 2026-06-08
+
+- feat(wavespeed): direct image-to-video submission — API key in Settings, Send to Wavespeed in VideoPromptPanel with polling
+
+
 ## v0.2.90 - 2026-06-07
 
 - feat: update
