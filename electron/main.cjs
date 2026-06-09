@@ -1260,18 +1260,44 @@ async function generateImagePrompt(imagePaths, imageModel = "flux_2_klein", inst
     ? `\nUser instructions (incorporate these): ${instructions.trim()}`
     : "";
 
-  // Ultra-strict = GPT/DALL-E 3 level policy: no lingerie, corset, revealing clothing, or suggestive poses allowed.
+  // ── Shared safety vocabulary (applies at every strictness level) ─────────────
+  const SAFE_KEYWORDS_HINT = `High-success vocabulary: adult, portrait, editorial, cinematic, professional photography, elegant, confident, smiling, celebration, fashion, natural pose, realistic, detailed, atmospheric lighting, shallow depth of field, high quality.`;
+
+  const FORBIDDEN_WORDS = `NEVER use: seductive, alluring, sexy, sensual, voluptuous, curvy, revealing, provocative, flirtatious, submissive, dominant, fetish, aroused, lustful, schoolgirl, youthful, innocent, barely legal, teen, girl, boy, young-looking, transparent clothing, wet clothing, lingerie, bedroom eyes.`;
+
+  const SAFE_SUBJECT_RULES = `Subject & appearance rules (mandatory for all models):
+- Always describe people as ADULTS. Use "adult woman", "adult man", "adult person". Never use girl, boy, teen, teenager, schoolgirl, schoolboy, young-looking, or youthful.
+- Do NOT mention age unless it is critical to the scene context.
+- Describe clothing neutrally: focus on style, material, colour, and overall fashion. Avoid emphasising body parts, curves, breasts, hips, buttocks, cleavage, or similar physical features.
+- Poses and expressions: prefer standing, walking, dancing, sitting, smiling, laughing. Avoid wording that implies seduction, sexual invitation, arousal, submission, domination, or erotic intent.
+- Emotional tone: use joyful, confident, relaxed, energetic, thoughtful, elegant, celebratory. Avoid seductive, provocative, alluring, tempting, lustful, submissive, dominant.
+- Physical descriptions: describe hair, eyes, clothing, accessories, facial expression. Avoid descriptions centred on attractiveness, sex appeal, desirability, or body shape.
+- Avoid references to alcohol unless relevant; prefer "glass", "beverage", "drink", "celebration" over emphasis on intoxication.
+- ${FORBIDDEN_WORDS}`;
+
+  const PREFERRED_PROMPT_ORDER = `Preferred output structure (in order): Subject → Clothing & appearance → Action → Environment → Lighting → Composition → Camera details → Artistic style → Mood.`;
+
+  const PHOTOGRAPHY_TIPS = `Photography language: focus on composition, lighting, depth of field, lens characteristics, colour grading, atmosphere, environment. Preferred terms: editorial photography, portrait photography, fashion photography, cinematic photography, documentary photography.`;
+
+  // Ultra-strict = GPT/DALL-E 3 / Google Imagen / ByteDance level — zero tolerance even for borderline wording.
   const sfwBlock = guide.ultraStrict
-    ? `ULTRA-STRICT CONTENT POLICY (mandatory — this model will REJECT anything borderline):
-- NEVER use: lingerie, underwear, bra, corset, bikini, swimsuit, revealing, skimpy, bare skin, cleavage, décolletage, nude, naked, topless.
-- Replace ANY revealing or body-exposing clothing with conservative equivalents: "dark outfit", "gothic costume", "fitted clothing", "long dress", "stylish fashion", "elegant attire", "bodysuit with full coverage".
-- Describe poses as: "sitting gracefully", "kneeling on the floor", "standing elegantly" — NEVER add "provocatively", "seductively", "sensually".
-- If the image shows explicit content, describe the character fully clothed in an appropriate outfit that matches the scene's aesthetic.
-- Any violation — even borderline words — will trigger an automatic rejection. When in doubt, be MORE conservative.`
-    : `CONTENT SAFETY (mandatory):
-- ALL prompts must be SFW. NEVER use explicit sexual language, body part names, or graphic descriptions.
+    ? `ULTRA-STRICT CONTENT POLICY — this model WILL REJECT anything borderline (mandatory):
+${SAFE_SUBJECT_RULES}
+- ADDITIONALLY ban: lingerie, underwear, bra, corset, bikini, swimsuit, skimpy, bare skin, cleavage, décolletage, nude, naked, topless, revealing.
+- Replace ANY revealing or body-exposing clothing with fully conservative equivalents: "dark outfit", "gothic costume", "fitted clothing", "long dress", "stylish fashion", "elegant attire", "bodysuit with full coverage".
+- If the reference image shows explicit content, describe the character fully clothed in an appropriate outfit matching the scene's aesthetic.
+- Any violation — even borderline words — triggers automatic rejection. When in doubt, choose MORE conservative wording.
+${PHOTOGRAPHY_TIPS}
+${SAFE_KEYWORDS_HINT}
+${PREFERRED_PROMPT_ORDER}`
+    : `CONTENT SAFETY POLICY (mandatory):
+${SAFE_SUBJECT_RULES}
+- ALL prompts must be SFW. NEVER use explicit sexual language, body-part names, or graphic descriptions.
 - For revealing outfits: use "form-fitting outfit", "gothic attire", "body-hugging costume", "fantasy outfit" — avoid "lingerie", "underwear", "naked".
-- Keep poses described neutrally. Violating this will cause generation failure.`;
+- Keep poses described neutrally. Violating this will cause generation failure.
+${PHOTOGRAPHY_TIPS}
+${SAFE_KEYWORDS_HINT}
+${PREFERRED_PROMPT_ORDER}`;
 
   const isTextOnly = imageData.length === 0;
 
@@ -1292,10 +1318,12 @@ ${styleGuide}
 Rough idea: "${instructions?.trim() || "a beautiful scene"}"
 
 Rules:
-- Expand vague concepts into specific visual detail (subject description, outfit, pose, background, lighting, color palette, art style, mood)
-- Do NOT change the core subject or intent
-- Apply the content policy above
-- Apply the style guide format above exactly
+- Expand vague concepts into specific visual detail following this order: Subject → Clothing & appearance → Action → Environment → Lighting → Composition → Camera details → Artistic style → Mood
+- Describe what is VISIBLE: clothing, environment, lighting, actions. Do NOT describe attractiveness, sexual intent, or body shape as the primary subject.
+- When describing people: always say "adult woman" / "adult man" — never girl, boy, teen, young-looking.
+- Focus environment, lighting and mood to carry the atmosphere — avoid emotionally charged or sensual wording.
+- Do NOT change the core subject or intent of the rough idea.
+- Apply the content policy and style guide above exactly.
 
 Output ONLY the final prompt text.`
     : `Analyze this reference image and write an image recreation prompt for ${guide.name}.
@@ -1303,13 +1331,16 @@ Output ONLY the final prompt text.`
 Target: ${guide.maxWords} words maximum.
 ${styleGuide}${instructionsLine}
 
-Capture all these details from the image:
-- Subject(s): appearance, hair, clothing/outfit details (colors, textures, style — apply content policy above), accessories, pose, facial expression
-- Background/environment: setting, objects, architecture, nature elements
-- Lighting: quality (soft/hard/dramatic), direction, color temperature, shadows
-- Color palette: dominant and accent colors, overall tone (warm/cool/neutral)
-- Art style: photorealistic, digital art, anime, illustration, painting — match exactly what you see
-- Mood/atmosphere: emotional tone, time of day if relevant
+Capture all these details from the image and describe them in this order:
+1. Subject(s): describe as adult woman/man/person — hair, facial expression, accessories
+2. Clothing & appearance: style, material, colours, overall fashion — NO body-part emphasis
+3. Action / pose: use neutral terms (standing, walking, smiling, dancing)
+4. Background / environment: setting, architecture, nature, objects
+5. Lighting: quality (soft/hard/dramatic), direction, colour temperature, shadows
+6. Composition: framing, depth of field, camera angle
+7. Camera / lens: editorial/portrait/cinematic photography style
+8. Colour palette: dominant and accent colours, overall tone (warm/cool/neutral)
+9. Mood / atmosphere: use joyful, confident, elegant, celebratory — avoid seductive, alluring, provocative
 
 Output ONLY the prompt text.`;
 
