@@ -1191,21 +1191,22 @@ Output ONLY the prompt text, nothing else.`;
 // ── Image recreation prompt generator ────────────────────────────────────────
 // Always SFW. Tailored per target image model.
 const IMAGE_MODEL_PROMPT_GUIDE = {
-  flux_2_klein:    { name: "Flux 2 Klein",   style: "Flux", maxWords: 140 },
-  flux_2_turbo:    { name: "Flux 2 Turbo",   style: "Flux", maxWords: 120 },
-  flux_2_dev:      { name: "Flux 2 Dev",     style: "Flux", maxWords: 150 },
-  qwen_image_edit: { name: "Qwen Image",     style: "Qwen", maxWords: 180 },
-  nano_banana:     { name: "Nano Banana",    style: "Imagen", maxWords: 150 },
-  gpt_image_2:     { name: "GPT Image 2",   style: "GPT", maxWords: 200 },
-  wan_2_7_img:     { name: "WAN 2.7 Edit",  style: "WAN", maxWords: 150 },
-  z_image_turbo:   { name: "Z Image Turbo", style: "ZImage", maxWords: 100 },
+  // ultraStrict: true = DALL-E 3 / GPT-level moderation — no lingerie, no revealing clothing at all
+  flux_2_klein:    { name: "Flux 2 Klein",   style: "Flux",   maxWords: 140, ultraStrict: false },
+  flux_2_turbo:    { name: "Flux 2 Turbo",   style: "Flux",   maxWords: 120, ultraStrict: false },
+  flux_2_dev:      { name: "Flux 2 Dev",     style: "Flux",   maxWords: 150, ultraStrict: false },
+  qwen_image_edit: { name: "Qwen Image",     style: "Qwen",   maxWords: 180, ultraStrict: false },
+  nano_banana:     { name: "Nano Banana",    style: "Imagen", maxWords: 150, ultraStrict: true  },
+  gpt_image_2:     { name: "GPT Image 2",    style: "GPT",    maxWords: 200, ultraStrict: true  },
+  wan_2_7_img:     { name: "WAN 2.7 Edit",   style: "WAN",    maxWords: 150, ultraStrict: false },
+  z_image_turbo:   { name: "Z Image Turbo",  style: "ZImage", maxWords: 100, ultraStrict: false },
 };
 
 const IMAGE_STYLE_GUIDE = {
-  Flux: `Structure: natural descriptive prose followed by comma-separated style keywords. Example: "A woman in a crimson dress standing by a window at dusk, soft golden backlight, melancholic expression, [art style], high detail, sharp focus"`,
+  Flux: `Structure: natural descriptive prose followed by comma-separated style keywords. Example: "A young woman in a fitted dark outfit standing by a window at dusk, soft golden backlight, melancholic expression, digital art, high detail, sharp focus"`,
   Qwen: `Use clear, natural, instruction-following language. Describe every visible element: character features, clothing colors and textures, pose, expression, background, lighting, mood. Be specific and comprehensive.`,
-  Imagen: `Use professional photography/illustration prose. Mention: subject details, environment, lighting (quality, direction, color temp), color palette, mood. Use quality photography terminology.`,
-  GPT: `Provide a comprehensive scene description in natural language. Be very specific about every visual element: subject appearance, exact clothing details, pose, facial expression, background environment, lighting conditions, color palette, and visual style. GPT Image 2 excels with detailed instructions.`,
+  Imagen: `Use professional photography/illustration prose. Mention: subject details, environment, lighting (quality, direction, color temp), color palette, mood. Keep all clothing fully modest and conservative in description.`,
+  GPT: `Provide a comprehensive scene description in natural language. Be very specific about every visual element: subject appearance, clothing (fully modest — describe style, color, design without any revealing elements), pose, facial expression, background, lighting, color palette, visual style.`,
   WAN: `Describe the scene in detail. Include: character appearance, outfit/accessories, pose, facial expression, hair, background/setting, atmosphere, lighting, color tone, art style (anime/semi-realistic/photorealistic). Add quality tags at the end.`,
   ZImage: `Use a concise keyword-rich format: [subject description], [clothing/appearance], [pose], [background], [lighting], [style], high quality, detailed, sharp focus. Keep to 80-100 words.`,
 };
@@ -1247,11 +1248,21 @@ async function generateImagePrompt(imagePaths, imageModel = "flux_2_klein", inst
     ? `\nUser instructions (incorporate these): ${instructions.trim()}`
     : "";
 
-  const systemMessage = `You are an expert AI image-generation prompt writer. Your job is to analyze reference images and write precise, detailed recreation prompts.
-CONTENT RULES (MANDATORY):
-- This is for a STRICT CONTENT-SAFE image model. ALL prompts MUST be SFW (Safe For Work).
-- If the image contains nudity, explicit content, or mature themes: describe those elements in tasteful, non-explicit language only. Use: "bare skin", "figure-hugging outfit", "revealing attire", "sensual pose", "intimate atmosphere", "curves", "alluring" — NEVER explicit anatomical or sexual terms.
-- Focus on artistic composition, not explicit content. Violating content rules will cause generation failure.
+  // Ultra-strict = GPT/DALL-E 3 level policy: no lingerie, corset, revealing clothing, or suggestive poses allowed.
+  const sfwBlock = guide.ultraStrict
+    ? `ULTRA-STRICT CONTENT POLICY (mandatory — this model will REJECT anything borderline):
+- NEVER use: lingerie, underwear, bra, corset, bikini, swimsuit, revealing, skimpy, bare skin, cleavage, décolletage, nude, naked, topless.
+- Replace ANY revealing or body-exposing clothing with conservative equivalents: "dark outfit", "gothic costume", "fitted clothing", "long dress", "stylish fashion", "elegant attire", "bodysuit with full coverage".
+- Describe poses as: "sitting gracefully", "kneeling on the floor", "standing elegantly" — NEVER add "provocatively", "seductively", "sensually".
+- If the image shows explicit content, describe the character fully clothed in an appropriate outfit that matches the scene's aesthetic.
+- Any violation — even borderline words — will trigger an automatic rejection. When in doubt, be MORE conservative.`
+    : `CONTENT SAFETY (mandatory):
+- ALL prompts must be SFW. NEVER use explicit sexual language, body part names, or graphic descriptions.
+- For revealing outfits: use "form-fitting outfit", "gothic attire", "body-hugging costume", "fantasy outfit" — avoid "lingerie", "underwear", "naked".
+- Keep poses described neutrally. Violating this will cause generation failure.`;
+
+  const systemMessage = `You are an expert AI image-generation prompt writer. Analyze reference images and write precise recreation prompts.
+${sfwBlock}
 Output ONLY the raw prompt text — no title, no explanation, no JSON, no quotes.`;
 
   const userPrompt = `Analyze this reference image and write an image recreation prompt for ${guide.name}.
@@ -1260,7 +1271,7 @@ Target: ${guide.maxWords} words maximum.
 ${styleGuide}${instructionsLine}
 
 Capture all these details from the image:
-- Subject(s): appearance, hair, clothing/outfit details (colors, textures, style), accessories, pose, facial expression
+- Subject(s): appearance, hair, clothing/outfit details (colors, textures, style — apply content policy above), accessories, pose, facial expression
 - Background/environment: setting, objects, architecture, nature elements
 - Lighting: quality (soft/hard/dramatic), direction, color temperature, shadows
 - Color palette: dominant and accent colors, overall tone (warm/cool/neutral)

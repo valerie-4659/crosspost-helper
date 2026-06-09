@@ -1,9 +1,99 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
-import { ExternalLink, FolderOpen, RefreshCcw, Trash2 } from "lucide-vue-next";
+import { Check, ExternalLink, FolderOpen, Image, RefreshCcw, RotateCcw, Trash2, X } from "lucide-vue-next";
 
 const jobs = ref<WavespeedImageJobRecord[]>([]);
 const loading = ref(false);
+
+// ── Re-run state ──────────────────────────────────────────────────────────────
+const rerunJob    = ref<WavespeedImageJobRecord | null>(null);
+const rerunPrompt = ref("");
+const rerunModel  = ref("flux_2_klein");
+const rerunSize   = ref("1024x1024");
+const rerunUseRef = ref(true);
+const rerunQuality  = ref<"auto" | "low" | "medium" | "high">("auto");
+const rerunFormat   = ref<"png" | "jpeg" | "webp">("png");
+const rerunBusy   = ref(false);
+const rerunError  = ref("");
+const rerunDone   = ref(false);
+
+const IMAGE_MODELS = [
+  { value: "flux_2_klein",    label: "Flux 2 Klein"  },
+  { value: "flux_2_turbo",    label: "Flux 2 Turbo"  },
+  { value: "flux_2_dev",      label: "Flux 2 Dev"    },
+  { value: "qwen_image_edit", label: "Qwen Image"    },
+  { value: "nano_banana",     label: "Nano Banana"   },
+  { value: "gpt_image_2",     label: "GPT Image 2"   },
+  { value: "wan_2_7_img",     label: "WAN 2.7 Edit"  },
+  { value: "z_image_turbo",   label: "Z Image Turbo" },
+];
+
+const ASPECT_RATIOS = [
+  { value: "1024x1024",  label: "1:1"   },
+  { value: "1824x1024",  label: "16:9"  },
+  { value: "1024x1824",  label: "9:16"  },
+  { value: "1360x1024",  label: "4:3"   },
+  { value: "1024x1360",  label: "3:4"   },
+  { value: "1536x1024",  label: "3:2"   },
+  { value: "1024x1536",  label: "2:3"   },
+  { value: "1232x1024",  label: "5:4"   },
+  { value: "1024x1232",  label: "4:5"   },
+  { value: "auto",       label: "Auto"  },
+];
+
+function openRerun(job: WavespeedImageJobRecord) {
+  rerunJob.value    = job;
+  rerunPrompt.value = job.prompt;
+  rerunModel.value  = IMAGE_MODELS.find((m) => m.value === job.model) ? job.model : "flux_2_klein";
+  rerunSize.value   = job.size || "1024x1024";
+  rerunUseRef.value = !!job.image_path;
+  rerunQuality.value  = "auto";
+  rerunFormat.value   = "png";
+  rerunBusy.value   = false;
+  rerunError.value  = "";
+  rerunDone.value   = false;
+}
+
+function closeRerun() {
+  rerunJob.value = null;
+}
+
+async function submitRerun() {
+  if (!rerunPrompt.value.trim()) return;
+  rerunBusy.value  = true;
+  rerunError.value = "";
+  rerunDone.value  = false;
+  try {
+    const result = await window.desktop.wavespeed.submitImage({
+      imagePath:    rerunJob.value?.image_path ?? "",
+      prompt:       rerunPrompt.value.trim(),
+      imageModel:   rerunModel.value,
+      size:         rerunSize.value,
+      useRefImage:  rerunUseRef.value,
+      quality:      rerunQuality.value,
+      outputFormat: rerunFormat.value,
+    });
+    const newJob: WavespeedImageJobRecord = {
+      id:         result.localId ?? `wsimg_${Date.now()}`,
+      job_id:     result.id,
+      image_path: rerunJob.value?.image_path ?? "",
+      prompt:     rerunPrompt.value.trim(),
+      model:      rerunModel.value,
+      size:       rerunSize.value,
+      status:     (result.status as WavespeedImageJobRecord["status"]) ?? "created",
+      result_url: null,
+      error_msg:  null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    jobs.value = [newJob, ...jobs.value];
+    rerunDone.value = true;
+  } catch (err) {
+    rerunError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    rerunBusy.value = false;
+  }
+}
 
 const STATUS_LABEL: Record<string, string> = {
   created:    "Queued",
@@ -132,6 +222,14 @@ onUnmounted(() => {
           >
             <ExternalLink class="h-3 w-3" />Image
           </button>
+          <!-- Re-run -->
+          <button
+            class="button h-6 w-6 p-0"
+            title="Edit prompt &amp; re-submit"
+            @click="openRerun(job)"
+          >
+            <RotateCcw class="h-3 w-3" />
+          </button>
           <button
             v-if="job.image_path"
             class="button h-6 w-6 p-0"
@@ -151,4 +249,144 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
+
+  <!-- ── Re-run modal ──────────────────────────────────────────────────────── -->
+  <Teleport to="body">
+    <Transition
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0 scale-95"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="opacity-100 scale-100"
+      leave-to-class="opacity-0 scale-95"
+    >
+      <div
+        v-if="rerunJob"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+        @click.self="closeRerun"
+      >
+        <div class="relative mx-4 flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-panelSoft shadow-2xl">
+          <!-- header -->
+          <div class="flex shrink-0 items-center justify-between border-b border-line px-5 py-3">
+            <div class="flex items-center gap-2">
+              <Image class="h-4 w-4 text-sky-300" />
+              <p class="text-sm font-semibold text-white">Edit &amp; Re-run</p>
+            </div>
+            <button class="button h-7 w-7 p-0 hover:border-rose/60 hover:text-rose" @click="closeRerun">
+              <X class="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <!-- body -->
+          <div class="overflow-y-auto px-5 py-4 space-y-4">
+            <!-- Source image thumb -->
+            <div class="flex gap-3 items-start">
+              <img
+                v-if="rerunJob.image_path"
+                :src="thumbSrc(rerunJob.image_path)"
+                class="h-16 w-16 shrink-0 rounded-lg border border-line object-cover"
+                draggable="false"
+              />
+              <div class="min-w-0 flex-1 text-xs text-slate-500">
+                <p class="truncate text-slate-300">{{ rerunJob.image_path }}</p>
+                <p class="mt-0.5">Original model: {{ rerunJob.model }} · {{ rerunJob.size }}</p>
+              </div>
+            </div>
+
+            <!-- Reference image toggle -->
+            <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-panel px-3 py-2 hover:border-slate-500 transition">
+              <input v-model="rerunUseRef" type="checkbox" class="h-3.5 w-3.5 accent-sky-400" aria-label="Use reference image" />
+              <span class="text-xs text-slate-300">Use reference image</span>
+              <span class="ml-auto text-[10px] text-slate-600">{{ rerunUseRef ? 'img2img' : 'txt2img' }}</span>
+            </label>
+
+            <!-- Model selector -->
+            <div>
+              <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Model</p>
+              <div class="flex flex-wrap gap-1.5">
+                <button
+                  v-for="m in IMAGE_MODELS"
+                  :key="m.value"
+                  class="rounded-lg border px-2.5 py-1 text-[11px] font-medium transition"
+                  :class="rerunModel === m.value
+                    ? 'border-sky-400/60 bg-sky-400/15 text-sky-300'
+                    : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200'"
+                  @click="rerunModel = m.value"
+                >{{ m.label }}</button>
+              </div>
+            </div>
+
+            <!-- Aspect ratio -->
+            <div>
+              <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Aspect Ratio</p>
+              <div class="grid grid-cols-5 gap-1">
+                <button
+                  v-for="ar in ASPECT_RATIOS"
+                  :key="ar.value"
+                  class="rounded border py-1 text-[11px] font-medium transition"
+                  :class="rerunSize === ar.value
+                    ? 'border-sky-400/60 bg-sky-400/15 text-sky-300'
+                    : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200'"
+                  @click="rerunSize = ar.value"
+                >{{ ar.label }}</button>
+              </div>
+            </div>
+
+            <!-- Quality + Format -->
+            <div class="flex gap-3">
+              <div class="flex-1 flex flex-col gap-1">
+                <label class="text-[11px] text-slate-500">Quality</label>
+                <select v-model="rerunQuality" class="field text-xs py-1">
+                  <option value="auto">Auto</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div class="flex-1 flex flex-col gap-1">
+                <label class="text-[11px] text-slate-500">Format</label>
+                <select v-model="rerunFormat" class="field text-xs py-1">
+                  <option value="png">PNG</option>
+                  <option value="jpeg">JPEG</option>
+                  <option value="webp">WebP</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Prompt -->
+            <div>
+              <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Prompt</p>
+              <textarea
+                v-model="rerunPrompt"
+                rows="6"
+                class="w-full resize-y rounded-lg border border-line bg-panel px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-sky-400/60 focus:outline-none focus:ring-1 focus:ring-sky-400/30 transition"
+              />
+            </div>
+
+            <!-- Error -->
+            <p v-if="rerunError" class="text-xs text-rose">{{ rerunError }}</p>
+
+            <!-- Success -->
+            <div v-if="rerunDone" class="flex items-center gap-2 rounded-lg border border-mint/30 bg-mint/10 px-3 py-2">
+              <Check class="h-4 w-4 text-mint" />
+              <span class="text-xs text-mint font-medium">Job queued successfully!</span>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex gap-2 pt-1">
+              <button class="button flex-1 gap-1.5 py-2 text-xs" @click="closeRerun">Cancel</button>
+              <button
+                class="flex-1 rounded-lg bg-sky-600 hover:bg-sky-500 active:bg-sky-700 py-2 text-xs font-semibold text-white transition flex items-center justify-center gap-2 disabled:opacity-50"
+                :disabled="rerunBusy || !rerunPrompt.trim()"
+                @click="submitRerun"
+              >
+                <Image class="h-3.5 w-3.5" :class="rerunBusy ? 'animate-pulse' : ''" />
+                {{ rerunBusy ? 'Submitting…' : 'Submit Re-run' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
