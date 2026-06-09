@@ -57,6 +57,17 @@ function confirmDelete() {
   confirmingDelete.value = false;
 }
 
+// ── Drag out ──────────────────────────────────────────────────────────────────
+function handleDragStart(event: DragEvent) {
+  const localPath = props.image?.localPath;
+  if (!localPath || !window.desktop?.core?.startDrag) return;
+  event.preventDefault();
+  const iconPath = props.image?.thumbnailUrl?.startsWith("localfile://")
+    ? decodeURIComponent(props.image.thumbnailUrl.slice("localfile://".length))
+    : undefined;
+  window.desktop.core.startDrag([localPath], iconPath);
+}
+
 // ── Keyboard ──────────────────────────────────────────────────────────────────
 function onKey(e: KeyboardEvent) {
   if (e.key === "Escape") {
@@ -168,8 +179,10 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         v-if="imageUrl"
         :src="imageUrl"
         :alt="image.filename"
-        class="max-h-full max-w-full object-contain p-5"
+        draggable="true"
+        class="max-h-full max-w-full cursor-grab object-contain p-5 active:cursor-grabbing"
         @click.self="emit('close')"
+        @dragstart="handleDragStart"
       />
 
       <!-- Right arrow overlay -->

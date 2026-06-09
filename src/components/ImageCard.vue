@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@/electron-shims/core";
 import { Archive, Check, Clapperboard, Clipboard, Copy, EyeOff, Expand, FolderOpen, Image, Pin, PinOff, RotateCcw, Zap } from "lucide-vue-next";
 import { setImagesDragData } from "@/services/imageActionService";
 import PlatformIcon from "@/components/PlatformIcon.vue";
@@ -77,8 +77,6 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
   <article
     class="surface overflow-hidden rounded-lg transition"
     :class="selected ? 'border-accent ring-1 ring-accent' : ''"
-    draggable="true"
-    @dragstart="handleDragStart"
   >
     <div
       class="relative cursor-grab bg-black/40 active:cursor-grabbing"
@@ -92,11 +90,12 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
         :alt="image.filename"
         loading="lazy"
         decoding="async"
-        draggable="false"
+        draggable="true"
         class="w-full transition-opacity duration-500"
         :class="imageLoaded ? 'opacity-100' : 'opacity-0'"
         @load="imageLoaded = true"
         @error="imageLoaded = true"
+        @dragstart.stop="handleDragStart"
       />
       <label class="absolute left-3 top-3 flex h-8 w-8 items-center justify-center rounded-md border border-line bg-ink/80">
         <input class="h-4 w-4 accent-accent" type="checkbox" :checked="selected" @change.stop="emit('toggleSelected', image.id)" />

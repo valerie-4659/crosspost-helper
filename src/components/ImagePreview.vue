@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@/electron-shims/core";
 import { ImageOff } from "lucide-vue-next";
 import type { ImageWithPostState } from "@/types/image";
 
