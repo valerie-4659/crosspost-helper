@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.109 - 2026-06-09
+
+- Release v0.2.109
+
+
 ## v0.2.108 - 2026-06-09
 
 - feat(topaz): configurable output folder in Settings
