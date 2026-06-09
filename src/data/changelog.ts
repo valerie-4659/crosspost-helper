@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.113",
+    date: "2026-06-09",
+    items: [
+      "feat(ai-post): add 'Send text to Plugin' button for queue-panel mode",
+    ],
+  },
+  {
     version: "0.2.112",
     date: "2026-06-09",
     items: [

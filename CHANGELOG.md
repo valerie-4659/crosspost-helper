@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.113 - 2026-06-09
+
+- feat(ai-post): add 'Send text to Plugin' button for queue-panel mode
+
+
 ## v0.2.112 - 2026-06-09
 
 - refactor(ai-post): replace custom post modals with reusable AiPostPanel component
