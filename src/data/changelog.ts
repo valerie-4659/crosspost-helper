@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.112",
+    date: "2026-06-09",
+    items: [
+      "refactor(ai-post): replace custom post modals with reusable AiPostPanel component",
+    ],
+  },
+  {
     version: "0.2.111",
     date: "2026-06-09",
     items: [

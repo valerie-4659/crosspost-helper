@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.112 - 2026-06-09
+
+- refactor(ai-post): replace custom post modals with reusable AiPostPanel component
+
+
 ## v0.2.111 - 2026-06-09
 
 - feat(ai-post): add AI post generator to Image and Video Queue panels
