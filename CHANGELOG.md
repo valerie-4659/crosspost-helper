@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.106 - 2026-06-09
+
+- feat(prompt): integrate detailed Image Prompt Safety Rules into sfwBlock and userPrompt
+
+
 ## v0.2.105 - 2026-06-09
 
 - fix(topaz): use download_url field from API response — Topaz returns download_url not url

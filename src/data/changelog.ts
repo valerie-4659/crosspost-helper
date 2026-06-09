@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.106",
+    date: "2026-06-09",
+    items: [
+      "feat(prompt): integrate detailed Image Prompt Safety Rules into sfwBlock and userPrompt",
+    ],
+  },
+  {
     version: "0.2.105",
     date: "2026-06-09",
     items: [
