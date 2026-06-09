@@ -1839,8 +1839,28 @@ app.whenReady().then(() => {
 
   // ── Shared Topaz upscale logic ────────────────────────────────────────────
   // Used by both the blocking modal IPC (Library/Picker) and the background
-  // queue runner (Image Queue). Accepts a local file path.
-  async function topazUpscaleFile(imagePath, model, outputFormat) {
+  // queue runner (Image Queue). Accepts a local file path + a params object.
+  //
+  // params shape (all optional except model):
+  //   model         – Topaz API model string ("Standard V2", "Bloom Realism", "Wonder 3", …)
+  //   outputFormat  – "jpeg" | "png"  (default: "jpeg")
+  //   scale         – 1 | 2 | 4 | 6 | 8  (default: 2)
+  //   creativity    – string: subtle/low/medium/high/max  → mapped to strength (Standard V2)
+  //                            or low/medium/high/max     → mapped to creativity 1-4 (Bloom Realism)
+  //   enhancement   – string: low/medium/high             → enhancement_strength (Wonder 3)
+  //   preserveFaces – bool: true → face_enhancement=true + strength=0.5, creativity=0.2
+  //   prompt        – string: image description sent as `prompt` to gen-endpoints
+  async function topazUpscaleFile(imagePath, params) {
+    const {
+      model        = "Standard V2",
+      outputFormat = "jpeg",
+      scale        = 2,
+      creativity   = null,
+      enhancement  = null,
+      preserveFaces = false,
+      prompt       = "",
+    } = params || {};
+
     const db = await getDatabase();
     // Read both api key and custom output folder in one query
     const cfgRows = db.exec("SELECT key, value FROM ai_config WHERE key IN ('topaz_api_key','topaz_output_folder')");
@@ -1854,16 +1874,67 @@ app.whenReady().then(() => {
     const TOPAZ_BASE = "https://api.topazlabs.com/image/v1";
     const HEADERS = { "X-API-KEY": apiKey };
 
-    const genModels = new Set(["Wonder 2", "Bloom Creative", "Bloom Realism"]);
+    // Wonder 3 and Bloom Realism use the generative endpoint; Standard V2 uses enhance/async
+    const genModels = new Set(["Wonder 3", "Wonder 2", "Bloom Creative", "Bloom Realism"]);
     const endpoint = genModels.has(model)
       ? `${TOPAZ_BASE}/enhance-gen/async`
       : `${TOPAZ_BASE}/enhance/async`;
 
     const imageBytes = fs.readFileSync(imagePath);
     const fd = new FormData();
-    fd.append("model", model || "Standard V2");
+    fd.append("model", model);
     fd.append("output_format", outputFormat || "jpeg");
     fd.append("image", new Blob([imageBytes]), path.basename(imagePath));
+
+    // ── Scale: compute output dimensions from source image ────────────────
+    const numScale = Number(scale) || 2;
+    if (numScale > 1) {
+      try {
+        const sourceImg = nativeImage.createFromPath(imagePath);
+        const { width: srcW, height: srcH } = sourceImg.getSize();
+        if (srcW > 0 && srcH > 0) {
+          fd.append("output_width",  String(Math.round(srcW * numScale)));
+          fd.append("output_height", String(Math.round(srcH * numScale)));
+        }
+      } catch { /* let Topaz pick default scale */ }
+    }
+
+    // ── Model-specific parameters ─────────────────────────────────────────
+    if (model === "Standard V2") {
+      // creativity → strength (0.01–1.0)
+      const strengthMap = { subtle: 0.2, low: 0.4, medium: 0.6, high: 0.8, max: 1.0 };
+      const strengthVal = strengthMap[creativity] ?? null;
+      if (strengthVal !== null) fd.append("strength", String(strengthVal));
+      if (preserveFaces) {
+        fd.append("face_enhancement",            "true");
+        fd.append("face_enhancement_strength",   "0.5");
+        fd.append("face_enhancement_creativity", "0.2");
+      }
+      // Standard V2 doesn't support `prompt` — omit silently
+    } else if (model === "Bloom Realism") {
+      // creativity → integer 1–4
+      const creativityMap = { low: 1, medium: 2, high: 3, max: 4 };
+      const creativityVal = creativityMap[creativity] ?? null;
+      if (creativityVal !== null) fd.append("creativity", String(creativityVal));
+      if (preserveFaces) {
+        fd.append("face_enhancement",            "true");
+        fd.append("face_enhancement_strength",   "0.5");
+        fd.append("face_enhancement_creativity", "0.2");
+      }
+      if (prompt && prompt.trim()) fd.append("prompt", prompt.trim());
+    } else if (model === "Wonder 3") {
+      // enhancement_strength: "low" | "medium" | "high"
+      const validEnhancement = ["low", "medium", "high"].includes(enhancement) ? enhancement : "medium";
+      fd.append("enhancement_strength", validEnhancement);
+      if (preserveFaces) {
+        fd.append("face_enhancement",            "true");
+        fd.append("face_enhancement_strength",   "0.5");
+        fd.append("face_enhancement_creativity", "0.2");
+      }
+    } else if (model === "Bloom Creative") {
+      // Legacy model — keep basic support
+      if (prompt && prompt.trim()) fd.append("prompt", prompt.trim());
+    }
 
     const submitRes = await fetch(endpoint, { method: "POST", headers: HEADERS, body: fd });
     if (!submitRes.ok) {
@@ -1900,24 +1971,26 @@ app.whenReady().then(() => {
       ? cfg["topaz_output_folder"].trim()
       : path.join(app.getPath("pictures"), "TopazAI");
     fs.mkdirSync(destDir, { recursive: true });
-    const baseName = path.basename(imagePath, path.extname(imagePath));
-    const modelSlug = (model || "standard").toLowerCase().replace(/\s+/g, "_");
-    const ext = outputFormat === "png" ? "png" : "jpg";
-    const destPath = path.join(destDir, `${baseName}_${modelSlug}_${Date.now()}.${ext}`);
+    const baseName  = path.basename(imagePath, path.extname(imagePath));
+    const modelSlug = model.toLowerCase().replace(/\s+/g, "_");
+    const scaleTag  = numScale > 1 ? `_${numScale}x` : "";
+    const ext       = outputFormat === "png" ? "png" : "jpg";
+    const destPath  = path.join(destDir, `${baseName}_${modelSlug}${scaleTag}_${Date.now()}.${ext}`);
     fs.writeFileSync(destPath, buffer);
     return { path: destPath, folder: destDir };
   }
 
   // topaz:upscaleImage — blocking call used by Library / Picker modals.
-  ipcMain.handle("topaz:upscaleImage", async (_event, { imagePath, model, outputFormat }) => {
-    const result = await topazUpscaleFile(imagePath, model, outputFormat);
+  ipcMain.handle("topaz:upscaleImage", async (_event, params) => {
+    const { imagePath, ...rest } = params;
+    const result = await topazUpscaleFile(imagePath, rest);
     shell.showItemInFolder(result.path);
     return result;
   });
 
   // ── Topaz background queue (Image Queue) ─────────────────────────────────
   // Fire-and-forget runner: downloads source if a URL is given, then upscales.
-  async function runTopazQueueJob(localId, imagePath, imageUrl, model, outputFormat) {
+  async function runTopazQueueJob(localId, imagePath, imageUrl, jobParams) {
     let db;
     try { db = await getDatabase(); } catch { return; }
 
@@ -1945,7 +2018,7 @@ app.whenReady().then(() => {
       }
       if (!localPath) throw new Error("No source image path or URL provided");
 
-      const result = await topazUpscaleFile(localPath, model, outputFormat);
+      const result = await topazUpscaleFile(localPath, jobParams);
 
       const now = new Date().toISOString();
       db.run("UPDATE topaz_jobs SET status='completed', result_path=?, updated_at=? WHERE id=?",
@@ -1959,7 +2032,10 @@ app.whenReady().then(() => {
   }
 
   // topaz:submitJob — insert row, start background worker, return immediately.
-  ipcMain.handle("topaz:submitJob", async (_event, { imagePath, imageUrl, model, outputFormat }) => {
+  // The full params object is forwarded to the queue runner (not persisted to DB
+  // beyond model name and outputFormat — only needed for display in queue panel).
+  ipcMain.handle("topaz:submitJob", async (_event, params) => {
+    const { imagePath, imageUrl, model, outputFormat, ...rest } = params || {};
     const db = await getDatabase();
     const localId = `topazjob_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
@@ -1972,7 +2048,8 @@ app.whenReady().then(() => {
     stmt.free();
     persistDatabase();
     // Fire-and-forget — do NOT await
-    runTopazQueueJob(localId, imagePath || "", imageUrl || "", model, outputFormat).catch(() => {});
+    const jobParams = { model: model || "Standard V2", outputFormat: outputFormat || "jpeg", ...rest };
+    runTopazQueueJob(localId, imagePath || "", imageUrl || "", jobParams).catch(() => {});
     return { localId };
   });
 

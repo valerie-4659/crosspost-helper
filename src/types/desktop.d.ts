@@ -31,6 +31,33 @@ declare global {
     updated_at: string;
   }
 
+  /**
+   * Parameters for a Topaz upscale job.
+   * The UI uses human-friendly model names ("standard" / "realism" / "wonder3")
+   * which the backend maps to the actual Topaz API model strings.
+   */
+  interface TopazSubmitParams {
+    /** API model name (e.g. "Standard V2", "Bloom Realism", "Wonder 3"). */
+    model: string;
+    /** Output image format. */
+    outputFormat?: "jpeg" | "png";
+    /** Upscale factor: 1 = no change, 2 = 2×, 4 = 4×, 6 = 6×, 8 = 8× */
+    scale?: 1 | 2 | 4 | 6 | 8;
+    /**
+     * Creativity level for Standard V2 ("subtle"|"low"|"medium"|"high"|"max")
+     * or Bloom Realism ("low"|"medium"|"high"|"max").
+     */
+    creativity?: string;
+    /** Enhancement level for Wonder 3 ("low"|"medium"|"high"). */
+    enhancement?: string;
+    /** Enable face enhancement (Standard V2 / Bloom Realism). */
+    preserveFaces?: boolean;
+    /** Optional image description to guide the generative model. */
+    prompt?: string;
+    /** Number of output variations to generate (1 / 2 / 4). Submits N separate jobs. */
+    outputs?: 1 | 2 | 4;
+  }
+
   /** A row from the topaz_jobs SQLite table. */
   interface TopazJobRecord {
     id: string;
@@ -189,22 +216,13 @@ declare global {
          * Blocking upscale — used by Library / Picker modals.
          * Uploads, polls, downloads, reveals in Finder, then resolves.
          */
-        upscaleImage(params: {
-          imagePath: string;
-          model: "Standard V2" | "Wonder 2" | "Bloom Creative" | "Bloom Realism";
-          outputFormat?: "jpeg" | "png";
-        }): Promise<{ path: string; folder: string }>;
+        upscaleImage(params: TopazSubmitParams & { imagePath: string }): Promise<{ path: string; folder: string }>;
         /**
          * Fire-and-forget queue job.
          * Pass imagePath (local file) OR imageUrl (remote URL — backend downloads it).
          * Returns {localId} immediately; updates arrive via onJobUpdated.
          */
-        submitJob(params: {
-          imagePath?: string;
-          imageUrl?: string;
-          model: "Standard V2" | "Wonder 2" | "Bloom Creative" | "Bloom Realism";
-          outputFormat?: "jpeg" | "png";
-        }): Promise<{ localId: string }>;
+        submitJob(params: TopazSubmitParams & { imagePath?: string; imageUrl?: string }): Promise<{ localId: string }>;
         /** Return all Topaz queue jobs ordered newest-first. */
         getJobs(): Promise<TopazJobRecord[]>;
         /** Delete a Topaz queue job by its local DB id. */
