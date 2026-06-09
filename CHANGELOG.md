@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.2.104 - 2026-06-09
+
+- fix: replace inline if-statements in @click.self with guard methods — Vue template compiler rejects if as an expression
+- fix: resolve TS2339 errors in ImageQueuePanel and VideoQueuePanel
+- fix(image-queue): remove inner double-quotes from :placeholder to fix TS1005 parse error
+- feat(image-queue): New Job modal for txt2img generation with AI prompt enhancement
+- feat(topaz): integrate Topaz Labs Image API for upscaling in Library, Picker, and Lightbox
+- feat: download generated images, make-video from image queue, image drop on video queue
+- feat(image-queue): AI analyse button in re-run modal — regenerate prompt for currently selected model
+
+
+## v0.2.103 - 2026-06-09
+
+- fix(image-queue): remove inner double-quotes from :placeholder to fix TS1005 parse error
+- feat(image-queue): New Job modal for txt2img generation with AI prompt enhancement
+- feat(topaz): integrate Topaz Labs Image API for upscaling in Library, Picker, and Lightbox
+- feat: download generated images, make-video from image queue, image drop on video queue
+- feat(image-queue): AI analyse button in re-run modal — regenerate prompt for currently selected model
+
+
+## v0.2.102 - 2026-06-09
+
+- feat(image-queue): New Job modal for txt2img generation with AI prompt enhancement
+- feat(topaz): integrate Topaz Labs Image API for upscaling in Library, Picker, and Lightbox
+- feat: download generated images, make-video from image queue, image drop on video queue
+- feat(image-queue): AI analyse button in re-run modal — regenerate prompt for currently selected model
+
+
+## v0.2.101 - 2026-06-09
+
+- feat(image-queue): New Job modal for txt2img generation with AI prompt enhancement
+- feat(topaz): integrate Topaz Labs Image API for upscaling in Library, Picker, and Lightbox
+- feat: download generated images, make-video from image queue, image drop on video queue
+- feat(image-queue): AI analyse button in re-run modal — regenerate prompt for currently selected model
+
+
+## v0.2.100 - 2026-06-09
+
+- feat: download generated images, make-video from image queue, image drop on video queue
+- feat(image-queue): AI analyse button in re-run modal — regenerate prompt for currently selected model
+
+
 ## v0.2.99 - 2026-06-09
 
 - feat(image-gen): model-specific API params — aspect/resolution for GPT+NanaBanana, size for others, quality/format/strength only where supported

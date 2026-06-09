@@ -6,6 +6,58 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.104",
+    date: "2026-06-09",
+    items: [
+      "fix: replace inline if-statements in @click.self with guard methods — Vue template compiler rejects if as an expression",
+      "fix: resolve TS2339 errors in ImageQueuePanel and VideoQueuePanel",
+      "fix(image-queue): remove inner double-quotes from :placeholder to fix TS1005 parse error",
+      "feat(image-queue): New Job modal for txt2img generation with AI prompt enhancement",
+      "feat(topaz): integrate Topaz Labs Image API for upscaling in Library, Picker, and Lightbox",
+      "feat: download generated images, make-video from image queue, image drop on video queue",
+      "feat(image-queue): AI analyse button in re-run modal — regenerate prompt for currently selected model",
+    ],
+  },
+  {
+    version: "0.2.103",
+    date: "2026-06-09",
+    items: [
+      "fix(image-queue): remove inner double-quotes from :placeholder to fix TS1005 parse error",
+      "feat(image-queue): New Job modal for txt2img generation with AI prompt enhancement",
+      "feat(topaz): integrate Topaz Labs Image API for upscaling in Library, Picker, and Lightbox",
+      "feat: download generated images, make-video from image queue, image drop on video queue",
+      "feat(image-queue): AI analyse button in re-run modal — regenerate prompt for currently selected model",
+    ],
+  },
+  {
+    version: "0.2.102",
+    date: "2026-06-09",
+    items: [
+      "feat(image-queue): New Job modal for txt2img generation with AI prompt enhancement",
+      "feat(topaz): integrate Topaz Labs Image API for upscaling in Library, Picker, and Lightbox",
+      "feat: download generated images, make-video from image queue, image drop on video queue",
+      "feat(image-queue): AI analyse button in re-run modal — regenerate prompt for currently selected model",
+    ],
+  },
+  {
+    version: "0.2.101",
+    date: "2026-06-09",
+    items: [
+      "feat(image-queue): New Job modal for txt2img generation with AI prompt enhancement",
+      "feat(topaz): integrate Topaz Labs Image API for upscaling in Library, Picker, and Lightbox",
+      "feat: download generated images, make-video from image queue, image drop on video queue",
+      "feat(image-queue): AI analyse button in re-run modal — regenerate prompt for currently selected model",
+    ],
+  },
+  {
+    version: "0.2.100",
+    date: "2026-06-09",
+    items: [
+      "feat: download generated images, make-video from image queue, image drop on video queue",
+      "feat(image-queue): AI analyse button in re-run modal — regenerate prompt for currently selected model",
+    ],
+  },
+  {
     version: "0.2.99",
     date: "2026-06-09",
     items: [
