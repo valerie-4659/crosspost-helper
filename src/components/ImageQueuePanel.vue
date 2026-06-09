@@ -317,6 +317,10 @@ function revealImage(path: string) {
   window.desktop.opener.revealItemInDir(path);
 }
 
+function downloadResult(url: string) {
+  window.desktop.wavespeed.downloadImage(url);
+}
+
 function thumbSrc(imagePath: string): string {
   return window.desktop.core.convertFileSrcSync?.(imagePath) ?? imagePath;
 }
@@ -512,7 +516,7 @@ onUnmounted(() => {
             v-if="job.result_url"
             class="button h-6 w-6 p-0"
             title="Download generated image to ~/Pictures/WavespeedAI/"
-            @click="window.desktop.wavespeed.downloadImage(job.result_url!)"
+            @click="downloadResult(job.result_url!)"
           >
             <Download class="h-3 w-3" />
           </button>

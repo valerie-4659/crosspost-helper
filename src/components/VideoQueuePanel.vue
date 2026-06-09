@@ -24,7 +24,7 @@ async function onDrop(e: DragEvent) {
   if (!file) return;
   if (!file.type.startsWith("image/")) return;
   // Open re-run modal with this local file path as source image
-  openNewVideoFromPath(file.path ?? (file as unknown as { path: string }).path);
+  openNewVideoFromPath((file as unknown as { path: string }).path ?? file.name);
 }
 
 function openNewVideoFromPath(imagePath: string) {
