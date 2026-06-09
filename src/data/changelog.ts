@@ -6,6 +6,16 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.98",
+    date: "2026-06-09",
+    items: [
+      "fix(drag): use async ipcRenderer.send for startDrag — sendSync blocked renderer and broke macOS drag transfer",
+      "feat(image-models): sync to real Wavespeed model list — correct slugs, badges, Seedream support, ultraStrict per provider",
+      "feat(image-queue): Edit & Re-run modal + ultra-strict SFW rewrite for GPT Image 2 / Nano Banana",
+      "feat(image-recreate): aspect ratio auto-detect, ref-image toggle, resolution/quality/format, SFW model-specific prompting",
+    ],
+  },
+  {
     version: "0.2.97",
     date: "2026-06-08",
     items: [

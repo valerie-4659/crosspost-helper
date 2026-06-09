@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.98 - 2026-06-09
+
+- fix(drag): use async ipcRenderer.send for startDrag — sendSync blocked renderer and broke macOS drag transfer
+- feat(image-models): sync to real Wavespeed model list — correct slugs, badges, Seedream support, ultraStrict per provider
+- feat(image-queue): Edit & Re-run modal + ultra-strict SFW rewrite for GPT Image 2 / Nano Banana
+- feat(image-recreate): aspect ratio auto-detect, ref-image toggle, resolution/quality/format, SFW model-specific prompting
+
+
 ## v0.2.97 - 2026-06-08
 
 - Release v0.2.97
