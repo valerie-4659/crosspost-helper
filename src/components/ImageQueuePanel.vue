@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { Clapperboard, Check, Download, ExternalLink, Film, FolderOpen, Image, Plus, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
+import { Clapperboard, Check, Download, ExternalLink, Film, FolderOpen, Image, Plus, RefreshCcw, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-vue-next";
 
 const jobs = ref<WavespeedImageJobRecord[]>([]);
 const loading = ref(false);
@@ -21,6 +21,65 @@ const rerunDone       = ref(false);
 // AI prompt analysis state
 const rerunAnalysing      = ref(false);
 const rerunAnalyseError   = ref("");
+
+// ── Topaz Upscale state (from queue) ─────────────────────────────────────────
+type TopazModel = "Standard V2" | "Wonder 2" | "Bloom Creative" | "Bloom Realism";
+const TOPAZ_MODELS: TopazModel[] = ["Standard V2", "Wonder 2", "Bloom Creative", "Bloom Realism"];
+const topazJob          = ref<WavespeedImageJobRecord | null>(null);
+const topazLocalPath    = ref("");
+const topazDownloading  = ref(false);
+const topazModel        = ref<TopazModel>("Standard V2");
+const topazFormat       = ref<"jpeg" | "png">("jpeg");
+const topazUpscaling    = ref(false);
+const topazResult       = ref<string | null>(null);
+const topazError        = ref("");
+
+async function openTopazFromJob(job: WavespeedImageJobRecord) {
+  if (!job.result_url) return;
+  topazJob.value         = job;
+  topazLocalPath.value   = "";
+  topazDownloading.value = true;
+  topazModel.value       = "Standard V2";
+  topazFormat.value      = "jpeg";
+  topazUpscaling.value   = false;
+  topazResult.value      = null;
+  topazError.value       = "";
+  try {
+    const dl = await window.desktop.wavespeed.downloadImage(
+      job.result_url,
+      `wavespeed_img_${Date.now()}.png`,
+    );
+    topazLocalPath.value = dl.path;
+  } catch (err) {
+    topazError.value = `Download failed: ${err instanceof Error ? err.message : String(err)}`;
+  } finally {
+    topazDownloading.value = false;
+  }
+}
+
+function closeTopazFromJob() {
+  if (topazUpscaling.value) return;
+  topazJob.value = null;
+}
+
+async function submitTopazFromJob() {
+  if (!topazLocalPath.value || topazUpscaling.value) return;
+  topazUpscaling.value = true;
+  topazResult.value    = null;
+  topazError.value     = "";
+  try {
+    const res = await window.desktop.topaz.upscaleImage({
+      imagePath:    topazLocalPath.value,
+      model:        topazModel.value,
+      outputFormat: topazFormat.value,
+    });
+    topazResult.value = res.path;
+  } catch (err) {
+    topazError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    topazUpscaling.value = false;
+  }
+}
 
 // ── Make-Video state ─────────────────────────────────────────────────────────
 const makeVideoJob          = ref<WavespeedImageJobRecord | null>(null);
@@ -524,6 +583,15 @@ onUnmounted(() => {
             @click="downloadResult(job.result_url!)"
           >
             <Download class="h-3 w-3" />
+          </button>
+          <!-- Upscale with Topaz -->
+          <button
+            v-if="job.result_url"
+            class="button h-6 w-6 p-0 border-amber-500/40 text-amber-300 hover:bg-amber-500/20"
+            title="Upscale with Topaz Labs"
+            @click="openTopazFromJob(job)"
+          >
+            <Zap class="h-3 w-3" />
           </button>
           <!-- Make Video from result -->
           <button
@@ -1036,6 +1104,85 @@ onUnmounted(() => {
             >
               <Image class="h-3.5 w-3.5" :class="newJobBusy ? 'animate-pulse' : ''" />
               {{ newJobBusy ? 'Submitting…' : newJobDone ? 'Submit another' : 'Generate Image' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- ── Topaz Upscale Modal (from queue) ──────────────────────────────────── -->
+  <Teleport to="body">
+    <Transition enter-active-class="transition-opacity duration-150" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-100" leave-to-class="opacity-0">
+      <div v-if="topazJob" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" @click.self="closeTopazFromJob">
+        <div class="surface w-full max-w-sm rounded-xl border border-line shadow-2xl">
+          <!-- Header -->
+          <div class="flex items-center justify-between border-b border-line px-4 py-3">
+            <div class="flex items-center gap-2">
+              <Zap class="h-4 w-4 text-amber-400" />
+              <h3 class="text-sm font-semibold text-white">Upscale with Topaz Labs</h3>
+            </div>
+            <button class="button h-7 w-7 p-0" :disabled="topazUpscaling" @click="closeTopazFromJob">
+              <X class="h-4 w-4" />
+            </button>
+          </div>
+          <!-- Body -->
+          <div class="flex flex-col gap-3 p-4">
+            <!-- Download progress -->
+            <div v-if="topazDownloading" class="flex items-center gap-2 text-xs text-slate-400">
+              <Download class="h-3.5 w-3.5 animate-pulse" />
+              Downloading result image…
+            </div>
+            <p v-else-if="topazLocalPath" class="truncate text-xs text-slate-400">
+              <span class="text-slate-500">Image:</span> {{ topazLocalPath.split('/').pop() }}
+            </p>
+            <!-- Model selector -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs text-slate-400">Model</label>
+              <select v-model="topazModel" class="field text-sm" :disabled="topazUpscaling || topazDownloading">
+                <option v-for="m in TOPAZ_MODELS" :key="m" :value="m">{{ m }}</option>
+              </select>
+              <p class="text-[11px] text-slate-500">
+                <template v-if="topazModel === 'Standard V2'">Precision upscaling — best for clean enlargement.</template>
+                <template v-else-if="topazModel === 'Wonder 2'">Generative upscaling — adds creative detail.</template>
+                <template v-else-if="topazModel === 'Bloom Creative'">Creative AI upscaling — highly enhanced output.</template>
+                <template v-else>Realism-focused AI upscaling — natural-looking results.</template>
+              </p>
+            </div>
+            <!-- Output format -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs text-slate-400">Output format</label>
+              <div class="flex gap-2">
+                <label
+                  v-for="fmt in (['jpeg', 'png'] as const)"
+                  :key="fmt"
+                  class="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border py-1.5 text-xs transition"
+                  :class="topazFormat === fmt ? 'border-amber-500/60 bg-amber-500/10 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
+                >
+                  <input v-model="topazFormat" type="radio" :value="fmt" class="sr-only" :disabled="topazUpscaling || topazDownloading" />
+                  {{ fmt.toUpperCase() }}
+                </label>
+              </div>
+            </div>
+            <div v-if="topazResult" class="rounded-md border border-mint/40 bg-mint/10 px-3 py-2 text-xs text-mint">
+              ✓ Saved to {{ topazResult.split('/').pop() }} — revealed in Finder.
+            </div>
+            <div v-if="topazError" class="rounded-md border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">
+              {{ topazError }}
+            </div>
+          </div>
+          <!-- Footer -->
+          <div class="flex items-center justify-end gap-2 border-t border-line px-4 py-3">
+            <button class="button h-8 px-3 text-sm" :disabled="topazUpscaling" @click="closeTopazFromJob">
+              {{ topazResult ? 'Close' : 'Cancel' }}
+            </button>
+            <button
+              class="flex h-8 items-center gap-1.5 rounded-md border border-amber-500/60 bg-amber-500/15 px-3 text-sm text-amber-300 transition hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="topazUpscaling || topazDownloading || !topazLocalPath"
+              @click="submitTopazFromJob"
+            >
+              <Zap class="h-3.5 w-3.5" :class="topazUpscaling ? 'animate-pulse' : ''" />
+              {{ topazUpscaling ? 'Upscaling…' : topazResult ? 'Upscale again' : 'Upscale' }}
             </button>
           </div>
         </div>
