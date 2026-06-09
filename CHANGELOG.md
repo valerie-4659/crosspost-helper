@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.107 - 2026-06-09
+
+- Release v0.2.107
+
+
 ## v0.2.106 - 2026-06-09
 
 - feat(prompt): integrate detailed Image Prompt Safety Rules into sfwBlock and userPrompt
