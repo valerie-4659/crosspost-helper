@@ -33,10 +33,11 @@ contextBridge.exposeInMainWorld("desktop", {
       return "localfile://" + encodeURI(p);
     },
     // Native OS drag — sends real files to external apps (browsers, Finder, etc).
-    // Uses sendSync so the main process calls webContents.startDrag() before the
-    // renderer's dragstart handler returns — ensuring the OS drag session is still
-    // active at the moment startDrag() is called.
-    startDrag: (filePaths, iconPath) => ipcRenderer.sendSync("drag:start", filePaths, iconPath),
+    // Must use async send (NOT sendSync): sendSync blocks the renderer thread which
+    // prevents macOS from tracking the OS drag session. The main process calls
+    // webContents.startDrag() within microseconds — well before the user can release
+    // the mouse — so timing is not an issue. Matches the official Electron docs pattern.
+    startDrag: (filePaths, iconPath) => ipcRenderer.send("drag:start", filePaths, iconPath),
   },
   upload: {
     // Save an image file to a local folder and index it in the library.
