@@ -1188,6 +1188,133 @@ Output ONLY the prompt text, nothing else.`;
   return result.trim();
 }
 
+// ── Image recreation prompt generator ────────────────────────────────────────
+// Always SFW. Tailored per target image model.
+const IMAGE_MODEL_PROMPT_GUIDE = {
+  flux_2_klein:    { name: "Flux 2 Klein",   style: "Flux", maxWords: 140 },
+  flux_2_turbo:    { name: "Flux 2 Turbo",   style: "Flux", maxWords: 120 },
+  flux_2_dev:      { name: "Flux 2 Dev",     style: "Flux", maxWords: 150 },
+  qwen_image_edit: { name: "Qwen Image",     style: "Qwen", maxWords: 180 },
+  nano_banana:     { name: "Nano Banana",    style: "Imagen", maxWords: 150 },
+  gpt_image_2:     { name: "GPT Image 2",   style: "GPT", maxWords: 200 },
+  wan_2_7_img:     { name: "WAN 2.7 Edit",  style: "WAN", maxWords: 150 },
+  z_image_turbo:   { name: "Z Image Turbo", style: "ZImage", maxWords: 100 },
+};
+
+const IMAGE_STYLE_GUIDE = {
+  Flux: `Structure: natural descriptive prose followed by comma-separated style keywords. Example: "A woman in a crimson dress standing by a window at dusk, soft golden backlight, melancholic expression, [art style], high detail, sharp focus"`,
+  Qwen: `Use clear, natural, instruction-following language. Describe every visible element: character features, clothing colors and textures, pose, expression, background, lighting, mood. Be specific and comprehensive.`,
+  Imagen: `Use professional photography/illustration prose. Mention: subject details, environment, lighting (quality, direction, color temp), color palette, mood. Use quality photography terminology.`,
+  GPT: `Provide a comprehensive scene description in natural language. Be very specific about every visual element: subject appearance, exact clothing details, pose, facial expression, background environment, lighting conditions, color palette, and visual style. GPT Image 2 excels with detailed instructions.`,
+  WAN: `Describe the scene in detail. Include: character appearance, outfit/accessories, pose, facial expression, hair, background/setting, atmosphere, lighting, color tone, art style (anime/semi-realistic/photorealistic). Add quality tags at the end.`,
+  ZImage: `Use a concise keyword-rich format: [subject description], [clothing/appearance], [pose], [background], [lighting], [style], high quality, detailed, sharp focus. Keep to 80-100 words.`,
+};
+
+async function generateImagePrompt(imagePaths, imageModel = "flux_2_klein", instructions = "") {
+  const db = await getDatabase();
+  const rows = db.exec("SELECT key, value FROM ai_config");
+  const cfg = {};
+  if (rows.length && rows[0].values) {
+    for (const [k, v] of rows[0].values) cfg[k] = v;
+  }
+
+  const provider  = cfg["provider"]  || "openai";
+  const apiKey    = cfg["api_key"]   || "";
+  const model     = cfg["model"]     || "gpt-4o";
+  const maxTokens = 500;
+
+  if (!apiKey) throw new Error("No AI API key configured. Please set one in Settings → AI.");
+
+  const guide = IMAGE_MODEL_PROMPT_GUIDE[imageModel] ?? IMAGE_MODEL_PROMPT_GUIDE["flux_2_klein"];
+  const styleGuide = IMAGE_STYLE_GUIDE[guide.style] ?? IMAGE_STYLE_GUIDE["Flux"];
+
+  const validPaths = (imagePaths ?? []).filter((p) => p && fs.existsSync(p)).slice(0, 1);
+  const imageData = [];
+  for (const p of validPaths) {
+    try {
+      const img = await nativeImage.createThumbnailFromPath(p, { width: 1024, height: 1024 });
+      if (!img.isEmpty()) {
+        imageData.push({ mime: "image/jpeg", b64: img.toJPEG(88).toString("base64") });
+      } else {
+        imageData.push({ mime: imageMime(p), b64: fs.readFileSync(p).toString("base64") });
+      }
+    } catch {
+      imageData.push({ mime: imageMime(p), b64: fs.readFileSync(p).toString("base64") });
+    }
+  }
+
+  const instructionsLine = instructions?.trim()
+    ? `\nUser instructions (incorporate these): ${instructions.trim()}`
+    : "";
+
+  const systemMessage = `You are an expert AI image-generation prompt writer. Your job is to analyze reference images and write precise, detailed recreation prompts.
+CONTENT RULES (MANDATORY):
+- This is for a STRICT CONTENT-SAFE image model. ALL prompts MUST be SFW (Safe For Work).
+- If the image contains nudity, explicit content, or mature themes: describe those elements in tasteful, non-explicit language only. Use: "bare skin", "figure-hugging outfit", "revealing attire", "sensual pose", "intimate atmosphere", "curves", "alluring" — NEVER explicit anatomical or sexual terms.
+- Focus on artistic composition, not explicit content. Violating content rules will cause generation failure.
+Output ONLY the raw prompt text — no title, no explanation, no JSON, no quotes.`;
+
+  const userPrompt = `Analyze this reference image and write an image recreation prompt for ${guide.name}.
+
+Target: ${guide.maxWords} words maximum.
+${styleGuide}${instructionsLine}
+
+Capture all these details from the image:
+- Subject(s): appearance, hair, clothing/outfit details (colors, textures, style), accessories, pose, facial expression
+- Background/environment: setting, objects, architecture, nature elements
+- Lighting: quality (soft/hard/dramatic), direction, color temperature, shadows
+- Color palette: dominant and accent colors, overall tone (warm/cool/neutral)
+- Art style: photorealistic, digital art, anime, illustration, painting — match exactly what you see
+- Mood/atmosphere: emotional tone, time of day if relevant
+
+Output ONLY the prompt text.`;
+
+  let result = "";
+
+  if (provider === "openai" || provider === "grok") {
+    const hostname = provider === "grok" ? "api.x.ai" : "api.openai.com";
+    const content = [
+      { type: "text", text: userPrompt },
+      ...imageData.map((d) => ({ type: "image_url", image_url: { url: `data:${d.mime};base64,${d.b64}` } })),
+    ];
+    const r = await httpsPost(hostname, "/v1/chat/completions",
+      { "Authorization": `Bearer ${apiKey}` },
+      { model, max_tokens: maxTokens, messages: [
+        { role: "system", content: systemMessage },
+        { role: "user", content },
+      ]});
+    if (r.status !== 200) throw apiError(provider, r);
+    result = r.body.choices?.[0]?.message?.content ?? "";
+
+  } else if (provider === "anthropic") {
+    const content = [
+      ...imageData.map((d) => ({ type: "image", source: { type: "base64", media_type: d.mime, data: d.b64 } })),
+      { type: "text", text: userPrompt },
+    ];
+    const r = await httpsPost("api.anthropic.com", "/v1/messages",
+      { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      { model, max_tokens: maxTokens, system: systemMessage, messages: [{ role: "user", content }] });
+    if (r.status !== 200) throw apiError("anthropic", r);
+    result = r.body.content?.[0]?.text ?? "";
+
+  } else if (provider === "gemini") {
+    const parts = [
+      { text: userPrompt },
+      ...imageData.map((d) => ({ inline_data: { mime_type: d.mime, data: d.b64 } })),
+    ];
+    const r = await httpsPost("generativelanguage.googleapis.com",
+      `/v1beta/models/${model}:generateContent?key=${apiKey}`, {},
+      { systemInstruction: { parts: [{ text: systemMessage }] }, contents: [{ parts }] });
+    if (r.status !== 200) throw apiError("gemini", r);
+    result = r.body.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+  } else {
+    throw new Error(`Unknown AI provider: ${provider}`);
+  }
+
+  return result.trim();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 function startBridgeServer() {
@@ -1455,7 +1582,7 @@ app.whenReady().then(() => {
     z_image_turbo:   "wavespeed-ai/z-image-turbo/image-to-image",
   };
 
-  ipcMain.handle("wavespeed:submitImage", async (_event, { imagePath, prompt, imageModel, size }) => {
+  ipcMain.handle("wavespeed:submitImage", async (_event, { imagePath, prompt, imageModel, size, useRefImage, quality, outputFormat }) => {
     const db = await getDatabase();
     const rows = db.exec("SELECT key, value FROM ai_config");
     const cfg = {};
@@ -1484,10 +1611,16 @@ app.whenReady().then(() => {
     const endpointSlug = WAVESPEED_IMAGE_ENDPOINT_MAP[imageModel] ?? WAVESPEED_IMAGE_ENDPOINT_MAP["flux_2_klein"];
     const body = {
       prompt:  prompt || "",
-      images:  [imageDataUri],
       size:    size || "1024*1024",
       seed:    -1,
     };
+    // Only attach the reference image when the user opted in
+    if (useRefImage !== false && imageDataUri) {
+      body.images = [imageDataUri];
+    }
+    // Optional quality and output format — ignored by models that don't support them
+    if (quality)      body.quality       = quality;
+    if (outputFormat) body.output_format = outputFormat;
 
     const res = await fetch(`https://api.wavespeed.ai/api/v3/${endpointSlug}`, {
       method:  "POST",
@@ -1701,6 +1834,23 @@ app.whenReady().then(() => {
   // ── AI video prompt generation ─────────────────────────────────────────────
   ipcMain.handle("ai:generate-video-prompt", async (_event, imagePaths, videoModel, instructions) => {
     return generateVideoPrompt(imagePaths, videoModel, instructions);
+  });
+
+  // ── AI image recreation prompt (SFW, model-specific) ──────────────────────
+  ipcMain.handle("ai:generate-image-prompt", async (_event, imagePaths, imageModel, instructions) => {
+    return generateImagePrompt(imagePaths, imageModel, instructions);
+  });
+
+  // ── Get image pixel dimensions ────────────────────────────────────────────
+  ipcMain.handle("wavespeed:getImageDimensions", async (_event, imagePath) => {
+    try {
+      if (!imagePath || !fs.existsSync(imagePath)) return null;
+      const img = nativeImage.createFromPath(imagePath);
+      if (img.isEmpty()) return null;
+      return img.getSize(); // { width, height }
+    } catch {
+      return null;
+    }
   });
 
   ipcMain.handle("extension:open-chrome", () => {

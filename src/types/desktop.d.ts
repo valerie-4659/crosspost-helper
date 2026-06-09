@@ -124,6 +124,12 @@ declare global {
           videoModel: string,
           instructions?: string,
         ): Promise<string>;
+        /** Generate a SFW image recreation prompt for the given image model. Returns plain text. */
+        generateImagePrompt(
+          imagePaths: string[],
+          imageModel: string,
+          instructions?: string,
+        ): Promise<string>;
       };
       wavespeed: {
         submit(params: {
@@ -144,11 +150,15 @@ declare global {
           prompt: string;
           imageModel?: string;
           size?: string;
+          useRefImage?: boolean;
+          quality?: "low" | "medium" | "high" | "auto";
+          outputFormat?: "png" | "jpeg" | "webp";
         }): Promise<WavespeedJob>;
         getImageJobs(): Promise<WavespeedImageJobRecord[]>;
         deleteImageJob(localId: string): Promise<{ ok: boolean }>;
         onImageJobUpdated(cb: (data: Partial<WavespeedImageJobRecord>) => void): void;
         offImageJobUpdated(): void;
+        getImageDimensions(imagePath: string): Promise<{ width: number; height: number } | null>;
       };
       scan: {
         /**

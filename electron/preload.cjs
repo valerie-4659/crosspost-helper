@@ -69,6 +69,9 @@ contextBridge.exposeInMainWorld("desktop", {
     // Generate a video prompt for the given video model. Returns plain text string.
     generateVideoPrompt: (imagePaths, videoModel, instructions) =>
       ipcRenderer.invoke("ai:generate-video-prompt", imagePaths, videoModel, instructions),
+    // Generate an image recreation prompt (always SFW, model-specific). Returns plain text string.
+    generateImagePrompt: (imagePaths, imageModel, instructions) =>
+      ipcRenderer.invoke("ai:generate-image-prompt", imagePaths, imageModel, instructions),
   },
   wavespeed: {
     /** Submit an image-to-video job. Returns the initial job object + localId. */
@@ -92,6 +95,8 @@ contextBridge.exposeInMainWorld("desktop", {
     onImageJobUpdated: (cb) => ipcRenderer.on("wavespeed:imageJobUpdated", (_e, data) => cb(data)),
     /** Remove all image job-update listeners. */
     offImageJobUpdated: () => ipcRenderer.removeAllListeners("wavespeed:imageJobUpdated"),
+    /** Get pixel dimensions {width, height} of a local image. */
+    getImageDimensions: (imagePath) => ipcRenderer.invoke("wavespeed:getImageDimensions", imagePath),
   },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),
