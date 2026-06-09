@@ -98,6 +98,8 @@ contextBridge.exposeInMainWorld("desktop", {
     offImageJobUpdated: () => ipcRenderer.removeAllListeners("wavespeed:imageJobUpdated"),
     /** Get pixel dimensions {width, height} of a local image. */
     getImageDimensions: (imagePath) => ipcRenderer.invoke("wavespeed:getImageDimensions", imagePath),
+    /** Download a generated image URL to ~/Pictures/WavespeedAI/ and reveal it. */
+    downloadImage: (resultUrl, suggestedFilename) => ipcRenderer.invoke("wavespeed:downloadImage", resultUrl, suggestedFilename),
   },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),

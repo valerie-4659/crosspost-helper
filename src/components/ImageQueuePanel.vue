@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { Check, ExternalLink, FolderOpen, Image, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
+import { Clapperboard, Check, Download, ExternalLink, Film, FolderOpen, Image, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
 
 const jobs = ref<WavespeedImageJobRecord[]>([]);
 const loading = ref(false);
@@ -21,6 +21,103 @@ const rerunDone       = ref(false);
 // AI prompt analysis state
 const rerunAnalysing      = ref(false);
 const rerunAnalyseError   = ref("");
+
+// ── Make-Video state ─────────────────────────────────────────────────────────
+const makeVideoJob          = ref<WavespeedImageJobRecord | null>(null);
+const makeVideoPath         = ref("");        // local path after download
+const makeVideoDownloading  = ref(false);     // download in progress
+const makeVideoModel        = ref("wan_2_7");
+const makeVideoRes          = ref("720p");
+const makeVideoDuration     = ref(8);
+const makeVideoPrompt       = ref("");
+const makeVideoAnalysing    = ref(false);
+const makeVideoAnalyseError = ref("");
+const makeVideoBusy         = ref(false);
+const makeVideoError        = ref("");
+const makeVideoDone         = ref(false);
+
+const VIDEO_MODELS_SIMPLE = [
+  { value: "wan_2_5",          label: "WAN 2.5",          durationOptions: [5,8],       resolutionOptions: ["480p","720p"] },
+  { value: "wan_2_6_spicy",    label: "WAN 2.6 Spicy",    durationOptions: [5,8],       resolutionOptions: ["480p","720p"] },
+  { value: "wan_2_7",          label: "WAN 2.7",          durationOptions: [5,8],       resolutionOptions: ["480p","720p"] },
+  { value: "wan_2_7_spicy",    label: "WAN 2.7 Spicy",    durationOptions: [5,8],       resolutionOptions: ["480p","720p"] },
+  { value: "wan_2_2_explicit", label: "WAN 2.2 Spicy",    durationOptions: [5,8],       resolutionOptions: ["480p","720p"] },
+  { value: "kling_v2_5",       label: "Kling V2.5 Turbo", durationOptions: [5,10],      resolutionOptions: []              },
+  { value: "kling_v3_0_pro",   label: "Kling V3.0 Pro",   durationOptions: [5,10],      resolutionOptions: []              },
+  { value: "seedance_2_0",     label: "Seedance 2.0",     durationOptions: [5,8,10,15], resolutionOptions: ["720p","1080p"] },
+  { value: "seedance_1_5_pro", label: "Seedance 1.5 Pro", durationOptions: [5,8,10],    resolutionOptions: ["720p","1080p"] },
+];
+
+const makeVideoModelCfg = computed(() =>
+  VIDEO_MODELS_SIMPLE.find((m) => m.value === makeVideoModel.value) ?? VIDEO_MODELS_SIMPLE[0]
+);
+
+async function openMakeVideo(job: WavespeedImageJobRecord) {
+  if (!job.result_url) return;
+  makeVideoJob.value          = job;
+  makeVideoPath.value         = "";
+  makeVideoDownloading.value  = true;
+  makeVideoModel.value        = "wan_2_7";
+  makeVideoRes.value          = "720p";
+  makeVideoDuration.value     = 8;
+  makeVideoPrompt.value       = "";
+  makeVideoAnalysing.value    = false;
+  makeVideoAnalyseError.value = "";
+  makeVideoBusy.value         = false;
+  makeVideoError.value        = "";
+  makeVideoDone.value         = false;
+  try {
+    const dl = await window.desktop.wavespeed.downloadImage(
+      job.result_url,
+      `wavespeed_img_${Date.now()}.png`,
+    );
+    makeVideoPath.value = dl.path;
+  } catch (err) {
+    makeVideoError.value = `Download failed: ${err instanceof Error ? err.message : String(err)}`;
+  } finally {
+    makeVideoDownloading.value = false;
+  }
+}
+
+function closeMakeVideo() { makeVideoJob.value = null; }
+
+async function makeVideoAnalyse() {
+  if (!makeVideoPath.value) return;
+  makeVideoAnalysing.value    = true;
+  makeVideoAnalyseError.value = "";
+  try {
+    makeVideoPrompt.value = await window.desktop.ai.generateVideoPrompt(
+      [makeVideoPath.value],
+      makeVideoModel.value,
+      "",
+    );
+  } catch (err) {
+    makeVideoAnalyseError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    makeVideoAnalysing.value = false;
+  }
+}
+
+async function submitMakeVideo() {
+  if (!makeVideoPath.value || !makeVideoPrompt.value.trim()) return;
+  makeVideoBusy.value  = true;
+  makeVideoError.value = "";
+  makeVideoDone.value  = false;
+  try {
+    await window.desktop.wavespeed.submit({
+      imagePath:  makeVideoPath.value,
+      prompt:     makeVideoPrompt.value.trim(),
+      videoModel: makeVideoModel.value,
+      resolution: makeVideoRes.value as "480p" | "720p" | "1080p",
+      duration:   makeVideoDuration.value as 5 | 8 | 10 | 15,
+    });
+    makeVideoDone.value = true;
+  } catch (err) {
+    makeVideoError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    makeVideoBusy.value = false;
+  }
+}
 
 const IMAGE_MODELS = [
   { value: "gpt_image_2",     label: "GPT Image 2"     },
@@ -304,6 +401,24 @@ onUnmounted(() => {
           >
             <ExternalLink class="h-3 w-3" />Image
           </button>
+          <!-- Download result -->
+          <button
+            v-if="job.result_url"
+            class="button h-6 w-6 p-0"
+            title="Download generated image to ~/Pictures/WavespeedAI/"
+            @click="window.desktop.wavespeed.downloadImage(job.result_url!)"
+          >
+            <Download class="h-3 w-3" />
+          </button>
+          <!-- Make Video from result -->
+          <button
+            v-if="job.result_url"
+            class="button h-6 w-6 p-0 border-violet-500/40 text-violet-300 hover:bg-violet-500/20"
+            title="Generate video from this image"
+            @click="openMakeVideo(job)"
+          >
+            <Film class="h-3 w-3" />
+          </button>
           <!-- Re-run -->
           <button
             class="button h-6 w-6 p-0"
@@ -505,6 +620,141 @@ onUnmounted(() => {
               >
                 <Image class="h-3.5 w-3.5" :class="rerunBusy ? 'animate-pulse' : ''" />
                 {{ rerunBusy ? 'Submitting…' : 'Submit Re-run' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- ── Make Video modal ─────────────────────────────────────────────────── -->
+  <Teleport to="body">
+    <Transition
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0 scale-95"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="opacity-100 scale-100"
+      leave-to-class="opacity-0 scale-95"
+    >
+      <div
+        v-if="makeVideoJob"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+        @click.self="closeMakeVideo"
+      >
+        <div class="relative mx-4 flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-panelSoft shadow-2xl">
+          <!-- header -->
+          <div class="flex shrink-0 items-center justify-between border-b border-line px-5 py-3">
+            <div class="flex items-center gap-2">
+              <Clapperboard class="h-4 w-4 text-violet-300" />
+              <p class="text-sm font-semibold text-white">Generate Video from Image</p>
+            </div>
+            <button class="button h-7 w-7 p-0 hover:border-rose/60 hover:text-rose" @click="closeMakeVideo">
+              <X class="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <!-- body -->
+          <div class="overflow-y-auto px-5 py-4 space-y-4">
+            <!-- Source image preview -->
+            <div class="flex gap-3 items-start">
+              <div class="relative h-16 w-16 shrink-0">
+                <img
+                  v-if="makeVideoPath"
+                  :src="thumbSrc(makeVideoPath)"
+                  class="h-full w-full rounded-lg border border-line object-cover"
+                  draggable="false"
+                />
+                <!-- Download spinner placeholder -->
+                <div
+                  v-else
+                  class="h-full w-full rounded-lg border border-line bg-panel flex items-center justify-center"
+                >
+                  <Download class="h-5 w-5 text-slate-600 animate-pulse" />
+                </div>
+              </div>
+              <div class="min-w-0 flex-1 text-xs text-slate-500">
+                <p v-if="makeVideoDownloading" class="text-slate-400">Downloading result image…</p>
+                <p v-else-if="makeVideoPath" class="truncate text-slate-300">{{ makeVideoPath }}</p>
+                <p v-else class="text-rose">Download failed — see error below</p>
+              </div>
+            </div>
+
+            <!-- Model selector -->
+            <div>
+              <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Model</p>
+              <div class="flex flex-wrap gap-1.5">
+                <button
+                  v-for="m in VIDEO_MODELS_SIMPLE"
+                  :key="m.value"
+                  class="rounded-lg border px-2.5 py-1 text-[11px] font-medium transition"
+                  :class="makeVideoModel === m.value
+                    ? 'border-violet-400/60 bg-violet-400/15 text-violet-300'
+                    : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200'"
+                  @click="makeVideoModel = m.value"
+                >{{ m.label }}</button>
+              </div>
+            </div>
+
+            <!-- Duration + Resolution -->
+            <div class="flex gap-2">
+              <div v-if="makeVideoModelCfg.resolutionOptions.length" class="flex-1 flex flex-col gap-1">
+                <label class="text-[11px] text-slate-500">Resolution</label>
+                <select v-model="makeVideoRes" class="field text-xs py-1">
+                  <option v-for="r in makeVideoModelCfg.resolutionOptions" :key="r" :value="r">{{ r }}</option>
+                </select>
+              </div>
+              <div class="flex-1 flex flex-col gap-1">
+                <label class="text-[11px] text-slate-500">Duration</label>
+                <select v-model="makeVideoDuration" class="field text-xs py-1">
+                  <option v-for="d in makeVideoModelCfg.durationOptions" :key="d" :value="d">{{ d }} seconds</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Prompt + AI Analyse -->
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Prompt</p>
+                <button
+                  class="flex items-center gap-1 rounded-md border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-300 transition hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  :disabled="makeVideoAnalysing || makeVideoBusy || makeVideoDownloading || !makeVideoPath"
+                  title="AI-analyse the image and generate a video prompt"
+                  @click="makeVideoAnalyse"
+                >
+                  <Sparkles class="h-3 w-3" :class="makeVideoAnalysing ? 'animate-pulse' : ''" />
+                  {{ makeVideoAnalysing ? 'Analysing…' : 'AI Analyse' }}
+                </button>
+              </div>
+              <p v-if="makeVideoAnalyseError" class="text-[11px] text-rose">{{ makeVideoAnalyseError }}</p>
+              <textarea
+                v-model="makeVideoPrompt"
+                rows="5"
+                class="w-full resize-y rounded-lg border border-line bg-panel px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-violet-400/60 focus:outline-none focus:ring-1 focus:ring-violet-400/30 transition"
+                placeholder="Click 'AI Analyse' to auto-generate a video prompt, or type one…"
+              />
+            </div>
+
+            <!-- Error -->
+            <p v-if="makeVideoError" class="text-xs text-rose">{{ makeVideoError }}</p>
+
+            <!-- Success -->
+            <div v-if="makeVideoDone" class="flex items-center gap-2 rounded-lg border border-mint/30 bg-mint/10 px-3 py-2">
+              <Check class="h-4 w-4 text-mint" />
+              <span class="text-xs text-mint font-medium">Video job queued! Check the Video Queue.</span>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex gap-2 pt-1">
+              <button class="button flex-1 gap-1.5 py-2 text-xs" @click="closeMakeVideo">Cancel</button>
+              <button
+                class="flex-1 rounded-lg bg-violet-600 hover:bg-violet-500 active:bg-violet-700 py-2 text-xs font-semibold text-white transition flex items-center justify-center gap-2 disabled:opacity-50"
+                :disabled="makeVideoBusy || makeVideoDownloading || !makeVideoPath || !makeVideoPrompt.trim()"
+                @click="submitMakeVideo"
+              >
+                <Clapperboard class="h-3.5 w-3.5" :class="makeVideoBusy ? 'animate-pulse' : ''" />
+                {{ makeVideoBusy ? 'Submitting…' : 'Generate Video' }}
               </button>
             </div>
           </div>

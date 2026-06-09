@@ -1,9 +1,50 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
-import { Check, Clapperboard, ExternalLink, FolderOpen, RefreshCcw, RotateCcw, Trash2, X } from "lucide-vue-next";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { Check, Clapperboard, ExternalLink, Film, FolderOpen, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
 
 const jobs = ref<WavespeedJobRecord[]>([]);
 const loading = ref(false);
+
+// ── Drop zone state ───────────────────────────────────────────────────────
+const dropOver = ref(false);
+
+function onDragOver(e: DragEvent) {
+  const hasFile = e.dataTransfer?.types.includes("Files") ?? false;
+  if (!hasFile) return;
+  e.preventDefault();
+  dropOver.value = true;
+}
+
+function onDragLeave() { dropOver.value = false; }
+
+async function onDrop(e: DragEvent) {
+  dropOver.value = false;
+  e.preventDefault();
+  const file = e.dataTransfer?.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) return;
+  // Open re-run modal with this local file path as source image
+  openNewVideoFromPath(file.path ?? (file as unknown as { path: string }).path);
+}
+
+function openNewVideoFromPath(imagePath: string) {
+  // Create a synthetic minimal job stub so openRerun can work
+  const stub = {
+    id:         "",
+    job_id:     "",
+    image_path: imagePath,
+    prompt:     "",
+    model:      "wan_2_7",
+    resolution: "720p",
+    duration:   8,
+    status:     "created",
+    video_url:  null,
+    error_msg:  null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  } satisfies WavespeedJobRecord;
+  openRerun(stub);
+}
 
 // ── Re-run state ──────────────────────────────────────────────────────────
 const rerunJob      = ref<WavespeedJobRecord | null>(null);
@@ -14,6 +55,9 @@ const rerunDuration = ref(8);
 const rerunBusy     = ref(false);
 const rerunError    = ref("");
 const rerunDone     = ref(false);
+// AI prompt analysis
+const rerunAnalysing      = ref(false);
+const rerunAnalyseError   = ref("");
 
 const VIDEO_MODELS_SIMPLE = [
   { value: "wan_2_2_explicit", label: "WAN 2.2 Spicy",   durationOptions: [5,8],    resolutionOptions: ["480p","720p"] },
@@ -32,20 +76,41 @@ function currentRerunModelCfg() {
   return VIDEO_MODELS_SIMPLE.find((m) => m.value === rerunModel.value) ?? VIDEO_MODELS_SIMPLE[0];
 }
 
+const rerunModelCfg = computed(() => currentRerunModelCfg());
+
 function openRerun(job: WavespeedJobRecord) {
-  rerunJob.value      = job;
-  rerunPrompt.value   = job.prompt;
-  rerunModel.value    = job.model in Object.fromEntries(VIDEO_MODELS_SIMPLE.map((m) => [m.value, true]))
-    ? job.model : "wan_2_2_explicit";
-  rerunRes.value      = job.resolution || "720p";
-  rerunDuration.value = Number(job.duration) || 8;
-  rerunBusy.value     = false;
-  rerunError.value    = "";
-  rerunDone.value     = false;
+  rerunJob.value          = job;
+  rerunPrompt.value       = job.prompt;
+  rerunModel.value        = job.model in Object.fromEntries(VIDEO_MODELS_SIMPLE.map((m) => [m.value, true]))
+    ? job.model : "wan_2_7";
+  rerunRes.value          = job.resolution || "720p";
+  rerunDuration.value     = Number(job.duration) || 8;
+  rerunBusy.value         = false;
+  rerunError.value        = "";
+  rerunDone.value         = false;
+  rerunAnalysing.value    = false;
+  rerunAnalyseError.value = "";
 }
 
 function closeRerun() {
   rerunJob.value = null;
+}
+
+async function rerunAnalyse() {
+  if (!rerunJob.value?.image_path) return;
+  rerunAnalysing.value    = true;
+  rerunAnalyseError.value = "";
+  try {
+    rerunPrompt.value = await window.desktop.ai.generateVideoPrompt(
+      [rerunJob.value.image_path],
+      rerunModel.value,
+      "",
+    );
+  } catch (err) {
+    rerunAnalyseError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    rerunAnalysing.value = false;
+  }
 }
 
 async function submitRerun() {
@@ -153,7 +218,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-3">
+  <div
+    class="flex flex-col gap-3 rounded-xl transition-colors"
+    :class="dropOver ? 'ring-2 ring-violet-500/60 bg-violet-500/5' : ''"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
     <!-- Header -->
     <div class="flex items-center gap-2">
       <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500 flex-1">
@@ -164,9 +235,19 @@ onUnmounted(() => {
       </button>
     </div>
 
+    <!-- Drop hint (shown when hovering with a file) -->
+    <div
+      v-if="dropOver"
+      class="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-violet-500/60 py-4 text-xs font-medium text-violet-300"
+    >
+      <Film class="h-4 w-4" />
+      Drop image to start a new video job
+    </div>
+
     <!-- Empty state -->
-    <p v-if="!loading && !jobs.length" class="text-center text-xs text-slate-600 py-6">
-      No jobs yet — generate a prompt and click "Submit to Wavespeed".
+    <p v-if="!loading && !jobs.length && !dropOver" class="text-center text-xs text-slate-600 py-4">
+      No jobs yet — generate a prompt and click "Submit to Wavespeed".<br>
+      <span class="text-slate-700">Or drop an image here to start a video job.</span>
     </p>
 
     <!-- Job list -->
@@ -299,27 +380,41 @@ onUnmounted(() => {
 
               <!-- Duration + Resolution -->
               <div class="flex gap-2">
-                <div v-if="currentRerunModelCfg().resolutionOptions.length" class="flex-1 flex flex-col gap-1">
+                <div v-if="rerunModelCfg.resolutionOptions.length" class="flex-1 flex flex-col gap-1">
                   <label class="text-[11px] text-slate-500">Resolution</label>
                   <select v-model="rerunRes" class="field text-xs py-1">
-                    <option v-for="r in currentRerunModelCfg().resolutionOptions" :key="r" :value="r">{{ r }}</option>
+                    <option v-for="r in rerunModelCfg.resolutionOptions" :key="r" :value="r">{{ r }}</option>
                   </select>
                 </div>
                 <div class="flex-1 flex flex-col gap-1">
                   <label class="text-[11px] text-slate-500">Duration</label>
                   <select v-model="rerunDuration" class="field text-xs py-1">
-                    <option v-for="d in currentRerunModelCfg().durationOptions" :key="d" :value="d">{{ d }} seconds</option>
+                    <option v-for="d in rerunModelCfg.durationOptions" :key="d" :value="d">{{ d }} seconds</option>
                   </select>
                 </div>
               </div>
 
-              <!-- Prompt -->
-              <div>
-                <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Prompt</p>
+              <!-- Prompt + AI Analyse -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Prompt</p>
+                  <button
+                    v-if="rerunJob?.image_path"
+                    class="flex items-center gap-1 rounded-md border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-300 transition hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    :disabled="rerunAnalysing || rerunBusy"
+                    :title="`AI-analyse the image for ${rerunModel}`"
+                    @click="rerunAnalyse"
+                  >
+                    <Sparkles class="h-3 w-3" :class="rerunAnalysing ? 'animate-pulse' : ''" />
+                    {{ rerunAnalysing ? 'Analysing…' : 'AI Analyse' }}
+                  </button>
+                </div>
+                <p v-if="rerunAnalyseError" class="text-[11px] text-rose">{{ rerunAnalyseError }}</p>
                 <textarea
                   v-model="rerunPrompt"
                   rows="6"
                   class="w-full resize-y rounded-lg border border-line bg-panel px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+                  :placeholder="rerunJob?.image_path ? 'Edit the prompt or click AI Analyse to regenerate…' : 'Enter a prompt…'"
                 />
               </div>
 

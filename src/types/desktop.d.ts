@@ -166,6 +166,8 @@ declare global {
         onImageJobUpdated(cb: (data: Partial<WavespeedImageJobRecord>) => void): void;
         offImageJobUpdated(): void;
         getImageDimensions(imagePath: string): Promise<{ width: number; height: number } | null>;
+        /** Download a generated image URL to ~/Pictures/WavespeedAI/ and reveal in Finder. */
+        downloadImage(resultUrl: string, suggestedFilename?: string): Promise<{ path: string; folder: string }>;
       };
       scan: {
         /**

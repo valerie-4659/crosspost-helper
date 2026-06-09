@@ -1757,6 +1757,33 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
+  // wavespeed:downloadImage — fetch a generated image URL and save it to
+  // ~/Pictures/WavespeedAI/, then reveal the file in Finder / Explorer.
+  ipcMain.handle("wavespeed:downloadImage", async (_event, resultUrl, suggestedFilename) => {
+    const res = await fetch(resultUrl);
+    if (!res.ok) throw new Error(`Download failed: HTTP ${res.status} ${res.statusText}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+
+    // Destination folder: ~/Pictures/WavespeedAI/
+    const destDir = path.join(app.getPath("pictures"), "WavespeedAI");
+    fs.mkdirSync(destDir, { recursive: true });
+
+    // Derive file extension from the URL path then from the Content-Type header
+    const urlExt = (resultUrl.split("?")[0] ?? "").match(/\.(png|jpe?g|webp)$/i)?.[1]?.toLowerCase();
+    const ct = res.headers.get("content-type")?.split(";")[0].trim() ?? "";
+    const ctExt = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }[ct] ?? null;
+    const ext = urlExt ?? ctExt ?? "png";
+
+    const filename = suggestedFilename || `wavespeed_${Date.now()}.${ext}`;
+    const destPath = path.join(destDir, filename);
+    fs.writeFileSync(destPath, buffer);
+
+    // Reveal the saved file in Finder / Explorer
+    shell.showItemInFolder(destPath);
+
+    return { path: destPath, folder: destDir };
+  });
+
   // ── Background poller — polls all pending jobs every 12 s ─────────────────
   // Runs in main process so jobs are tracked even when queue panel is closed.
   async function pollPendingWavespeedJobs() {
