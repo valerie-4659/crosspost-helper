@@ -63,6 +63,7 @@ function migrationSql() {
     "009_folder_previews.sql",
     "010_wavespeed_jobs.sql",
     "011_wavespeed_image_jobs.sql",
+    "012_topaz_jobs.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
@@ -1836,9 +1837,10 @@ app.whenReady().then(() => {
     return { path: destPath, folder: destDir };
   });
 
-  // topaz:upscaleImage — upload image to Topaz Labs API, poll for completion,
-  // download the result and save it to ~/Pictures/TopazAI/.
-  ipcMain.handle("topaz:upscaleImage", async (_event, { imagePath, model, outputFormat }) => {
+  // ── Shared Topaz upscale logic ────────────────────────────────────────────
+  // Used by both the blocking modal IPC (Library/Picker) and the background
+  // queue runner (Image Queue). Accepts a local file path.
+  async function topazUpscaleFile(imagePath, model, outputFormat) {
     const db = await getDatabase();
     const rows = db.exec("SELECT value FROM ai_config WHERE key = 'topaz_api_key'");
     const apiKey = rows[0]?.values?.[0]?.[0] ?? "";
@@ -1847,21 +1849,17 @@ app.whenReady().then(() => {
     const TOPAZ_BASE = "https://api.topazlabs.com/image/v1";
     const HEADERS = { "X-API-KEY": apiKey };
 
-    // Generative models use a different endpoint
     const genModels = new Set(["Wonder 2", "Bloom Creative", "Bloom Realism"]);
     const endpoint = genModels.has(model)
       ? `${TOPAZ_BASE}/enhance-gen/async`
       : `${TOPAZ_BASE}/enhance/async`;
 
-    // Build multipart/form-data with the image binary
     const imageBytes = fs.readFileSync(imagePath);
-    const imageBlob = new Blob([imageBytes]);
     const fd = new FormData();
     fd.append("model", model || "Standard V2");
     fd.append("output_format", outputFormat || "jpeg");
-    fd.append("image", imageBlob, path.basename(imagePath));
+    fd.append("image", new Blob([imageBytes]), path.basename(imagePath));
 
-    // Submit job
     const submitRes = await fetch(endpoint, { method: "POST", headers: HEADERS, body: fd });
     if (!submitRes.ok) {
       const errText = await submitRes.text().catch(() => "");
@@ -1871,7 +1869,6 @@ app.whenReady().then(() => {
     const processId = submitData.process_id;
     if (!processId) throw new Error("Topaz API returned no process_id");
 
-    // Poll until Completed, Failed, or Cancelled (max ~6 min)
     let status;
     let attempts = 0;
     do {
@@ -1879,36 +1876,114 @@ app.whenReady().then(() => {
       const statusRes = await fetch(`${TOPAZ_BASE}/status/${processId}`, { headers: HEADERS });
       const statusData = await statusRes.json();
       status = statusData.status;
-      if (status === "Failed" || status === "Cancelled") {
-        throw new Error(`Topaz job ended with status: ${status}`);
-      }
+      if (status === "Failed" || status === "Cancelled") throw new Error(`Topaz job ended with status: ${status}`);
       attempts++;
       if (attempts > 120) throw new Error("Topaz job timed out after 6 minutes");
     } while (status !== "Completed");
 
-    // Retrieve the signed download URL
     const dlRes = await fetch(`${TOPAZ_BASE}/download/${processId}`, { headers: HEADERS });
     const dlData = await dlRes.json();
     const downloadUrl = dlData.download_url ?? dlData.url;
     if (!downloadUrl) throw new Error(`Topaz API returned no download URL. Response: ${JSON.stringify(dlData).slice(0, 200)}`);
 
-    // Download the result image
     const imgRes = await fetch(downloadUrl);
     if (!imgRes.ok) throw new Error(`Failed to download Topaz result: HTTP ${imgRes.status}`);
     const buffer = Buffer.from(await imgRes.arrayBuffer());
 
-    // Save to ~/Pictures/TopazAI/
     const destDir = path.join(app.getPath("pictures"), "TopazAI");
     fs.mkdirSync(destDir, { recursive: true });
     const baseName = path.basename(imagePath, path.extname(imagePath));
     const modelSlug = (model || "standard").toLowerCase().replace(/\s+/g, "_");
-    const ext = (outputFormat === "png") ? "png" : "jpg";
-    const filename = `${baseName}_${modelSlug}_${Date.now()}.${ext}`;
-    const destPath = path.join(destDir, filename);
+    const ext = outputFormat === "png" ? "png" : "jpg";
+    const destPath = path.join(destDir, `${baseName}_${modelSlug}_${Date.now()}.${ext}`);
     fs.writeFileSync(destPath, buffer);
-
-    shell.showItemInFolder(destPath);
     return { path: destPath, folder: destDir };
+  }
+
+  // topaz:upscaleImage — blocking call used by Library / Picker modals.
+  ipcMain.handle("topaz:upscaleImage", async (_event, { imagePath, model, outputFormat }) => {
+    const result = await topazUpscaleFile(imagePath, model, outputFormat);
+    shell.showItemInFolder(result.path);
+    return result;
+  });
+
+  // ── Topaz background queue (Image Queue) ─────────────────────────────────
+  // Fire-and-forget runner: downloads source if a URL is given, then upscales.
+  async function runTopazQueueJob(localId, imagePath, imageUrl, model, outputFormat) {
+    let db;
+    try { db = await getDatabase(); } catch { return; }
+
+    function fail(msg) {
+      const now = new Date().toISOString();
+      try { db.run("UPDATE topaz_jobs SET status='failed', error_msg=?, updated_at=? WHERE id=?", [msg, now, localId]); persistDatabase(); } catch {}
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send("topaz:jobUpdated", { id: localId, status: "failed", error_msg: msg, updated_at: now });
+    }
+
+    try {
+      // Download source image from remote URL if no local path provided
+      let localPath = imagePath;
+      if (!localPath && imageUrl) {
+        const tmpDir = path.join(app.getPath("temp"), "topaz_src");
+        fs.mkdirSync(tmpDir, { recursive: true });
+        localPath = path.join(tmpDir, `topaz_src_${Date.now()}.png`);
+        const dlRes = await fetch(imageUrl);
+        if (!dlRes.ok) throw new Error(`Source download failed: HTTP ${dlRes.status}`);
+        fs.writeFileSync(localPath, Buffer.from(await dlRes.arrayBuffer()));
+        // Update DB with resolved local path
+        db.run("UPDATE topaz_jobs SET image_path=?, original_filename=? WHERE id=?",
+          [localPath, path.basename(localPath), localId]);
+        persistDatabase();
+      }
+      if (!localPath) throw new Error("No source image path or URL provided");
+
+      const result = await topazUpscaleFile(localPath, model, outputFormat);
+
+      const now = new Date().toISOString();
+      db.run("UPDATE topaz_jobs SET status='completed', result_path=?, updated_at=? WHERE id=?",
+        [result.path, now, localId]);
+      persistDatabase();
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send("topaz:jobUpdated", { id: localId, status: "completed", result_path: result.path, updated_at: now });
+    } catch (err) {
+      fail(err?.message ?? String(err));
+    }
+  }
+
+  // topaz:submitJob — insert row, start background worker, return immediately.
+  ipcMain.handle("topaz:submitJob", async (_event, { imagePath, imageUrl, model, outputFormat }) => {
+    const db = await getDatabase();
+    const localId = `topazjob_${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    const originalFilename = imagePath ? path.basename(imagePath) : (imageUrl ? imageUrl.split("/").pop()?.split("?")[0] ?? "image" : "image");
+    const stmt = db.prepare(
+      `INSERT INTO topaz_jobs (id, image_path, original_filename, model, output_format, status, result_path, error_msg, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'processing', NULL, NULL, ?, ?)`
+    );
+    stmt.run([localId, imagePath || "", originalFilename, model || "Standard V2", outputFormat || "jpeg", now, now]);
+    stmt.free();
+    persistDatabase();
+    // Fire-and-forget — do NOT await
+    runTopazQueueJob(localId, imagePath || "", imageUrl || "", model, outputFormat).catch(() => {});
+    return { localId };
+  });
+
+  // topaz:getJobs — return all jobs ordered newest-first.
+  ipcMain.handle("topaz:getJobs", async () => {
+    const db = await getDatabase();
+    const stmt = db.prepare("SELECT * FROM topaz_jobs ORDER BY created_at DESC LIMIT 100");
+    const jobs = [];
+    while (stmt.step()) jobs.push(stmt.getAsObject());
+    stmt.free();
+    return jobs;
+  });
+
+  // topaz:deleteJob — remove a single job by its local id.
+  ipcMain.handle("topaz:deleteJob", async (_event, localId) => {
+    const db = await getDatabase();
+    db.run("DELETE FROM topaz_jobs WHERE id = ?", [localId]);
+    persistDatabase();
+    return { ok: true };
   });
 
   // ── Background poller — polls all pending jobs every 12 s ─────────────────

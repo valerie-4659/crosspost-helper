@@ -103,8 +103,20 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   topaz: {
     /** Upload a local image to the Topaz Labs API, upscale it with the chosen model,
-     *  download the result to ~/Pictures/TopazAI/ and reveal it in Finder. */
+     *  download the result to ~/Pictures/TopazAI/ and reveal it in Finder.
+     *  Blocking call — used by Library / Picker modals. */
     upscaleImage: (params) => ipcRenderer.invoke("topaz:upscaleImage", params),
+    /** Submit a background upscale job. Accepts imagePath (local) or imageUrl (remote).
+     *  Returns {localId} immediately; status updates arrive via onJobUpdated. */
+    submitJob: (params) => ipcRenderer.invoke("topaz:submitJob", params),
+    /** Return all Topaz queue jobs ordered newest-first. */
+    getJobs: () => ipcRenderer.invoke("topaz:getJobs"),
+    /** Delete a Topaz queue job by its local DB id. */
+    deleteJob: (localId) => ipcRenderer.invoke("topaz:deleteJob", localId),
+    /** Subscribe to background job-update events from the main process. */
+    onJobUpdated: (cb) => ipcRenderer.on("topaz:jobUpdated", (_e, data) => cb(data)),
+    /** Remove all Topaz job-update listeners. */
+    offJobUpdated: () => ipcRenderer.removeAllListeners("topaz:jobUpdated"),
   },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),

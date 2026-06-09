@@ -31,6 +31,20 @@ declare global {
     updated_at: string;
   }
 
+  /** A row from the topaz_jobs SQLite table. */
+  interface TopazJobRecord {
+    id: string;
+    image_path: string;
+    original_filename: string;
+    model: string;
+    output_format: string;
+    status: "processing" | "completed" | "failed";
+    result_path: string | null;
+    error_msg: string | null;
+    created_at: string;
+    updated_at: string;
+  }
+
   /** A row from the wavespeed_image_jobs SQLite table. */
   interface WavespeedImageJobRecord {
     id: string;
@@ -171,15 +185,33 @@ declare global {
       };
       topaz: {
         /**
-         * Upload a local image to the Topaz Labs Image API, upscale it with the
-         * chosen model (Standard V2 | Wonder 2 | Bloom Creative | Bloom Realism),
-         * download the result and reveal it in ~/Pictures/TopazAI/.
+         * Blocking upscale — used by Library / Picker modals.
+         * Uploads, polls, downloads, reveals in Finder, then resolves.
          */
         upscaleImage(params: {
           imagePath: string;
           model: "Standard V2" | "Wonder 2" | "Bloom Creative" | "Bloom Realism";
           outputFormat?: "jpeg" | "png";
         }): Promise<{ path: string; folder: string }>;
+        /**
+         * Fire-and-forget queue job.
+         * Pass imagePath (local file) OR imageUrl (remote URL — backend downloads it).
+         * Returns {localId} immediately; updates arrive via onJobUpdated.
+         */
+        submitJob(params: {
+          imagePath?: string;
+          imageUrl?: string;
+          model: "Standard V2" | "Wonder 2" | "Bloom Creative" | "Bloom Realism";
+          outputFormat?: "jpeg" | "png";
+        }): Promise<{ localId: string }>;
+        /** Return all Topaz queue jobs ordered newest-first. */
+        getJobs(): Promise<TopazJobRecord[]>;
+        /** Delete a Topaz queue job by its local DB id. */
+        deleteJob(localId: string): Promise<{ ok: boolean }>;
+        /** Subscribe to background job-update events. */
+        onJobUpdated(cb: (data: Partial<TopazJobRecord>) => void): void;
+        /** Remove all Topaz job-update listeners. */
+        offJobUpdated(): void;
       };
       scan: {
         /**
