@@ -1,21 +1,23 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { Check, ExternalLink, FolderOpen, Image, RefreshCcw, RotateCcw, Trash2, X } from "lucide-vue-next";
 
 const jobs = ref<WavespeedImageJobRecord[]>([]);
 const loading = ref(false);
 
 // ── Re-run state ──────────────────────────────────────────────────────────────
-const rerunJob    = ref<WavespeedImageJobRecord | null>(null);
-const rerunPrompt = ref("");
-const rerunModel  = ref("gpt_image_2");
-const rerunSize   = ref("1024x1024");
-const rerunUseRef = ref(true);
-const rerunQuality  = ref<"auto" | "low" | "medium" | "high">("auto");
-const rerunFormat   = ref<"png" | "jpeg" | "webp">("png");
-const rerunBusy   = ref(false);
-const rerunError  = ref("");
-const rerunDone   = ref(false);
+const rerunJob        = ref<WavespeedImageJobRecord | null>(null);
+const rerunPrompt     = ref("");
+const rerunModel      = ref("gpt_image_2");
+const rerunAspect     = ref("auto");       // aspect ratio string, e.g. "16:9"
+const rerunResolution = ref("1k");         // resolution level for aspect-mode models
+const rerunUseRef     = ref(true);
+const rerunQuality    = ref<"auto" | "low" | "medium" | "high">("auto");
+const rerunFormat     = ref<"png" | "jpeg" | "webp">("png");
+const rerunStrength   = ref(0.6);          // Z-Image Turbo only
+const rerunBusy       = ref(false);
+const rerunError      = ref("");
+const rerunDone       = ref(false);
 
 const IMAGE_MODELS = [
   { value: "gpt_image_2",     label: "GPT Image 2"     },
@@ -34,30 +36,76 @@ const IMAGE_MODELS = [
   { value: "z_image_turbo",   label: "Z-Image Turbo"   },
 ];
 
+// Aspect ratios — value is the API aspect-ratio string (matches ImageGeneratePanel)
 const ASPECT_RATIOS = [
-  { value: "1024x1024",  label: "1:1"   },
-  { value: "1824x1024",  label: "16:9"  },
-  { value: "1024x1824",  label: "9:16"  },
-  { value: "1360x1024",  label: "4:3"   },
-  { value: "1024x1360",  label: "3:4"   },
-  { value: "1536x1024",  label: "3:2"   },
-  { value: "1024x1536",  label: "2:3"   },
-  { value: "1232x1024",  label: "5:4"   },
-  { value: "1024x1232",  label: "4:5"   },
-  { value: "auto",       label: "Auto"  },
+  { value: "auto",  label: "Auto", w: 1024, h: 1024 },
+  { value: "1:1",   label: "1:1",  w: 1024, h: 1024 },
+  { value: "16:9",  label: "16:9", w: 1824, h: 1024 },
+  { value: "9:16",  label: "9:16", w: 1024, h: 1824 },
+  { value: "4:3",   label: "4:3",  w: 1360, h: 1024 },
+  { value: "3:4",   label: "3:4",  w: 1024, h: 1360 },
+  { value: "3:2",   label: "3:2",  w: 1536, h: 1024 },
+  { value: "2:3",   label: "2:3",  w: 1024, h: 1536 },
+  { value: "5:4",   label: "5:4",  w: 1280, h: 1024 },
+  { value: "4:5",   label: "4:5",  w:  816, h: 1024 },
 ];
 
+const RESOLUTIONS = [
+  { value: "1k", label: "1K", scale: 1 },
+  { value: "2k", label: "2K", scale: 2 },
+  { value: "4k", label: "4K", scale: 4 },
+];
+
+// Model capability map — mirrors IMAGE_MODEL_CAPS in main.cjs
+const IMAGE_MODEL_CAPS: Record<string, { sizeMode: "aspect" | "wh"; quality: boolean; formats: string[]; strength: boolean }> = {
+  gpt_image_2:     { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false },
+  gpt_image_1_5:   { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false },
+  nano_banana_2:   { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false },
+  nano_banana_pro: { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false },
+  nano_banana:     { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false },
+  seedream_4_5:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  seedream_5_lite: { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  qwen_image_2:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  qwen_image:      { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  wan_2_7_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  wan_2_6_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  wan_2_5_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  flux_2_klein:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  z_image_turbo:   { sizeMode: "wh",     quality: false, formats: ["jpeg","png","webp"], strength: true  },
+};
+
+const rerunModelCaps = computed(() =>
+  IMAGE_MODEL_CAPS[rerunModel.value] ?? { sizeMode: "wh", quality: false, formats: [], strength: false }
+);
+
+// Clamp format if the new model doesn't support the current selection
+watch(rerunModel, () => {
+  const fmts = rerunModelCaps.value.formats;
+  if (fmts.length > 0 && !fmts.includes(rerunFormat.value)) {
+    rerunFormat.value = fmts[0] as "png" | "jpeg" | "webp";
+  }
+});
+
+/** Compute a WxH size string for wh-mode models based on aspect + resolution. */
+function computeRerunSize(): string {
+  const ar = ASPECT_RATIOS.find((a) => a.value === rerunAspect.value) ?? ASPECT_RATIOS[1];
+  const scale = RESOLUTIONS.find((r) => r.value === rerunResolution.value)?.scale ?? 1;
+  return `${ar.w * scale}*${ar.h * scale}`;
+}
+
 function openRerun(job: WavespeedImageJobRecord) {
-  rerunJob.value    = job;
-  rerunPrompt.value = job.prompt;
-  rerunModel.value  = IMAGE_MODELS.find((m) => m.value === job.model) ? job.model : "flux_2_klein";
-  rerunSize.value   = job.size || "1024x1024";
-  rerunUseRef.value = !!job.image_path;
-  rerunQuality.value  = "auto";
-  rerunFormat.value   = "png";
-  rerunBusy.value   = false;
-  rerunError.value  = "";
-  rerunDone.value   = false;
+  rerunJob.value        = job;
+  rerunPrompt.value     = job.prompt;
+  rerunModel.value      = IMAGE_MODELS.find((m) => m.value === job.model) ? job.model : "gpt_image_2";
+  rerunAspect.value     = "auto";
+  rerunResolution.value = "1k";
+  rerunUseRef.value     = !!job.image_path;
+  rerunQuality.value    = "auto";
+  rerunFormat.value     = "png";
+  rerunStrength.value   = 0.6;
+  rerunBusy.value       = false;
+  rerunError.value      = "";
+  rerunDone.value       = false;
 }
 
 function closeRerun() {
@@ -69,15 +117,19 @@ async function submitRerun() {
   rerunBusy.value  = true;
   rerunError.value = "";
   rerunDone.value  = false;
+  const sizeStr = computeRerunSize();
   try {
     const result = await window.desktop.wavespeed.submitImage({
       imagePath:    rerunJob.value?.image_path ?? "",
       prompt:       rerunPrompt.value.trim(),
       imageModel:   rerunModel.value,
-      size:         rerunSize.value,
+      aspectRatio:  rerunAspect.value,
+      resolution:   rerunResolution.value,
+      size:         sizeStr,
       useRefImage:  rerunUseRef.value,
       quality:      rerunQuality.value,
       outputFormat: rerunFormat.value,
+      strength:     rerunStrength.value,
     });
     const newJob: WavespeedImageJobRecord = {
       id:         result.localId ?? `wsimg_${Date.now()}`,
@@ -85,7 +137,7 @@ async function submitRerun() {
       image_path: rerunJob.value?.image_path ?? "",
       prompt:     rerunPrompt.value.trim(),
       model:      rerunModel.value,
-      size:       rerunSize.value,
+      size:       sizeStr,
       status:     (result.status as WavespeedImageJobRecord["status"]) ?? "created",
       result_url: null,
       error_msg:  null,
@@ -330,17 +382,32 @@ onUnmounted(() => {
                   v-for="ar in ASPECT_RATIOS"
                   :key="ar.value"
                   class="rounded border py-1 text-[11px] font-medium transition"
-                  :class="rerunSize === ar.value
+                  :class="rerunAspect === ar.value
                     ? 'border-sky-400/60 bg-sky-400/15 text-sky-300'
                     : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200'"
-                  @click="rerunSize = ar.value"
+                  @click="rerunAspect = ar.value"
                 >{{ ar.label }}</button>
               </div>
             </div>
 
-            <!-- Quality + Format -->
-            <div class="flex gap-3">
-              <div class="flex-1 flex flex-col gap-1">
+            <!-- Resolution -->
+            <div>
+              <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Resolution</p>
+              <div class="flex gap-1.5">
+                <button
+                  v-for="r in RESOLUTIONS" :key="r.value"
+                  class="flex-1 rounded border py-1 text-[11px] font-medium transition"
+                  :class="rerunResolution === r.value
+                    ? 'border-sky-400/60 bg-sky-400/15 text-sky-300'
+                    : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200'"
+                  @click="rerunResolution = r.value"
+                >{{ r.label }}</button>
+              </div>
+            </div>
+
+            <!-- Quality + Format (model-dependent) -->
+            <div v-if="rerunModelCaps.quality || rerunModelCaps.formats.length > 0" class="flex gap-3">
+              <div v-if="rerunModelCaps.quality" class="flex-1 flex flex-col gap-1">
                 <label class="text-[11px] text-slate-500">Quality</label>
                 <select v-model="rerunQuality" class="field text-xs py-1">
                   <option value="auto">Auto</option>
@@ -349,14 +416,24 @@ onUnmounted(() => {
                   <option value="high">High</option>
                 </select>
               </div>
-              <div class="flex-1 flex flex-col gap-1">
+              <div v-if="rerunModelCaps.formats.length > 0" class="flex-1 flex flex-col gap-1">
                 <label class="text-[11px] text-slate-500">Format</label>
                 <select v-model="rerunFormat" class="field text-xs py-1">
-                  <option value="png">PNG</option>
-                  <option value="jpeg">JPEG</option>
-                  <option value="webp">WebP</option>
+                  <option v-for="f in rerunModelCaps.formats" :key="f" :value="f">{{ f.toUpperCase() }}</option>
                 </select>
               </div>
+            </div>
+
+            <!-- Strength slider — Z-Image Turbo only -->
+            <div v-if="rerunModelCaps.strength" class="space-y-1">
+              <label class="text-[11px] text-slate-500">
+                Strength <span class="font-normal text-slate-600">({{ rerunStrength.toFixed(2) }})</span>
+              </label>
+              <input
+                v-model.number="rerunStrength" type="range" min="0" max="1" step="0.05"
+                class="w-full accent-sky-400"
+                aria-label="Transformation strength"
+              />
             </div>
 
             <!-- Prompt -->

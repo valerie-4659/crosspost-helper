@@ -1614,7 +1614,72 @@ app.whenReady().then(() => {
     z_image_turbo:   "wavespeed-ai/z-image-turbo/image-to-image",
   };
 
-  ipcMain.handle("wavespeed:submitImage", async (_event, { imagePath, prompt, imageModel, size, useRefImage, quality, outputFormat }) => {
+  // ── Per-model parameter capability map ───────────────────────────────────────
+  // sizeMode "aspect"  → send aspect_ratio (string) + resolution (1k/2k/4k)
+  //          "wh"      → send size as "W*H" string
+  // quality  true      → include quality field (GPT family only)
+  // formats  []        → no output_format;  non-empty list → allowed output_format values
+  // strength true      → include strength 0-1 (Z-Image Turbo only)
+  // singleImage true   → use singular "image" field instead of "images" array
+  const IMAGE_MODEL_CAPS = {
+    gpt_image_2:     { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false                  },
+    gpt_image_1_5:   { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false                  },
+    nano_banana_2:   { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false                  },
+    nano_banana_pro: { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false                  },
+    nano_banana:     { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false                  },
+    seedream_4_5:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
+    seedream_5_lite: { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
+    qwen_image_2:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
+    qwen_image:      { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
+    wan_2_7_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
+    wan_2_6_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
+    wan_2_5_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
+    flux_2_klein:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
+    z_image_turbo:   { sizeMode: "wh",     quality: false, formats: ["jpeg","png","webp"], strength: true, singleImage: true },
+  };
+
+  /** Build a model-specific request body for image generation/editing. */
+  function buildImageBody(imageModel, imageDataUri, prompt, aspectRatio, resolution, size, useRefImage, quality, outputFormat, strength) {
+    const caps = IMAGE_MODEL_CAPS[imageModel] ?? { sizeMode: "wh", quality: false, formats: [], strength: false };
+    const body = { prompt: prompt || "" };
+
+    // Attach reference image when opted in
+    if (useRefImage !== false && imageDataUri) {
+      if (caps.singleImage) {
+        body.image = imageDataUri;        // Z-Image Turbo: singular field
+      } else {
+        body.images = [imageDataUri];     // All others: array field
+      }
+    }
+
+    // Size / dimensions
+    if (caps.sizeMode === "aspect") {
+      // GPT / Nano Banana: separate aspect_ratio string + resolution level
+      if (aspectRatio && aspectRatio !== "auto") body.aspect_ratio = aspectRatio;
+      if (resolution) body.resolution = resolution;
+    } else {
+      // Seedream, Qwen, WAN, FLUX, Z-Image Turbo: "W*H" size string
+      body.size = size || "1024*1024";
+    }
+
+    // Quality — GPT family only
+    if (caps.quality && quality) body.quality = quality;
+
+    // Output format — only for models that support it, only if value is in the allowed list
+    if (caps.formats.length > 0 && outputFormat && caps.formats.includes(outputFormat)) {
+      body.output_format = outputFormat;
+    }
+
+    // Transformation strength — Z-Image Turbo only
+    if (caps.strength) body.strength = (strength !== undefined && strength !== null) ? strength : 0.6;
+
+    // Always random seed
+    body.seed = -1;
+
+    return body;
+  }
+
+  ipcMain.handle("wavespeed:submitImage", async (_event, { imagePath, prompt, imageModel, aspectRatio, resolution, size, useRefImage, quality, outputFormat, strength }) => {
     const db = await getDatabase();
     const rows = db.exec("SELECT key, value FROM ai_config");
     const cfg = {};
@@ -1641,18 +1706,7 @@ app.whenReady().then(() => {
     }
 
     const endpointSlug = WAVESPEED_IMAGE_ENDPOINT_MAP[imageModel] ?? WAVESPEED_IMAGE_ENDPOINT_MAP["flux_2_klein"];
-    const body = {
-      prompt:  prompt || "",
-      size:    size || "1024*1024",
-      seed:    -1,
-    };
-    // Only attach the reference image when the user opted in
-    if (useRefImage !== false && imageDataUri) {
-      body.images = [imageDataUri];
-    }
-    // Optional quality and output format — ignored by models that don't support them
-    if (quality)      body.quality       = quality;
-    if (outputFormat) body.output_format = outputFormat;
+    const body = buildImageBody(imageModel, imageDataUri, prompt, aspectRatio, resolution, size, useRefImage, quality, outputFormat, strength);
 
     const res = await fetch(`https://api.wavespeed.ai/api/v3/${endpointSlug}`, {
       method:  "POST",

@@ -149,10 +149,17 @@ declare global {
           imagePath: string;
           prompt: string;
           imageModel?: string;
+          /** Aspect ratio string for GPT/Nano Banana models, e.g. "16:9" */
+          aspectRatio?: string;
+          /** Resolution level for GPT/Nano Banana models: "1k" | "2k" | "4k" */
+          resolution?: string;
+          /** WxH size string for non-aspect models, e.g. "1024*1824" */
           size?: string;
           useRefImage?: boolean;
           quality?: "low" | "medium" | "high" | "auto";
           outputFormat?: "png" | "jpeg" | "webp";
+          /** Transformation strength 0-1 for Z-Image Turbo */
+          strength?: number;
         }): Promise<WavespeedJob>;
         getImageJobs(): Promise<WavespeedImageJobRecord[]>;
         deleteImageJob(localId: string): Promise<{ ok: boolean }>;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, ref, watch } from "vue";
 import type { AppPage } from "@/components/SidebarNavigation.vue";
 import { Check, Copy, FolderOpen, Image, X } from "lucide-vue-next";
 
@@ -52,12 +52,36 @@ const RESOLUTIONS = [
 const QUALITIES  = ["auto", "low", "medium", "high"] as const;
 const FORMATS    = ["png", "jpeg", "webp"]            as const;
 
+// ── Model capability map (mirrors IMAGE_MODEL_CAPS in main.cjs) ───────────────
+// sizeMode "aspect" → send aspect_ratio + resolution  (GPT / Nano Banana)
+//          "wh"     → send size "W*H"                 (Seedream, Qwen, WAN, FLUX, Z-Image)
+// quality  true     → show & send quality dropdown    (GPT family only)
+// formats  []       → hide format selector;  list     → allowed output_format values
+// strength true     → show strength slider            (Z-Image Turbo only)
+const IMAGE_MODEL_CAPS: Record<string, { sizeMode: "aspect" | "wh"; quality: boolean; formats: string[]; strength: boolean }> = {
+  gpt_image_2:     { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false },
+  gpt_image_1_5:   { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false },
+  nano_banana_2:   { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false },
+  nano_banana_pro: { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false },
+  nano_banana:     { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false },
+  seedream_4_5:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  seedream_5_lite: { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  qwen_image_2:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  qwen_image:      { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  wan_2_7_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  wan_2_6_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  wan_2_5_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  flux_2_klein:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
+  z_image_turbo:   { sizeMode: "wh",     quality: false, formats: ["jpeg","png","webp"], strength: true  },
+};
+
 // ── State ─────────────────────────────────────────────────────────────────────
 const selectedModel      = ref("gpt_image_2");
 const selectedAspect     = ref("auto");
 const selectedResolution = ref("1k");
 const selectedQuality    = ref<typeof QUALITIES[number]>("medium");
 const selectedFormat     = ref<typeof FORMATS[number]>("png");
+const zStrength          = ref(0.6);
 const useRefImage        = ref(true);
 const instructions       = ref("");
 const generating         = ref(false);
@@ -71,6 +95,21 @@ const wsSubmitted        = ref(false);
 const wsError            = ref("");
 
 const setPage = inject<(page: AppPage) => void>("setPage");
+
+// Capabilities of the currently selected model
+const modelCaps = computed(() =>
+  IMAGE_MODEL_CAPS[selectedModel.value] ?? { sizeMode: "wh", quality: false, formats: [], strength: false }
+);
+
+// Reset format to "png" if the current selection is unsupported by the new model
+watch(selectedModel, () => {
+  const fmts = modelCaps.value.formats;
+  if (fmts.length > 0 && !fmts.includes(selectedFormat.value)) {
+    selectedFormat.value = fmts[0] as typeof FORMATS[number];
+  }
+  generatedPrompt.value = "";
+  resetWavespeed();
+});
 
 // Compute the `size` string to send to the API: "WxH" scaled by resolution
 function computeSize(): string {
@@ -157,10 +196,15 @@ async function submitToWavespeed() {
       imagePath:    imagePath ?? "",
       prompt:       generatedPrompt.value,
       imageModel:   selectedModel.value,
+      // Aspect-mode models (GPT, Nano Banana): aspect_ratio + resolution
+      aspectRatio:  selectedAspect.value,
+      resolution:   selectedResolution.value,
+      // WH-mode models (Seedream, Qwen, WAN, FLUX, Z-Image): size string
       size:         computeSize(),
       useRefImage:  useRefImage.value,
       quality:      selectedQuality.value,
       outputFormat: selectedFormat.value,
+      strength:     zStrength.value,
     });
     wsSubmitted.value = true;
   } catch (err) {
@@ -190,7 +234,7 @@ function resetWavespeed() {
           :class="selectedModel === m.value
             ? 'border-sky-400/60 bg-sky-400/15 text-sky-300'
             : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200'"
-          @click="selectedModel = m.value; generatedPrompt = ''; resetWavespeed()"
+          @click="selectedModel = m.value"
         >
           {{ m.label }}
           <span v-if="m.badge" class="text-[9px] font-bold leading-none px-1 py-0.5 rounded"
@@ -223,8 +267,9 @@ function resetWavespeed() {
     </div>
 
     <!-- Resolution · Quality · Format row -->
-    <div class="grid grid-cols-3 gap-2">
-      <div>
+    <div class="flex flex-wrap gap-2">
+      <!-- Resolution — always shown -->
+      <div class="min-w-[120px] flex-1">
         <p class="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Resolution</p>
         <div class="flex gap-1">
           <button
@@ -237,23 +282,46 @@ function resetWavespeed() {
           >{{ r.label }}</button>
         </div>
       </div>
-      <div>
+      <!-- Quality — GPT family only -->
+      <div v-if="modelCaps.quality" class="min-w-[90px] flex-1">
         <p class="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Quality</p>
         <select v-model="selectedQuality" class="w-full rounded border border-line bg-panel px-1.5 py-1 text-[10px] text-slate-300 focus:outline-none">
           <option v-for="q in QUALITIES" :key="q" :value="q" class="capitalize">{{ q }}</option>
         </select>
       </div>
-      <div>
+      <!-- Format — models with output_format support (GPT, Nano Banana, Z-Image Turbo) -->
+      <div v-if="modelCaps.formats.length > 0" class="min-w-[90px] flex-1">
         <p class="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Format</p>
         <select v-model="selectedFormat" class="w-full rounded border border-line bg-panel px-1.5 py-1 text-[10px] text-slate-300 focus:outline-none uppercase">
-          <option v-for="f in FORMATS" :key="f" :value="f" class="uppercase">{{ f.toUpperCase() }}</option>
+          <option v-for="f in modelCaps.formats" :key="f" :value="f" class="uppercase">{{ f.toUpperCase() }}</option>
         </select>
       </div>
     </div>
 
+    <!-- Strength slider — Z-Image Turbo only -->
+    <div v-if="modelCaps.strength" class="space-y-1">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500">
+        Strength <span class="normal-case text-slate-600">({{ zStrength.toFixed(2) }} — higher = more creative)</span>
+      </p>
+      <input
+        v-model.number="zStrength" type="range" min="0" max="1" step="0.05"
+        class="w-full accent-sky-400"
+        aria-label="Transformation strength"
+      />
+    </div>
+
     <!-- Size preview chip -->
     <p class="text-[10px] text-slate-600">
-      Output: <span class="font-mono text-slate-500">{{ computeSize() }}</span> px · {{ selectedFormat.toUpperCase() }} · {{ selectedQuality }}
+      <template v-if="modelCaps.sizeMode === 'aspect'">
+        Output: <span class="font-mono text-slate-500">{{ selectedAspect }} · {{ selectedResolution.toUpperCase() }}</span>
+        <template v-if="modelCaps.quality"> · {{ selectedQuality }}</template>
+        <template v-if="modelCaps.formats.length > 0"> · {{ selectedFormat.toUpperCase() }}</template>
+      </template>
+      <template v-else>
+        Output: <span class="font-mono text-slate-500">{{ computeSize() }}</span> px
+        <template v-if="modelCaps.formats.length > 0"> · {{ selectedFormat.toUpperCase() }}</template>
+        <template v-if="modelCaps.strength"> · strength {{ zStrength.toFixed(2) }}</template>
+      </template>
     </p>
 
     <!-- Instructions -->
@@ -322,7 +390,8 @@ function resetWavespeed() {
     <div v-if="generatedPrompt && wavespeedAvailable" class="space-y-2.5 rounded-xl border border-sky-500/20 bg-panel p-4">
       <p class="text-[10px] font-semibold uppercase tracking-wide text-sky-400/70">
         Recreate via Wavespeed
-        <span class="normal-case font-normal text-slate-600"> — {{ computeSize() }} · {{ selectedFormat.toUpperCase() }}</span>
+        <span v-if="modelCaps.sizeMode === 'aspect'" class="normal-case font-normal text-slate-600"> — {{ selectedAspect }} · {{ selectedResolution.toUpperCase() }}</span>
+        <span v-else class="normal-case font-normal text-slate-600"> — {{ computeSize() }}</span>
       </p>
       <button
         v-if="!wsSubmitted && !wsSubmitting"
