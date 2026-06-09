@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Archive, Check, Clapperboard, Clipboard, Copy, EyeOff, Expand, FolderOpen, Image, Pin, PinOff, RotateCcw } from "lucide-vue-next";
+import { Archive, Check, Clapperboard, Clipboard, Copy, EyeOff, Expand, FolderOpen, Image, Pin, PinOff, RotateCcw, Zap } from "lucide-vue-next";
 import { setImagesDragData } from "@/services/imageActionService";
 import PlatformIcon from "@/components/PlatformIcon.vue";
 
@@ -50,6 +50,7 @@ const emit = defineEmits<{
   toggleFolderPreview: [imageId: string];
   videoPrompt: [localPath: string];
   recreateImage: [localPath: string];
+  upscaleImage: [localPath: string];
 }>();
 
 const imageUrl = computed(() => {
@@ -121,6 +122,13 @@ const dragImages = computed(() => (props.selected && props.dragImages?.length ? 
           @click.stop="emit('recreateImage', image.localPath!)"
         >
           <Image class="h-4 w-4" />
+        </button>
+        <button
+          class="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-ink/80 text-slate-400 transition hover:border-amber-500/50 hover:text-amber-400"
+          title="Upscale with Topaz Labs"
+          @click.stop="emit('upscaleImage', image.localPath!)"
+        >
+          <Zap class="h-4 w-4" />
         </button>
       </div>
       <!-- Folder preview pin — bottom-right of image, only in leaf folder view -->

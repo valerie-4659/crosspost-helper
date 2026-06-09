@@ -169,6 +169,18 @@ declare global {
         /** Download a generated image URL to ~/Pictures/WavespeedAI/ and reveal in Finder. */
         downloadImage(resultUrl: string, suggestedFilename?: string): Promise<{ path: string; folder: string }>;
       };
+      topaz: {
+        /**
+         * Upload a local image to the Topaz Labs Image API, upscale it with the
+         * chosen model (Standard V2 | Wonder 2 | Bloom Creative | Bloom Realism),
+         * download the result and reveal it in ~/Pictures/TopazAI/.
+         */
+        upscaleImage(params: {
+          imagePath: string;
+          model: "Standard V2" | "Wonder 2" | "Bloom Creative" | "Bloom Realism";
+          outputFormat?: "jpeg" | "png";
+        }): Promise<{ path: string; folder: string }>;
+      };
       scan: {
         /**
          * Subscribe to per-file progress events emitted during a folder scan.

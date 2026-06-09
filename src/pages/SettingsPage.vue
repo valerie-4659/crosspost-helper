@@ -48,6 +48,31 @@ const wavespeedApiKey  = ref("");
 const showWsKey        = ref(false);
 const wsSaved          = ref(false);
 
+// ── Topaz Labs Settings ───────────────────────────────────────────────────
+const topazApiKey  = ref("");
+const showTopazKey = ref(false);
+const topazSaved   = ref(false);
+
+async function loadTopazKey() {
+  const rows = await window.desktop.db.select<Array<{ value: string }>>(
+    "SELECT value FROM ai_config WHERE key = 'topaz_api_key'",
+  );
+  topazApiKey.value = rows[0]?.value ?? "";
+}
+
+function openTopazDashboard() {
+  window.desktop.opener.openUrl("https://account.topazlabs.com/manage-api");
+}
+
+async function saveTopazSettings() {
+  await window.desktop.db.execute(
+    "INSERT INTO ai_config (key, value) VALUES ('topaz_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+    [topazApiKey.value, topazApiKey.value],
+  );
+  topazSaved.value = true;
+  setTimeout(() => (topazSaved.value = false), 2500);
+}
+
 async function loadWavespeedKey() {
   const rows = await window.desktop.db.select<Array<{ value: string }>>(
     "SELECT value FROM ai_config WHERE key = 'wavespeed_api_key'",
@@ -179,6 +204,7 @@ onMounted(async () => {
   await ai.loadPersonas();
   await ai.loadStorylines();
   await loadWavespeedKey();
+  await loadTopazKey();
 });
 </script>
 
@@ -272,6 +298,37 @@ onMounted(async () => {
       </div>
       <button class="button-primary mt-3 h-8 px-4 text-sm" @click="saveWavespeedSettings">
         {{ wsSaved ? '✓ Saved' : 'Save Wavespeed Settings' }}
+      </button>
+    </section>
+
+    <!-- ── Topaz Labs ─────────────────────────────────────────────────────── -->
+    <section class="surface rounded-lg p-4">
+      <h2 class="text-base font-semibold text-white">Topaz Labs — Image Upscaling</h2>
+      <p class="mt-1 text-sm text-slate-400">
+        API key enables the "Upscale with Topaz" button in the Library and Picker.
+        Get your key at <button class="text-accent underline" @click="openTopazDashboard">account.topazlabs.com/manage-api</button>.
+      </p>
+      <div class="mt-4 flex flex-col gap-1">
+        <label class="text-xs text-slate-400">API Key</label>
+        <div class="flex gap-2">
+          <input
+            v-model="topazApiKey"
+            :type="showTopazKey ? 'text' : 'password'"
+            class="field flex-1 font-mono text-xs"
+            placeholder="Your Topaz Labs API key"
+          />
+          <button class="button px-2" :title="showTopazKey ? 'Hide' : 'Show'" @click="showTopazKey = !showTopazKey">
+            <EyeOff v-if="showTopazKey" class="h-4 w-4" />
+            <Eye v-else class="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      <div class="mt-3 rounded-lg border border-line bg-ink px-3 py-2.5 text-xs text-slate-400 space-y-0.5">
+        <p><span class="text-white font-medium">Available models:</span> Standard V2 · Wonder 2 · Bloom Creative · Bloom Realism</p>
+        <p>Upscaled images are saved to <span class="text-slate-300">~/Pictures/TopazAI/</span> and revealed in Finder.</p>
+      </div>
+      <button class="button-primary mt-3 h-8 px-4 text-sm" @click="saveTopazSettings">
+        {{ topazSaved ? '✓ Saved' : 'Save Topaz Settings' }}
       </button>
     </section>
 

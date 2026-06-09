@@ -101,6 +101,11 @@ contextBridge.exposeInMainWorld("desktop", {
     /** Download a generated image URL to ~/Pictures/WavespeedAI/ and reveal it. */
     downloadImage: (resultUrl, suggestedFilename) => ipcRenderer.invoke("wavespeed:downloadImage", resultUrl, suggestedFilename),
   },
+  topaz: {
+    /** Upload a local image to the Topaz Labs API, upscale it with the chosen model,
+     *  download the result to ~/Pictures/TopazAI/ and reveal it in Finder. */
+    upscaleImage: (params) => ipcRenderer.invoke("topaz:upscaleImage", params),
+  },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),
     offProgress: () => ipcRenderer.removeAllListeners("scan:progress"),

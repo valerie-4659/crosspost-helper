@@ -1784,6 +1784,80 @@ app.whenReady().then(() => {
     return { path: destPath, folder: destDir };
   });
 
+  // topaz:upscaleImage — upload image to Topaz Labs API, poll for completion,
+  // download the result and save it to ~/Pictures/TopazAI/.
+  ipcMain.handle("topaz:upscaleImage", async (_event, { imagePath, model, outputFormat }) => {
+    const db = await getDatabase();
+    const rows = db.exec("SELECT value FROM ai_config WHERE key = 'topaz_api_key'");
+    const apiKey = rows[0]?.values?.[0]?.[0] ?? "";
+    if (!apiKey) throw new Error("No Topaz Labs API key configured. Add it in Settings → Topaz Labs.");
+
+    const TOPAZ_BASE = "https://api.topazlabs.com/image/v1";
+    const HEADERS = { "X-API-KEY": apiKey };
+
+    // Generative models use a different endpoint
+    const genModels = new Set(["Wonder 2", "Bloom Creative", "Bloom Realism"]);
+    const endpoint = genModels.has(model)
+      ? `${TOPAZ_BASE}/enhance-gen/async`
+      : `${TOPAZ_BASE}/enhance/async`;
+
+    // Build multipart/form-data with the image binary
+    const imageBytes = fs.readFileSync(imagePath);
+    const imageBlob = new Blob([imageBytes]);
+    const fd = new FormData();
+    fd.append("model", model || "Standard V2");
+    fd.append("output_format", outputFormat || "jpeg");
+    fd.append("image", imageBlob, path.basename(imagePath));
+
+    // Submit job
+    const submitRes = await fetch(endpoint, { method: "POST", headers: HEADERS, body: fd });
+    if (!submitRes.ok) {
+      const errText = await submitRes.text().catch(() => "");
+      throw new Error(`Topaz submit failed: HTTP ${submitRes.status} — ${errText.slice(0, 300)}`);
+    }
+    const submitData = await submitRes.json();
+    const processId = submitData.process_id;
+    if (!processId) throw new Error("Topaz API returned no process_id");
+
+    // Poll until Completed, Failed, or Cancelled (max ~6 min)
+    let status;
+    let attempts = 0;
+    do {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const statusRes = await fetch(`${TOPAZ_BASE}/status/${processId}`, { headers: HEADERS });
+      const statusData = await statusRes.json();
+      status = statusData.status;
+      if (status === "Failed" || status === "Cancelled") {
+        throw new Error(`Topaz job ended with status: ${status}`);
+      }
+      attempts++;
+      if (attempts > 120) throw new Error("Topaz job timed out after 6 minutes");
+    } while (status !== "Completed");
+
+    // Retrieve the signed download URL
+    const dlRes = await fetch(`${TOPAZ_BASE}/download/${processId}`, { headers: HEADERS });
+    const { url: downloadUrl } = await dlRes.json();
+    if (!downloadUrl) throw new Error("Topaz API returned no download URL");
+
+    // Download the result image
+    const imgRes = await fetch(downloadUrl);
+    if (!imgRes.ok) throw new Error(`Failed to download Topaz result: HTTP ${imgRes.status}`);
+    const buffer = Buffer.from(await imgRes.arrayBuffer());
+
+    // Save to ~/Pictures/TopazAI/
+    const destDir = path.join(app.getPath("pictures"), "TopazAI");
+    fs.mkdirSync(destDir, { recursive: true });
+    const baseName = path.basename(imagePath, path.extname(imagePath));
+    const modelSlug = (model || "standard").toLowerCase().replace(/\s+/g, "_");
+    const ext = (outputFormat === "png") ? "png" : "jpg";
+    const filename = `${baseName}_${modelSlug}_${Date.now()}.${ext}`;
+    const destPath = path.join(destDir, filename);
+    fs.writeFileSync(destPath, buffer);
+
+    shell.showItemInFolder(destPath);
+    return { path: destPath, folder: destDir };
+  });
+
   // ── Background poller — polls all pending jobs every 12 s ─────────────────
   // Runs in main process so jobs are tracked even when queue panel is closed.
   async function pollPendingWavespeedJobs() {

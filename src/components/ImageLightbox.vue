@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { convertFileSrc } from "@/electron-shims/core";
-import { Archive, Check, ChevronLeft, ChevronRight, RotateCcw, Trash2, X } from "lucide-vue-next";
+import { Archive, Check, ChevronLeft, ChevronRight, RotateCcw, Trash2, X, Zap } from "lucide-vue-next";
 import type { ImageWithPostState } from "@/types/image";
 
 const props = defineProps<{
@@ -20,6 +20,8 @@ const emit = defineEmits<{
   delete: [imageId: string];
   /** Globally exclude (or restore) this image from all networks + Picker. */
   archive: [imageId: string, archived: boolean];
+  /** Upscale with Topaz Labs — passes the local file path. */
+  upscaleImage: [localPath: string];
 }>();
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -131,6 +133,17 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           <button class="button h-8 border-rose/60 bg-rose/10 px-2 text-xs text-rose hover:bg-rose/20" @click="confirmDelete">Confirm</button>
           <button class="button h-8 px-2 text-xs" @click="cancelDelete">Cancel</button>
         </template>
+
+        <!-- Upscale with Topaz -->
+        <button
+          v-if="image.localPath"
+          class="button h-8 gap-1.5 px-2 text-xs hover:border-amber-500/50 hover:text-amber-400 transition"
+          title="Upscale with Topaz Labs"
+          @click="emit('upscaleImage', image.localPath!)"
+        >
+          <Zap class="h-3.5 w-3.5" />
+          Upscale
+        </button>
 
         <!-- Close -->
         <button class="button h-8 w-8 p-0" title="Close (Esc)" @click="emit('close')">

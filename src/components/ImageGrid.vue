@@ -25,6 +25,7 @@ const emit = defineEmits<{
   toggleFolderPreview: [imageId: string];
   videoPrompt: [localPath: string];
   recreateImage: [localPath: string];
+  upscaleImage: [localPath: string];
 }>();
 </script>
 
@@ -50,6 +51,7 @@ const emit = defineEmits<{
       @toggle-folder-preview="emit('toggleFolderPreview', $event)"
       @video-prompt="emit('videoPrompt', $event)"
       @recreate-image="emit('recreateImage', $event)"
+      @upscale-image="emit('upscaleImage', $event)"
     />
   </div>
   <div v-else class="surface flex h-72 items-center justify-center rounded-lg text-sm text-slate-400">
