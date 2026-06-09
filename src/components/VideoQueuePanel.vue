@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { Check, Clapperboard, Copy, ExternalLink, Film, FolderOpen, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
+import { Check, Clapperboard, ExternalLink, Film, FolderOpen, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
+import AiPostPanel from "@/components/AiPostPanel.vue";
 
 const jobs = ref<WavespeedJobRecord[]>([]);
 const loading = ref(false);
@@ -218,58 +219,18 @@ const POST_NETWORKS = [
   { id: "tumblr",     label: "Tumblr"      },
 ];
 
-const showPostModal  = ref(false);
-const postImagePath  = ref<string | null>(null);
-const postNetwork    = ref("x");
-const postHint       = ref("");
-const postGenerating = ref(false);
-const postResult     = ref<{ title?: string; description: string; tags: string[] } | null>(null);
-const postError      = ref("");
-const postCopied     = ref(false);
+const showPostModal = ref(false);
+const postImagePath = ref<string | null>(null);
+const postNetwork   = ref("x");
 
 function openPostForJob(job: WavespeedJobRecord) {
   if (!job.image_path) return;
-  showPostModal.value  = true;
-  postImagePath.value  = job.image_path;
-  postResult.value     = null;
-  postError.value      = "";
-  postHint.value       = "";
-  postCopied.value     = false;
+  showPostModal.value = true;
+  postImagePath.value = job.image_path;
 }
 
 function closePostModal() {
   showPostModal.value = false;
-  postResult.value    = null;
-}
-
-async function runGeneratePost() {
-  if (!postImagePath.value || postGenerating.value) return;
-  postGenerating.value = true;
-  postResult.value     = null;
-  postError.value      = "";
-  try {
-    const result = await window.desktop.ai.generatePost(
-      [postImagePath.value],
-      postNetwork.value,
-      postHint.value.trim() || undefined,
-    );
-    postResult.value = result;
-  } catch (err) {
-    postError.value = err instanceof Error ? err.message : String(err);
-  } finally {
-    postGenerating.value = false;
-  }
-}
-
-async function copyPostResult() {
-  if (!postResult.value) return;
-  const parts: string[] = [];
-  if (postResult.value.title)        parts.push(postResult.value.title);
-  if (postResult.value.description)  parts.push(postResult.value.description);
-  if (postResult.value.tags?.length) parts.push(postResult.value.tags.join(" "));
-  await navigator.clipboard.writeText(parts.join("\n\n")).catch(() => {});
-  postCopied.value = true;
-  setTimeout(() => { postCopied.value = false; }, 2000);
 }
 
 onMounted(async () => {
@@ -531,7 +492,7 @@ onUnmounted(() => {
         class="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4"
         @click.self="closePostModal"
       >
-        <div class="surface w-full max-w-md rounded-xl border border-line shadow-2xl">
+        <div class="surface w-full max-w-lg rounded-xl border border-line shadow-2xl">
           <!-- Header -->
           <div class="flex items-center justify-between border-b border-line px-4 py-3">
             <div class="flex items-center gap-2">
@@ -541,75 +502,25 @@ onUnmounted(() => {
             </div>
             <button class="button h-7 w-7 p-0" @click="closePostModal"><X class="h-4 w-4" /></button>
           </div>
-
-          <!-- Body -->
-          <div class="flex flex-col gap-3 p-4">
-            <!-- Network selector -->
-            <div>
-              <p class="mb-1.5 text-xs font-medium text-slate-400">Platform</p>
-              <div class="flex flex-wrap gap-1.5">
-                <button
-                  v-for="net in POST_NETWORKS"
-                  :key="net.id"
-                  class="rounded-md border px-2.5 py-1 text-xs transition"
-                  :class="postNetwork === net.id
-                    ? 'border-accent bg-accent/15 text-accent'
-                    : 'border-line text-slate-400 hover:border-slate-500 hover:text-slate-200'"
-                  @click="postNetwork = net.id"
-                >{{ net.label }}</button>
-              </div>
-            </div>
-
-            <!-- Hint -->
-            <div>
-              <label class="text-xs font-medium text-slate-400">Hint <span class="text-slate-600">(optional)</span></label>
-              <input
-                v-model="postHint"
-                class="field mt-1 w-full text-sm"
-                placeholder="e.g. focus on the mood, add a call to action…"
-              />
-            </div>
-
-            <!-- Error -->
-            <div v-if="postError" class="rounded-md border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">{{ postError }}</div>
-
-            <!-- Result -->
-            <div v-if="postResult" class="rounded-lg border border-line bg-ink/40 p-3 space-y-2 max-h-60 overflow-y-auto">
-              <div v-if="postResult.title">
-                <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Title</p>
-                <p class="mt-0.5 text-xs text-white">{{ postResult.title }}</p>
-              </div>
-              <div v-if="postResult.description">
-                <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Description</p>
-                <p class="mt-0.5 text-xs text-slate-300 whitespace-pre-wrap">{{ postResult.description }}</p>
-              </div>
-              <div v-if="postResult.tags?.length">
-                <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Tags</p>
-                <p class="mt-0.5 text-xs text-accent">{{ postResult.tags.join(' ') }}</p>
-              </div>
-            </div>
+          <!-- Network selector -->
+          <div class="flex flex-wrap gap-1.5 border-b border-line px-4 py-3">
+            <button
+              v-for="net in POST_NETWORKS"
+              :key="net.id"
+              class="rounded-md border px-2.5 py-1 text-xs transition"
+              :class="postNetwork === net.id
+                ? 'border-accent bg-accent/15 text-accent'
+                : 'border-line text-slate-400 hover:border-slate-500 hover:text-slate-200'"
+              @click="postNetwork = net.id"
+            >{{ net.label }}</button>
           </div>
-
-          <!-- Footer -->
-          <div class="flex items-center justify-end gap-2 border-t border-line px-4 py-3">
-            <button class="button h-8 px-3 text-sm" @click="closePostModal">Close</button>
-            <button
-              v-if="postResult"
-              class="flex h-8 items-center gap-1.5 rounded-md border border-line px-3 text-sm transition hover:border-slate-400"
-              @click="copyPostResult"
-            >
-              <Check v-if="postCopied" class="h-3.5 w-3.5 text-mint" />
-              <Copy v-else class="h-3.5 w-3.5" />
-              {{ postCopied ? 'Copied!' : 'Copy all' }}
-            </button>
-            <button
-              class="flex h-8 items-center gap-1.5 rounded-md border border-accent/60 bg-accent/15 px-3 text-sm text-accent transition hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="postGenerating || !postImagePath"
-              @click="runGeneratePost"
-            >
-              <Sparkles class="h-3.5 w-3.5" :class="postGenerating ? 'animate-pulse' : ''" />
-              {{ postGenerating ? 'Generating…' : postResult ? 'Regenerate' : 'Generate' }}
-            </button>
+          <!-- AiPostPanel -->
+          <div class="max-h-[70vh] overflow-y-auto p-4">
+            <AiPostPanel
+              :image-paths="postImagePath ? [postImagePath] : []"
+              :network="postNetwork"
+              :network-name="POST_NETWORKS.find(n => n.id === postNetwork)?.label ?? postNetwork"
+            />
           </div>
         </div>
       </div>
