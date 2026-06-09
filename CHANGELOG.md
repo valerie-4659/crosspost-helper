@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.110 - 2026-06-09
+
+- fix(drag): fix native file drag-out in ImageCard, ImagePreview and ImageLightbox
+- feat(topaz-queue): add result thumbnail preview and Reveal button
+- fix(topaz): Library and Picker modals are now fire-and-forget
+
+
 ## v0.2.109 - 2026-06-09
 
 - Release v0.2.109

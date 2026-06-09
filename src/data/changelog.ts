@@ -6,6 +6,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.110",
+    date: "2026-06-09",
+    items: [
+      "fix(drag): fix native file drag-out in ImageCard, ImagePreview and ImageLightbox",
+      "feat(topaz-queue): add result thumbnail preview and Reveal button",
+      "fix(topaz): Library and Picker modals are now fire-and-forget",
+    ],
+  },
+  {
     version: "0.2.109",
     date: "2026-06-09",
     items: [
