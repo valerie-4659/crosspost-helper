@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.105",
+    date: "2026-06-09",
+    items: [
+      "fix(topaz): use download_url field from API response — Topaz returns download_url not url",
+      "feat(image-queue): Upscale with Topaz button on completed jobs",
+    ],
+  },
+  {
     version: "0.2.104",
     date: "2026-06-09",
     items: [

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.105 - 2026-06-09
+
+- fix(topaz): use download_url field from API response — Topaz returns download_url not url
+- feat(image-queue): Upscale with Topaz button on completed jobs
+
+
 ## v0.2.104 - 2026-06-09
 
 - fix: replace inline if-statements in @click.self with guard methods — Vue template compiler rejects if as an expression
