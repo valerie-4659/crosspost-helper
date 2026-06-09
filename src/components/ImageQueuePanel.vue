@@ -1452,6 +1452,7 @@ onUnmounted(() => {
                 :image-paths="postImagePath ? [postImagePath] : []"
                 :network="postNetwork"
                 :network-name="POST_NETWORKS.find(n => n.id === postNetwork)?.label ?? postNetwork"
+                :allow-text-send="true"
               />
             </div>
           </template>

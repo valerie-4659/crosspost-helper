@@ -19,11 +19,18 @@ const props = withDefaults(defineProps<{
   imageIds?: string[];
   /** Platform queue limit (x=4, bluesky=4, deviantart=1 …). Defaults to 1. */
   queueLimit?: number;
+  /**
+   * Queue-panel / generated-image mode.
+   * When true and no imageIds are given, shows a "Send text to Plugin" button
+   * that calls setPostContent only (no setQueue — image is not in the library).
+   */
+  allowTextSend?: boolean;
 }>(), {
   networkName: "",
   disabled: false,
   imageIds: undefined,
   queueLimit: 1,
+  allowTextSend: false,
 });
 
 const emit = defineEmits<{
@@ -206,7 +213,26 @@ async function generate() {
   }
 }
 
-const sendDone = ref(false);
+const sendDone         = ref(false);
+const sendTextOnlyDone = ref(false);
+
+/** Send only the generated post text to the extension — no image queue.
+ *  Used in queue-panel mode (allowTextSend=true) where the image is not in the library. */
+async function sendTextOnly() {
+  if (!ai.generatedPost) return;
+  queueError.value = "";
+  try {
+    await window.desktop.bridge.setPostContent(props.network, {
+      title:       ai.editedTitle,
+      description: ai.editedDescription,
+      tags:        ai.editedTags.split(/\s+/).filter(Boolean),
+    });
+    sendTextOnlyDone.value = true;
+    setTimeout(() => (sendTextOnlyDone.value = false), 2500);
+  } catch (err) {
+    queueError.value = err instanceof Error ? err.message : String(err);
+  }
+}
 
 /** Send to extension using the currently selected sendMode. */
 async function sendToExtension() {
@@ -534,6 +560,18 @@ onMounted(async () => {
 
       <!-- Action row -->
       <div class="flex flex-col gap-2 border-t border-line pt-3">
+
+        <!-- Send text to Plugin (Queue-panel mode — no image IDs) -->
+        <button
+          v-if="allowTextSend && !imageIds?.length"
+          class="button-primary w-full py-2 text-sm font-medium"
+          :class="sendTextOnlyDone ? 'border-mint/60 bg-mint/10 text-mint' : ''"
+          @click="sendTextOnly"
+        >
+          <Check v-if="sendTextOnlyDone" class="h-4 w-4" />
+          <Send v-else class="h-4 w-4" />
+          {{ sendTextOnlyDone ? 'Sent!' : 'Send text to Plugin' }}
+        </button>
 
         <!-- Send to Extension split-button (Library mode only) -->
         <div v-if="imageIds?.length" class="relative">
