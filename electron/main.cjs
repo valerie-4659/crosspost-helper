@@ -1273,11 +1273,32 @@ async function generateImagePrompt(imagePaths, imageModel = "flux_2_klein", inst
 - For revealing outfits: use "form-fitting outfit", "gothic attire", "body-hugging costume", "fantasy outfit" — avoid "lingerie", "underwear", "naked".
 - Keep poses described neutrally. Violating this will cause generation failure.`;
 
-  const systemMessage = `You are an expert AI image-generation prompt writer. Analyze reference images and write precise recreation prompts.
+  const isTextOnly = imageData.length === 0;
+
+  const systemMessage = isTextOnly
+    ? `You are an expert AI image-generation prompt writer. Take a user's rough prompt idea and expand it into a polished, detailed prompt optimised for the target model.
+${sfwBlock}
+Output ONLY the raw prompt text — no title, no explanation, no JSON, no quotes.`
+    : `You are an expert AI image-generation prompt writer. Analyze reference images and write precise recreation prompts.
 ${sfwBlock}
 Output ONLY the raw prompt text — no title, no explanation, no JSON, no quotes.`;
 
-  const userPrompt = `Analyze this reference image and write an image recreation prompt for ${guide.name}.
+  const userPrompt = isTextOnly
+    ? `Take the following rough prompt idea and rewrite it as a complete, detailed image-generation prompt for ${guide.name}.
+
+Target: ${guide.maxWords} words maximum.
+${styleGuide}
+
+Rough idea: "${instructions?.trim() || "a beautiful scene"}"
+
+Rules:
+- Expand vague concepts into specific visual detail (subject description, outfit, pose, background, lighting, color palette, art style, mood)
+- Do NOT change the core subject or intent
+- Apply the content policy above
+- Apply the style guide format above exactly
+
+Output ONLY the final prompt text.`
+    : `Analyze this reference image and write an image recreation prompt for ${guide.name}.
 
 Target: ${guide.maxWords} words maximum.
 ${styleGuide}${instructionsLine}

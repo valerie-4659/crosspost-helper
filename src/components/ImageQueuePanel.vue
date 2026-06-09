@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { Clapperboard, Check, Download, ExternalLink, Film, FolderOpen, Image, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
+import { Clapperboard, Check, Download, ExternalLink, Film, FolderOpen, Image, Plus, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
 
 const jobs = ref<WavespeedImageJobRecord[]>([]);
 const loading = ref(false);
@@ -331,6 +331,104 @@ function relativeTime(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+// ── New Job (txt2img) state ──────────────────────────────────────────────────
+const showNewJob        = ref(false);
+const newJobRoughPrompt = ref("");
+const newJobPrompt      = ref("");
+const newJobModel       = ref("gpt_image_2");
+const newJobAspect      = ref("auto");
+const newJobResolution  = ref("1k");
+const newJobQuality     = ref<"auto" | "low" | "medium" | "high">("auto");
+const newJobFormat      = ref<"png" | "jpeg" | "webp">("png");
+const newJobStrength    = ref(0.6);
+const newJobEnhancing   = ref(false);
+const newJobEnhanceErr  = ref("");
+const newJobBusy        = ref(false);
+const newJobError       = ref("");
+const newJobDone        = ref(false);
+
+const newJobModelCaps = computed(() =>
+  IMAGE_MODEL_CAPS[newJobModel.value] ?? { sizeMode: "wh", quality: false, formats: [], strength: false }
+);
+
+watch(newJobModel, () => {
+  const fmts = newJobModelCaps.value.formats;
+  if (fmts.length > 0 && !fmts.includes(newJobFormat.value)) {
+    newJobFormat.value = fmts[0] as "png" | "jpeg" | "webp";
+  }
+});
+
+function computeNewJobSize(): string {
+  const ar = ASPECT_RATIOS.find((a) => a.value === newJobAspect.value) ?? ASPECT_RATIOS[1];
+  const scale = RESOLUTIONS.find((r) => r.value === newJobResolution.value)?.scale ?? 1;
+  return `${ar.w * scale}*${ar.h * scale}`;
+}
+
+function openNewJob() {
+  newJobRoughPrompt.value = "";
+  newJobPrompt.value      = "";
+  newJobModel.value       = "gpt_image_2";
+  newJobAspect.value      = "auto";
+  newJobResolution.value  = "1k";
+  newJobQuality.value     = "auto";
+  newJobFormat.value      = "png";
+  newJobStrength.value    = 0.6;
+  newJobEnhancing.value   = false;
+  newJobEnhanceErr.value  = "";
+  newJobBusy.value        = false;
+  newJobError.value       = "";
+  newJobDone.value        = false;
+  showNewJob.value        = true;
+}
+
+async function newJobEnhance() {
+  const rough = newJobRoughPrompt.value.trim();
+  if (!rough || newJobEnhancing.value) return;
+  newJobEnhancing.value  = true;
+  newJobEnhanceErr.value = "";
+  try {
+    // Pass empty image array + rough prompt as instructions — triggers txt2img expansion path
+    newJobPrompt.value = await window.desktop.ai.generateImagePrompt(
+      [],
+      newJobModel.value,
+      rough,
+    );
+  } catch (err) {
+    newJobEnhanceErr.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    newJobEnhancing.value = false;
+  }
+}
+
+async function submitNewJob() {
+  const prompt = newJobPrompt.value.trim() || newJobRoughPrompt.value.trim();
+  if (!prompt || newJobBusy.value) return;
+  newJobBusy.value  = true;
+  newJobError.value = "";
+  newJobDone.value  = false;
+  const sizeStr = computeNewJobSize();
+  try {
+    await window.desktop.wavespeed.submitImage({
+      imagePath:    "",
+      prompt,
+      imageModel:   newJobModel.value,
+      aspectRatio:  newJobAspect.value,
+      resolution:   newJobResolution.value,
+      size:         sizeStr,
+      useRefImage:  false,
+      quality:      newJobQuality.value,
+      outputFormat: newJobFormat.value,
+      strength:     newJobStrength.value,
+    });
+    newJobDone.value = true;
+    await load();
+  } catch (err) {
+    newJobError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    newJobBusy.value = false;
+  }
+}
+
 onMounted(async () => {
   await load();
   window.desktop.wavespeed.onImageJobUpdated(handleJobUpdated);
@@ -348,6 +446,14 @@ onUnmounted(() => {
       <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500 flex-1">
         Image Generation Jobs
       </p>
+      <!-- New txt2img job -->
+      <button
+        class="flex items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-300 transition hover:bg-sky-500/20"
+        title="Create a new text-to-image job"
+        @click="openNewJob"
+      >
+        <Plus class="h-3 w-3" />New Job
+      </button>
       <button class="button h-6 w-6 p-0" title="Refresh" @click="load">
         <RefreshCcw class="h-3 w-3" :class="loading ? 'animate-spin' : ''" />
       </button>
@@ -762,4 +868,170 @@ onUnmounted(() => {
       </div>
     </Transition>
   </Teleport>
+
+  <!-- ── New Job Modal (txt2img) ──────────────────────────────────────────── -->
+  <Teleport to="body">
+    <Transition enter-active-class="transition-opacity duration-150" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-100" leave-to-class="opacity-0">
+      <div v-if="showNewJob" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" @click.self="if (!newJobBusy) showNewJob = false">
+        <div class="surface flex w-full max-w-lg flex-col rounded-xl border border-line shadow-2xl" style="max-height: 92vh">
+          <!-- header -->
+          <div class="flex shrink-0 items-center justify-between border-b border-line px-5 py-3">
+            <div class="flex items-center gap-2">
+              <Image class="h-4 w-4 text-sky-400" />
+              <h3 class="text-sm font-semibold text-white">New Image Job</h3>
+            </div>
+            <button class="button h-7 w-7 p-0" :disabled="newJobBusy" @click="showNewJob = false">
+              <X class="h-4 w-4" />
+            </button>
+          </div>
+
+          <!-- body -->
+          <div class="overflow-y-auto px-5 py-4 space-y-4">
+
+            <!-- Model -->
+            <div class="space-y-1">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Model</p>
+              <select v-model="newJobModel" class="field w-full text-xs" :disabled="newJobBusy">
+                <option v-for="m in IMAGE_MODELS" :key="m.value" :value="m.value">{{ m.label }}</option>
+              </select>
+            </div>
+
+            <!-- Size / aspect -->
+            <div class="space-y-1">
+              <div class="flex items-center justify-between">
+                <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Size</p>
+                <span class="text-[10px] text-slate-500">
+                  <template v-if="newJobModelCaps.sizeMode === 'aspect'">
+                    {{ newJobAspect }} · {{ newJobResolution.toUpperCase() }}
+                  </template>
+                  <template v-else>
+                    {{ (() => { const ar = ASPECT_RATIOS.find(a => a.value === newJobAspect) ?? ASPECT_RATIOS[1]; const sc = RESOLUTIONS.find(r => r.value === newJobResolution)?.scale ?? 1; return `${ar.w * sc}×${ar.h * sc} px`; })() }}
+                  </template>
+                </span>
+              </div>
+              <div class="grid grid-cols-5 gap-1">
+                <button
+                  v-for="ar in ASPECT_RATIOS"
+                  :key="ar.value"
+                  class="rounded-md border py-1 text-[10px] transition"
+                  :class="newJobAspect === ar.value ? 'border-sky-500/60 bg-sky-500/15 text-sky-300' : 'border-line text-slate-500 hover:border-slate-500'"
+                  :disabled="newJobBusy"
+                  @click="newJobAspect = ar.value"
+                >{{ ar.label }}</button>
+              </div>
+              <!-- Resolution row (aspect-mode models) -->
+              <div v-if="newJobModelCaps.sizeMode === 'aspect'" class="flex gap-2">
+                <button
+                  v-for="res in RESOLUTIONS"
+                  :key="res.value"
+                  class="flex-1 rounded-md border py-1 text-[10px] transition"
+                  :class="newJobResolution === res.value ? 'border-sky-500/60 bg-sky-500/15 text-sky-300' : 'border-line text-slate-500 hover:border-slate-500'"
+                  :disabled="newJobBusy"
+                  @click="newJobResolution = res.value"
+                >{{ res.label }}</button>
+              </div>
+            </div>
+
+            <!-- Quality (GPT-family only) -->
+            <div v-if="newJobModelCaps.quality" class="space-y-1">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Quality</p>
+              <div class="flex gap-2">
+                <button
+                  v-for="q in ['auto','low','medium','high']"
+                  :key="q"
+                  class="flex-1 rounded-md border py-1 text-[10px] capitalize transition"
+                  :class="newJobQuality === q ? 'border-sky-500/60 bg-sky-500/15 text-sky-300' : 'border-line text-slate-500 hover:border-slate-500'"
+                  :disabled="newJobBusy"
+                  @click="newJobQuality = q as 'auto'|'low'|'medium'|'high'"
+                >{{ q }}</button>
+              </div>
+            </div>
+
+            <!-- Output format (when model supports it) -->
+            <div v-if="newJobModelCaps.formats.length > 0" class="space-y-1">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Format</p>
+              <div class="flex gap-2">
+                <button
+                  v-for="fmt in newJobModelCaps.formats"
+                  :key="fmt"
+                  class="flex-1 rounded-md border py-1 text-[10px] uppercase transition"
+                  :class="newJobFormat === fmt ? 'border-sky-500/60 bg-sky-500/15 text-sky-300' : 'border-line text-slate-500 hover:border-slate-500'"
+                  :disabled="newJobBusy"
+                  @click="newJobFormat = fmt as 'png'|'jpeg'|'webp'"
+                >{{ fmt }}</button>
+              </div>
+            </div>
+
+            <!-- Strength (Z-Image Turbo only) -->
+            <div v-if="newJobModelCaps.strength" class="space-y-1">
+              <div class="flex items-center justify-between">
+                <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Strength</p>
+                <span class="text-[10px] text-slate-400">{{ newJobStrength.toFixed(2) }}</span>
+              </div>
+              <input type="range" min="0" max="1" step="0.05" v-model.number="newJobStrength" class="w-full" :disabled="newJobBusy" />
+            </div>
+
+            <!-- Prompt -->
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Prompt</p>
+                <button
+                  class="flex items-center gap-1 rounded-md border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-300 transition hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  :disabled="newJobEnhancing || newJobBusy || !newJobRoughPrompt.trim()"
+                  title="Let AI expand and polish your rough prompt for the selected model"
+                  @click="newJobEnhance"
+                >
+                  <Sparkles class="h-3 w-3" :class="newJobEnhancing ? 'animate-pulse' : ''" />
+                  {{ newJobEnhancing ? 'Enhancing…' : 'AI Enhance' }}
+                </button>
+              </div>
+              <p v-if="newJobEnhanceErr" class="text-[11px] text-rose">{{ newJobEnhanceErr }}</p>
+              <!-- Rough idea input -->
+              <textarea
+                v-model="newJobRoughPrompt"
+                rows="2"
+                class="w-full resize-none rounded-lg border border-line bg-panel px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-violet-400/60 focus:outline-none focus:ring-1 focus:ring-violet-400/30 transition"
+                placeholder="Enter your rough idea… (e.g. 'a dragon in a misty forest at dusk')"
+                :disabled="newJobBusy"
+              />
+              <!-- Enhanced / final prompt -->
+              <textarea
+                v-model="newJobPrompt"
+                rows="5"
+                class="w-full resize-y rounded-lg border border-line bg-panel px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-sky-400/60 focus:outline-none focus:ring-1 focus:ring-sky-400/30 transition"
+                placeholder="Enhanced prompt will appear here — or type your full prompt directly…"
+                :disabled="newJobBusy"
+              />
+              <p class="text-[10px] text-slate-600">
+                Type a rough idea above and click <strong class="text-violet-400">AI Enhance</strong> to expand it for the selected model, then review or edit before submitting.
+              </p>
+            </div>
+
+            <div v-if="newJobDone" class="rounded-md border border-mint/40 bg-mint/10 px-3 py-2 text-xs text-mint">
+              ✓ Job queued — generating in the background.
+            </div>
+            <div v-if="newJobError" class="rounded-md border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">
+              {{ newJobError }}
+            </div>
+          </div>
+
+          <!-- footer -->
+          <div class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-5 py-3">
+            <button class="button h-8 px-3 text-sm" :disabled="newJobBusy" @click="showNewJob = false">
+              {{ newJobDone ? 'Close' : 'Cancel' }}
+            </button>
+            <button
+              class="flex h-8 items-center gap-1.5 rounded-md border border-sky-500/60 bg-sky-500/15 px-3 text-sm text-sky-300 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="newJobBusy || !(newJobPrompt.trim() || newJobRoughPrompt.trim())"
+              @click="submitNewJob"
+            >
+              <Image class="h-3.5 w-3.5" :class="newJobBusy ? 'animate-pulse' : ''" />
+              {{ newJobBusy ? 'Submitting…' : newJobDone ? 'Submit another' : 'Generate Image' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
 </template>
