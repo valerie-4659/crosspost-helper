@@ -1190,16 +1190,27 @@ Output ONLY the prompt text, nothing else.`;
 
 // ── Image recreation prompt generator ────────────────────────────────────────
 // Always SFW. Tailored per target image model.
+// ultraStrict: true = GPT/Google Imagen/ByteDance level moderation — no revealing clothing at all.
 const IMAGE_MODEL_PROMPT_GUIDE = {
-  // ultraStrict: true = DALL-E 3 / GPT-level moderation — no lingerie, no revealing clothing at all
-  flux_2_klein:    { name: "Flux 2 Klein",   style: "Flux",   maxWords: 140, ultraStrict: false },
-  flux_2_turbo:    { name: "Flux 2 Turbo",   style: "Flux",   maxWords: 120, ultraStrict: false },
-  flux_2_dev:      { name: "Flux 2 Dev",     style: "Flux",   maxWords: 150, ultraStrict: false },
-  qwen_image_edit: { name: "Qwen Image",     style: "Qwen",   maxWords: 180, ultraStrict: false },
-  nano_banana:     { name: "Nano Banana",    style: "Imagen", maxWords: 150, ultraStrict: true  },
-  gpt_image_2:     { name: "GPT Image 2",    style: "GPT",    maxWords: 200, ultraStrict: true  },
-  wan_2_7_img:     { name: "WAN 2.7 Edit",   style: "WAN",    maxWords: 150, ultraStrict: false },
-  z_image_turbo:   { name: "Z Image Turbo",  style: "ZImage", maxWords: 100, ultraStrict: false },
+  // ── OpenAI (ultra-strict) ──────────────────────────────────────────────────
+  gpt_image_2:     { name: "GPT Image 2",     style: "GPT",      maxWords: 200, ultraStrict: true  },
+  gpt_image_1_5:   { name: "GPT Image 1.5",   style: "GPT",      maxWords: 180, ultraStrict: true  },
+  // ── Google Nano Banana (ultra-strict — Imagen backend) ────────────────────
+  nano_banana_2:   { name: "Nano Banana 2",   style: "Imagen",   maxWords: 150, ultraStrict: true  },
+  nano_banana_pro: { name: "Nano Banana Pro", style: "Imagen",   maxWords: 150, ultraStrict: true  },
+  nano_banana:     { name: "Nano Banana",     style: "Imagen",   maxWords: 150, ultraStrict: true  },
+  // ── ByteDance Seedream (ultra-strict — Chinese content policy) ────────────
+  seedream_4_5:    { name: "Seedream 4.5",    style: "Seedream", maxWords: 160, ultraStrict: true  },
+  seedream_5_lite: { name: "Seedream 5 Lite", style: "Seedream", maxWords: 140, ultraStrict: true  },
+  // ── Alibaba (permissive) ──────────────────────────────────────────────────
+  qwen_image_2:    { name: "Qwen Image 2.0",  style: "Qwen",     maxWords: 180, ultraStrict: false },
+  qwen_image:      { name: "Qwen Image",      style: "Qwen",     maxWords: 180, ultraStrict: false },
+  wan_2_7_img:     { name: "WAN 2.7",         style: "WAN",      maxWords: 150, ultraStrict: false },
+  wan_2_6_img:     { name: "WAN 2.6",         style: "WAN",      maxWords: 150, ultraStrict: false },
+  wan_2_5_img:     { name: "WAN 2.5",         style: "WAN",      maxWords: 150, ultraStrict: false },
+  // ── Other (permissive) ────────────────────────────────────────────────────
+  flux_2_klein:    { name: "FLUX 2 Klein",    style: "Flux",     maxWords: 140, ultraStrict: false },
+  z_image_turbo:   { name: "Z-Image Turbo",   style: "ZImage",   maxWords: 100, ultraStrict: false },
 };
 
 const IMAGE_STYLE_GUIDE = {
@@ -1207,6 +1218,7 @@ const IMAGE_STYLE_GUIDE = {
   Qwen: `Use clear, natural, instruction-following language. Describe every visible element: character features, clothing colors and textures, pose, expression, background, lighting, mood. Be specific and comprehensive.`,
   Imagen: `Use professional photography/illustration prose. Mention: subject details, environment, lighting (quality, direction, color temp), color palette, mood. Keep all clothing fully modest and conservative in description.`,
   GPT: `Provide a comprehensive scene description in natural language. Be very specific about every visual element: subject appearance, clothing (fully modest — describe style, color, design without any revealing elements), pose, facial expression, background, lighting, color palette, visual style.`,
+  Seedream: `Describe the scene naturally and in detail. Include: character appearance, hairstyle, outfit style and colors (fully modest), pose, expression, background/environment, lighting quality and direction, overall mood. Avoid any mature or suggestive language.`,
   WAN: `Describe the scene in detail. Include: character appearance, outfit/accessories, pose, facial expression, hair, background/setting, atmosphere, lighting, color tone, art style (anime/semi-realistic/photorealistic). Add quality tags at the end.`,
   ZImage: `Use a concise keyword-rich format: [subject description], [clothing/appearance], [pose], [background], [lighting], [style], high quality, detailed, sharp focus. Keep to 80-100 words.`,
 };
@@ -1582,14 +1594,27 @@ app.whenReady().then(() => {
   // ── Wavespeed AI — Image-generation submission ────────────────────────────
   // Maps the app's image model keys to Wavespeed REST API endpoint slugs.
   // All endpoints accept: prompt (string), images (array of base64 data URIs), size (optional)
+  // Maps app model keys → Wavespeed REST API endpoint slugs (image generation / editing)
   const WAVESPEED_IMAGE_ENDPOINT_MAP = {
-    flux_2_klein:    "wavespeed-ai/flux-2-klein-4b/edit",
-    flux_2_dev:      "wavespeed-ai/flux-2-dev/edit",
-    flux_2_turbo:    "wavespeed-ai/flux-2-turbo/edit",
-    qwen_image_edit: "wavespeed-ai/qwen-image-edit-plus",
-    nano_banana:     "google/nano-banana-pro-edit",
+    // ── OpenAI ────────────────────────────────────────────────────────────────
     gpt_image_2:     "openai/gpt-image-2/edit",
+    gpt_image_1_5:   "openai/gpt-image-1-mini/edit",
+    // ── Google Nano Banana ────────────────────────────────────────────────────
+    nano_banana_2:   "google/nano-banana-2/edit",
+    nano_banana_pro: "google/nano-banana-pro/edit",
+    nano_banana:     "google/nano-banana/edit",
+    // ── ByteDance Seedream ────────────────────────────────────────────────────
+    seedream_4_5:    "bytedance/seedream-v4.5/edit",
+    seedream_5_lite: "bytedance/seedream-v5.0-lite/edit",
+    // ── Alibaba Qwen ─────────────────────────────────────────────────────────
+    qwen_image_2:    "alibaba/qwen-image-2.0/edit",
+    qwen_image:      "alibaba/qwen-image/edit",
+    // ── Alibaba WAN ───────────────────────────────────────────────────────────
     wan_2_7_img:     "alibaba/wan-2.7/image-edit",
+    wan_2_6_img:     "alibaba/wan-2.6/image-edit",
+    wan_2_5_img:     "alibaba/wan-2.5/text-to-image",
+    // ── Other ─────────────────────────────────────────────────────────────────
+    flux_2_klein:    "wavespeed-ai/flux-2-klein-4b/edit",
     z_image_turbo:   "wavespeed-ai/z-image-turbo/image-to-image",
   };
 

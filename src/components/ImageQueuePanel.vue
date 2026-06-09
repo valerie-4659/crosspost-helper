@@ -8,7 +8,7 @@ const loading = ref(false);
 // ── Re-run state ──────────────────────────────────────────────────────────────
 const rerunJob    = ref<WavespeedImageJobRecord | null>(null);
 const rerunPrompt = ref("");
-const rerunModel  = ref("flux_2_klein");
+const rerunModel  = ref("gpt_image_2");
 const rerunSize   = ref("1024x1024");
 const rerunUseRef = ref(true);
 const rerunQuality  = ref<"auto" | "low" | "medium" | "high">("auto");
@@ -18,14 +18,20 @@ const rerunError  = ref("");
 const rerunDone   = ref(false);
 
 const IMAGE_MODELS = [
-  { value: "flux_2_klein",    label: "Flux 2 Klein"  },
-  { value: "flux_2_turbo",    label: "Flux 2 Turbo"  },
-  { value: "flux_2_dev",      label: "Flux 2 Dev"    },
-  { value: "qwen_image_edit", label: "Qwen Image"    },
-  { value: "nano_banana",     label: "Nano Banana"   },
-  { value: "gpt_image_2",     label: "GPT Image 2"   },
-  { value: "wan_2_7_img",     label: "WAN 2.7 Edit"  },
-  { value: "z_image_turbo",   label: "Z Image Turbo" },
+  { value: "gpt_image_2",     label: "GPT Image 2"     },
+  { value: "nano_banana_2",   label: "Nano Banana 2"   },
+  { value: "nano_banana_pro", label: "Nano Banana Pro" },
+  { value: "nano_banana",     label: "Nano Banana"     },
+  { value: "seedream_5_lite", label: "Seedream 5 Lite" },
+  { value: "seedream_4_5",    label: "Seedream 4.5"    },
+  { value: "gpt_image_1_5",   label: "GPT Image 1.5"   },
+  { value: "qwen_image_2",    label: "Qwen Image 2.0"  },
+  { value: "qwen_image",      label: "Qwen Image"      },
+  { value: "wan_2_7_img",     label: "WAN 2.7"         },
+  { value: "wan_2_6_img",     label: "WAN 2.6"         },
+  { value: "wan_2_5_img",     label: "WAN 2.5"         },
+  { value: "flux_2_klein",    label: "FLUX 2 Klein"    },
+  { value: "z_image_turbo",   label: "Z-Image Turbo"   },
 ];
 
 const ASPECT_RATIOS = [

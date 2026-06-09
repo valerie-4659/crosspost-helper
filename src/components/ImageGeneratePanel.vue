@@ -6,15 +6,22 @@ import { Check, Copy, FolderOpen, Image, X } from "lucide-vue-next";
 const props = defineProps<{ imagePaths: string[]; disabled?: boolean }>();
 
 // ── Models ────────────────────────────────────────────────────────────────────
+// Order matches Wavespeed image generator dropdown (Jun 2026)
 const IMAGE_MODELS = [
-  { value: "flux_2_klein",    label: "Flux 2 Klein"  },
-  { value: "flux_2_turbo",    label: "Flux 2 Turbo"  },
-  { value: "flux_2_dev",      label: "Flux 2 Dev"    },
-  { value: "qwen_image_edit", label: "Qwen Image"    },
-  { value: "nano_banana",     label: "Nano Banana"   },
-  { value: "gpt_image_2",     label: "GPT Image 2"   },
-  { value: "wan_2_7_img",     label: "WAN 2.7 Edit"  },
-  { value: "z_image_turbo",   label: "Z Image Turbo" },
+  { value: "gpt_image_2",     label: "GPT Image 2",     badge: "NEW" },
+  { value: "nano_banana_2",   label: "Nano Banana 2",   badge: "HOT" },
+  { value: "nano_banana_pro", label: "Nano Banana Pro", badge: "HOT" },
+  { value: "nano_banana",     label: "Nano Banana"              },
+  { value: "seedream_5_lite", label: "Seedream 5 Lite"          },
+  { value: "seedream_4_5",    label: "Seedream 4.5",    badge: "HOT" },
+  { value: "gpt_image_1_5",   label: "GPT Image 1.5"            },
+  { value: "qwen_image_2",    label: "Qwen Image 2.0"           },
+  { value: "qwen_image",      label: "Qwen Image"               },
+  { value: "wan_2_7_img",     label: "WAN 2.7",         badge: "HOT" },
+  { value: "wan_2_6_img",     label: "WAN 2.6"                  },
+  { value: "wan_2_5_img",     label: "WAN 2.5"                  },
+  { value: "flux_2_klein",    label: "FLUX 2 Klein"             },
+  { value: "z_image_turbo",   label: "Z-Image Turbo"            },
 ];
 
 // ── Aspect ratios ─────────────────────────────────────────────────────────────
@@ -46,7 +53,7 @@ const QUALITIES  = ["auto", "low", "medium", "high"] as const;
 const FORMATS    = ["png", "jpeg", "webp"]            as const;
 
 // ── State ─────────────────────────────────────────────────────────────────────
-const selectedModel      = ref("flux_2_klein");
+const selectedModel      = ref("gpt_image_2");
 const selectedAspect     = ref("auto");
 const selectedResolution = ref("1k");
 const selectedQuality    = ref<typeof QUALITIES[number]>("medium");
@@ -179,12 +186,17 @@ function resetWavespeed() {
       <div class="flex flex-wrap gap-1.5">
         <button
           v-for="m in IMAGE_MODELS" :key="m.value"
-          class="rounded-lg border px-2.5 py-1 text-[11px] font-medium transition"
+          class="relative rounded-lg border px-2.5 py-1 text-[11px] font-medium transition flex items-center gap-1"
           :class="selectedModel === m.value
             ? 'border-sky-400/60 bg-sky-400/15 text-sky-300'
             : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200'"
           @click="selectedModel = m.value; generatedPrompt = ''; resetWavespeed()"
-        >{{ m.label }}</button>
+        >
+          {{ m.label }}
+          <span v-if="m.badge" class="text-[9px] font-bold leading-none px-1 py-0.5 rounded"
+            :class="m.badge === 'NEW' ? 'bg-violet-500/30 text-violet-300' : 'bg-orange-500/30 text-orange-300'"
+          >{{ m.badge }}</span>
+        </button>
       </div>
     </div>
 
