@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { Clapperboard, Check, Download, ExternalLink, Film, FolderOpen, Image, Plus, RefreshCcw, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-vue-next";
+import { convertFileSrc } from "@/electron-shims/core";
 
 const jobs = ref<WavespeedImageJobRecord[]>([]);
 const loading = ref(false);
@@ -85,6 +86,16 @@ async function deleteTopazJob(localId: string) {
 
 function revealTopazResult(filePath: string) {
   window.desktop.opener.revealItemInDir(filePath);
+}
+
+// ── Topaz result preview lightbox ────────────────────────────────────────────
+const topazPreviewPath = ref<string | null>(null);
+
+function previewTopazResult(filePath: string) {
+  topazPreviewPath.value = filePath;
+}
+function closeTopazPreview() {
+  topazPreviewPath.value = null;
 }
 
 const TOPAZ_STATUS_LABEL: Record<string, string> = {
@@ -1219,9 +1230,33 @@ onUnmounted(() => {
         :key="tj.id"
         class="rounded-lg border border-line bg-ink/40 p-3"
       >
-        <div class="flex items-start justify-between gap-2">
+        <div class="flex items-start gap-3">
+          <!-- Thumbnail (only when done) -->
+          <button
+            v-if="tj.result_path && tj.status === 'completed'"
+            class="group relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-line transition hover:border-mint/50"
+            title="Click to preview"
+            @click="previewTopazResult(tj.result_path)"
+          >
+            <img
+              :src="convertFileSrc(tj.result_path)"
+              class="h-full w-full object-cover"
+              alt="Upscaled result"
+            />
+            <div class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+              <Image class="h-4 w-4 text-white" />
+            </div>
+          </button>
+          <!-- Placeholder while processing -->
+          <div
+            v-else-if="tj.status === 'processing'"
+            class="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-amber-500/30 bg-amber-500/5"
+          >
+            <Zap class="h-5 w-5 animate-pulse text-amber-400" />
+          </div>
+
           <!-- Status + filename -->
-          <div class="flex min-w-0 flex-col gap-1">
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
             <div class="flex items-center gap-2">
               <span class="inline-block h-2 w-2 shrink-0 rounded-full" :class="TOPAZ_STATUS_DOT[tj.status] ?? 'bg-slate-500'" />
               <span class="text-xs font-medium text-white">{{ TOPAZ_STATUS_LABEL[tj.status] ?? tj.status }}</span>
@@ -1232,28 +1267,73 @@ onUnmounted(() => {
               ✓ {{ tj.result_path.split('/').pop() }}
             </p>
             <p v-if="tj.error_msg" class="text-[11px] text-rose">{{ tj.error_msg }}</p>
+
+            <!-- Action row for completed jobs -->
+            <div v-if="tj.result_path && tj.status === 'completed'" class="mt-1 flex items-center gap-1.5">
+              <button
+                class="flex h-6 items-center gap-1 rounded border border-mint/40 bg-mint/10 px-2 text-[11px] text-mint transition hover:bg-mint/20"
+                title="Preview result image"
+                @click="previewTopazResult(tj.result_path)"
+              >
+                <Image class="h-3 w-3" />
+                Preview
+              </button>
+              <button
+                class="flex h-6 items-center gap-1 rounded border border-line px-2 text-[11px] text-slate-300 transition hover:border-slate-400"
+                title="Reveal in Finder / Explorer"
+                @click="revealTopazResult(tj.result_path)"
+              >
+                <FolderOpen class="h-3 w-3" />
+                Reveal
+              </button>
+            </div>
           </div>
-          <!-- Actions -->
-          <div class="flex shrink-0 items-center gap-1">
-            <button
-              v-if="tj.result_path"
-              class="button h-7 w-7 p-0 hover:border-mint/50 hover:text-mint"
-              title="Reveal in Finder"
-              @click="revealTopazResult(tj.result_path)"
-            >
-              <FolderOpen class="h-3.5 w-3.5" />
-            </button>
-            <button
-              class="button h-7 w-7 p-0 hover:border-rose/50 hover:text-rose"
-              title="Remove from list"
-              @click="deleteTopazJob(tj.id)"
-            >
-              <Trash2 class="h-3.5 w-3.5" />
-            </button>
-          </div>
+
+          <!-- Delete button -->
+          <button
+            class="button h-7 w-7 shrink-0 p-0 hover:border-rose/50 hover:text-rose"
+            title="Remove from list"
+            @click="deleteTopazJob(tj.id)"
+          >
+            <Trash2 class="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- ── Topaz result preview lightbox ─────────────────────────────────────── -->
+  <Teleport to="body">
+    <Transition enter-active-class="transition-opacity duration-150" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-100" leave-to-class="opacity-0">
+      <div
+        v-if="topazPreviewPath"
+        class="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4"
+        @click.self="closeTopazPreview"
+      >
+        <div class="relative flex max-h-full max-w-full flex-col items-center">
+          <!-- Close + Reveal toolbar -->
+          <div class="mb-2 flex items-center gap-2 self-end">
+            <button
+              class="flex h-8 items-center gap-1.5 rounded border border-line bg-ink px-3 text-xs text-slate-300 transition hover:border-slate-400"
+              @click="revealTopazResult(topazPreviewPath)"
+            >
+              <FolderOpen class="h-3.5 w-3.5" />
+              Reveal in Finder
+            </button>
+            <button class="button h-8 w-8 p-0" @click="closeTopazPreview">
+              <X class="h-4 w-4" />
+            </button>
+          </div>
+          <!-- Full image -->
+          <img
+            :src="convertFileSrc(topazPreviewPath)"
+            class="max-h-[80vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+            :alt="topazPreviewPath.split('/').pop()"
+          />
+          <p class="mt-2 text-[11px] text-slate-500">{{ topazPreviewPath.split('/').pop() }}</p>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 
 </template>
