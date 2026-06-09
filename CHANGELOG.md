@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.99 - 2026-06-09
+
+- feat(image-gen): model-specific API params — aspect/resolution for GPT+NanaBanana, size for others, quality/format/strength only where supported
+
+
 ## v0.2.98 - 2026-06-09
 
 - fix(drag): use async ipcRenderer.send for startDrag — sendSync blocked renderer and broke macOS drag transfer

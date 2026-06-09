@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.99",
+    date: "2026-06-09",
+    items: [
+      "feat(image-gen): model-specific API params — aspect/resolution for GPT+NanaBanana, size for others, quality/format/strength only where supported",
+    ],
+  },
+  {
     version: "0.2.98",
     date: "2026-06-09",
     items: [
