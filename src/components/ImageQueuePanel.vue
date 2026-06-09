@@ -703,7 +703,7 @@ onUnmounted(() => {
                 v-model="rerunPrompt"
                 rows="6"
                 class="w-full resize-y rounded-lg border border-line bg-panel px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-sky-400/60 focus:outline-none focus:ring-1 focus:ring-sky-400/30 transition"
-                :placeholder="rerunJob?.image_path ? 'Edit the prompt or click "Analyse image" to regenerate for the selected model…' : 'Enter a prompt…'"
+                :placeholder="rerunJob?.image_path ? 'Edit the prompt or click Analyse image to regenerate for the selected model…' : 'Enter a prompt…'"
               />
             </div>
 
