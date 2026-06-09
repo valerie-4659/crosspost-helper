@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { Check, ExternalLink, FolderOpen, Image, RefreshCcw, RotateCcw, Trash2, X } from "lucide-vue-next";
+import { Check, ExternalLink, FolderOpen, Image, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
 
 const jobs = ref<WavespeedImageJobRecord[]>([]);
 const loading = ref(false);
@@ -18,6 +18,9 @@ const rerunStrength   = ref(0.6);          // Z-Image Turbo only
 const rerunBusy       = ref(false);
 const rerunError      = ref("");
 const rerunDone       = ref(false);
+// AI prompt analysis state
+const rerunAnalysing      = ref(false);
+const rerunAnalyseError   = ref("");
 
 const IMAGE_MODELS = [
   { value: "gpt_image_2",     label: "GPT Image 2"     },
@@ -106,6 +109,27 @@ function openRerun(job: WavespeedImageJobRecord) {
   rerunBusy.value       = false;
   rerunError.value      = "";
   rerunDone.value       = false;
+  rerunAnalysing.value  = false;
+  rerunAnalyseError.value = "";
+}
+
+/** Re-analyse the source image with the currently selected model and replace the prompt. */
+async function rerunAnalyse() {
+  const imagePath = rerunJob.value?.image_path;
+  if (!imagePath) return;
+  rerunAnalysing.value    = true;
+  rerunAnalyseError.value = "";
+  try {
+    rerunPrompt.value = await window.desktop.ai.generateImagePrompt(
+      [imagePath],
+      rerunModel.value,
+      "",
+    );
+  } catch (err) {
+    rerunAnalyseError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    rerunAnalysing.value = false;
+  }
 }
 
 function closeRerun() {
@@ -436,13 +460,29 @@ onUnmounted(() => {
               />
             </div>
 
-            <!-- Prompt -->
-            <div>
-              <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Prompt</p>
+            <!-- Prompt + AI analyse -->
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Prompt</p>
+                <!-- Analyse button — only available when a source image exists -->
+                <button
+                  v-if="rerunJob?.image_path"
+                  class="flex items-center gap-1 rounded-md border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-300 transition hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  :disabled="rerunAnalysing || rerunBusy"
+                  :title="`Re-analyse image for ${rerunModel}`"
+                  @click="rerunAnalyse"
+                >
+                  <Sparkles class="h-3 w-3" :class="rerunAnalysing ? 'animate-pulse' : ''" />
+                  {{ rerunAnalysing ? 'Analysing…' : 'Analyse image' }}
+                </button>
+              </div>
+              <!-- AI error -->
+              <p v-if="rerunAnalyseError" class="text-[11px] text-rose">{{ rerunAnalyseError }}</p>
               <textarea
                 v-model="rerunPrompt"
                 rows="6"
                 class="w-full resize-y rounded-lg border border-line bg-panel px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-sky-400/60 focus:outline-none focus:ring-1 focus:ring-sky-400/30 transition"
+                :placeholder="rerunJob?.image_path ? 'Edit the prompt or click "Analyse image" to regenerate for the selected model…' : 'Enter a prompt…'"
               />
             </div>
 
