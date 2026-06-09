@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.111",
+    date: "2026-06-09",
+    items: [
+      "feat(ai-post): add AI post generator to Image and Video Queue panels",
+    ],
+  },
+  {
     version: "0.2.110",
     date: "2026-06-09",
     items: [

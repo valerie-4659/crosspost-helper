@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.111 - 2026-06-09
+
+- feat(ai-post): add AI post generator to Image and Video Queue panels
+
+
 ## v0.2.110 - 2026-06-09
 
 - fix(drag): fix native file drag-out in ImageCard, ImagePreview and ImageLightbox
