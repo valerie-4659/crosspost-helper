@@ -1857,8 +1857,9 @@ app.whenReady().then(() => {
 
     // Retrieve the signed download URL
     const dlRes = await fetch(`${TOPAZ_BASE}/download/${processId}`, { headers: HEADERS });
-    const { url: downloadUrl } = await dlRes.json();
-    if (!downloadUrl) throw new Error("Topaz API returned no download URL");
+    const dlData = await dlRes.json();
+    const downloadUrl = dlData.download_url ?? dlData.url;
+    if (!downloadUrl) throw new Error(`Topaz API returned no download URL. Response: ${JSON.stringify(dlData).slice(0, 200)}`);
 
     // Download the result image
     const imgRes = await fetch(downloadUrl);
