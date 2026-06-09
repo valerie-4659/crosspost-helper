@@ -209,47 +209,39 @@ const showAiPanel    = ref(false);
 const showVideoPanel = ref(false);
 const showImagePanel = ref(false);
 
-// ── Topaz Upscale Modal ────────────────────────────────────────────────────
+// ── Topaz Upscale Modal (fire-and-forget) ─────────────────────────────────
 type TopazModel = "Standard V2" | "Wonder 2" | "Bloom Creative" | "Bloom Realism";
 const TOPAZ_MODELS: TopazModel[] = ["Standard V2", "Wonder 2", "Bloom Creative", "Bloom Realism"];
-const showTopazModal  = ref(false);
-const topazModel      = ref<TopazModel>("Standard V2");
-const topazFormat     = ref<"jpeg" | "png">("jpeg");
-const topazUpscaling  = ref(false);
-const topazResult     = ref<string | null>(null);
-const topazError      = ref("");
+const showTopazModal   = ref(false);
+const topazModel       = ref<TopazModel>("Standard V2");
+const topazFormat      = ref<"jpeg" | "png">("jpeg");
+const topazSubmitError = ref("");
 
 function openTopazModal() {
-  topazModel.value = "Standard V2";
-  topazFormat.value = "jpeg";
-  topazUpscaling.value = false;
-  topazResult.value = null;
-  topazError.value = "";
-  showTopazModal.value = true;
+  topazModel.value       = "Standard V2";
+  topazFormat.value      = "jpeg";
+  topazSubmitError.value = "";
+  showTopazModal.value   = true;
 }
 
 function closeTopazModal() {
-  if (topazUpscaling.value) return;
   showTopazModal.value = false;
 }
 
 async function submitTopazUpscale() {
   const localPath = picker.currentImage?.localPath;
-  if (!localPath || topazUpscaling.value) return;
-  topazUpscaling.value = true;
-  topazResult.value = null;
-  topazError.value = "";
+  if (!localPath) return;
+  topazSubmitError.value = "";
   try {
-    const res = await window.desktop.topaz.upscaleImage({
-      imagePath: localPath,
-      model: topazModel.value,
+    await window.desktop.topaz.submitJob({
+      imagePath:    localPath,
+      model:        topazModel.value,
       outputFormat: topazFormat.value,
     });
-    topazResult.value = res.path;
+    // Job queued — close modal immediately
+    showTopazModal.value = false;
   } catch (e: unknown) {
-    topazError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    topazUpscaling.value = false;
+    topazSubmitError.value = e instanceof Error ? e.message : String(e);
   }
 }
 
@@ -750,7 +742,7 @@ onMounted(async () => {
               <Zap class="h-4 w-4 text-amber-400" />
               <h3 class="text-sm font-semibold text-white">Upscale with Topaz Labs</h3>
             </div>
-            <button class="button h-7 w-7 p-0" :disabled="topazUpscaling" @click="showTopazModal = false">
+            <button class="button h-7 w-7 p-0" @click="closeTopazModal">
               <X class="h-4 w-4" />
             </button>
           </div>
@@ -759,10 +751,11 @@ onMounted(async () => {
             <p class="truncate text-xs text-slate-400">
               <span class="text-slate-500">Image:</span> {{ picker.currentImage?.filename }}
             </p>
+            <p class="text-xs text-slate-500">Job runs in the background — you can keep working.</p>
             <!-- Model selector -->
             <div class="flex flex-col gap-1">
               <label class="text-xs text-slate-400">Model</label>
-              <select v-model="topazModel" class="field text-sm" :disabled="topazUpscaling">
+              <select v-model="topazModel" class="field text-sm">
                 <option v-for="m in TOPAZ_MODELS" :key="m" :value="m">{{ m }}</option>
               </select>
               <p class="text-[11px] text-slate-500">
@@ -782,30 +775,25 @@ onMounted(async () => {
                   class="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border py-1.5 text-xs transition"
                   :class="topazFormat === fmt ? 'border-amber-500/60 bg-amber-500/10 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
                 >
-                  <input v-model="topazFormat" type="radio" :value="fmt" class="sr-only" :disabled="topazUpscaling" />
+                  <input v-model="topazFormat" type="radio" :value="fmt" class="sr-only" aria-label="Output format" />
                   {{ fmt.toUpperCase() }}
                 </label>
               </div>
             </div>
-            <div v-if="topazResult" class="rounded-md border border-mint/40 bg-mint/10 px-3 py-2 text-xs text-mint">
-              ✓ Saved to {{ topazResult.split('/').pop() }} — revealed in Finder.
-            </div>
-            <div v-if="topazError" class="rounded-md border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">
-              {{ topazError }}
+            <div v-if="topazSubmitError" class="rounded-md border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">
+              {{ topazSubmitError }}
             </div>
           </div>
           <!-- Footer -->
           <div class="flex items-center justify-end gap-2 border-t border-line px-4 py-3">
-            <button class="button h-8 px-3 text-sm" :disabled="topazUpscaling" @click="showTopazModal = false">
-              {{ topazResult ? 'Close' : 'Cancel' }}
-            </button>
+            <button class="button h-8 px-3 text-sm" @click="closeTopazModal">Cancel</button>
             <button
               class="flex h-8 items-center gap-1.5 rounded-md border border-amber-500/60 bg-amber-500/15 px-3 text-sm text-amber-300 transition hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="topazUpscaling || !picker.currentImage?.localPath"
+              :disabled="!picker.currentImage?.localPath"
               @click="submitTopazUpscale"
             >
               <Zap class="h-3.5 w-3.5" />
-              {{ topazUpscaling ? 'Upscaling…' : topazResult ? 'Upscale again' : 'Upscale' }}
+              Queue Upscale Job
             </button>
           </div>
         </div>
