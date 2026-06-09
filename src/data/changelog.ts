@@ -6,6 +6,20 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.115",
+    date: "2026-06-09",
+    items: [
+      "feat(topaz): full param UI — Standard/Realism/Wonder3, creativity, enhancement, scale, outputs, preserve faces, AI prompt",
+    ],
+  },
+  {
+    version: "0.2.114",
+    date: "2026-06-09",
+    items: [
+      "feat(topaz): full param UI — Standard/Realism/Wonder3, creativity, enhancement, scale, outputs, preserve faces, AI prompt",
+    ],
+  },
+  {
     version: "0.2.113",
     date: "2026-06-09",
     items: [

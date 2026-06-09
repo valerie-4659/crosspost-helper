@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.115 - 2026-06-09
+
+- feat(topaz): full param UI — Standard/Realism/Wonder3, creativity, enhancement, scale, outputs, preserve faces, AI prompt
+
+
+## v0.2.114 - 2026-06-09
+
+- feat(topaz): full param UI — Standard/Realism/Wonder3, creativity, enhancement, scale, outputs, preserve faces, AI prompt
+
+
 ## v0.2.113 - 2026-06-09
 
 - feat(ai-post): add 'Send text to Plugin' button for queue-panel mode
