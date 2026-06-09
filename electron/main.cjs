@@ -1812,7 +1812,7 @@ app.whenReady().then(() => {
 
   // wavespeed:downloadImage — fetch a generated image URL and save it to
   // ~/Pictures/WavespeedAI/, then reveal the file in Finder / Explorer.
-  ipcMain.handle("wavespeed:downloadImage", async (_event, resultUrl, suggestedFilename) => {
+  ipcMain.handle("wavespeed:downloadImage", async (_event, resultUrl, suggestedFilename, reveal = true) => {
     const res = await fetch(resultUrl);
     if (!res.ok) throw new Error(`Download failed: HTTP ${res.status} ${res.statusText}`);
     const buffer = Buffer.from(await res.arrayBuffer());
@@ -1831,8 +1831,8 @@ app.whenReady().then(() => {
     const destPath = path.join(destDir, filename);
     fs.writeFileSync(destPath, buffer);
 
-    // Reveal the saved file in Finder / Explorer
-    shell.showItemInFolder(destPath);
+    // Reveal the saved file in Finder / Explorer (skip when reveal=false, e.g. silent downloads for AI post generation)
+    if (reveal) shell.showItemInFolder(destPath);
 
     return { path: destPath, folder: destDir };
   });

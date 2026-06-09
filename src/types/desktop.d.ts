@@ -180,8 +180,9 @@ declare global {
         onImageJobUpdated(cb: (data: Partial<WavespeedImageJobRecord>) => void): void;
         offImageJobUpdated(): void;
         getImageDimensions(imagePath: string): Promise<{ width: number; height: number } | null>;
-        /** Download a generated image URL to ~/Pictures/WavespeedAI/ and reveal in Finder. */
-        downloadImage(resultUrl: string, suggestedFilename?: string): Promise<{ path: string; folder: string }>;
+        /** Download a generated image URL to ~/Pictures/WavespeedAI/.
+         *  Set reveal=false to skip the Finder/Explorer reveal (e.g. silent pre-download for AI post generation). */
+        downloadImage(resultUrl: string, suggestedFilename?: string, reveal?: boolean): Promise<{ path: string; folder: string }>;
       };
       topaz: {
         /**

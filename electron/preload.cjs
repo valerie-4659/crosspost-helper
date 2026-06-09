@@ -98,8 +98,9 @@ contextBridge.exposeInMainWorld("desktop", {
     offImageJobUpdated: () => ipcRenderer.removeAllListeners("wavespeed:imageJobUpdated"),
     /** Get pixel dimensions {width, height} of a local image. */
     getImageDimensions: (imagePath) => ipcRenderer.invoke("wavespeed:getImageDimensions", imagePath),
-    /** Download a generated image URL to ~/Pictures/WavespeedAI/ and reveal it. */
-    downloadImage: (resultUrl, suggestedFilename) => ipcRenderer.invoke("wavespeed:downloadImage", resultUrl, suggestedFilename),
+    /** Download a generated image URL to ~/Pictures/WavespeedAI/.
+     *  Pass reveal=false to skip the Finder/Explorer reveal (e.g. silent AI post prep). */
+    downloadImage: (resultUrl, suggestedFilename, reveal = true) => ipcRenderer.invoke("wavespeed:downloadImage", resultUrl, suggestedFilename, reveal),
   },
   topaz: {
     /** Upload a local image to the Topaz Labs API, upscale it with the chosen model,
