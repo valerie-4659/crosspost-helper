@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.108 - 2026-06-09
+
+- feat(topaz): configurable output folder in Settings
+- feat(topaz-queue): background upscale jobs in Image Queue
+
+
 ## v0.2.107 - 2026-06-09
 
 - Release v0.2.107

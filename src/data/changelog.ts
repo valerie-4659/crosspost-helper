@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.108",
+    date: "2026-06-09",
+    items: [
+      "feat(topaz): configurable output folder in Settings",
+      "feat(topaz-queue): background upscale jobs in Image Queue",
+    ],
+  },
+  {
     version: "0.2.107",
     date: "2026-06-09",
     items: [
