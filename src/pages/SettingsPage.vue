@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { BookOpen, Check, ChevronDown, ChevronRight, Download, Eye, EyeOff, Pencil, Plus, Tag, Trash2, Upload, UserCircle2 } from "lucide-vue-next";
+import { BookOpen, Check, ChevronDown, ChevronRight, Download, Eye, EyeOff, FolderOpen, Pencil, Plus, Tag, Trash2, Upload, UserCircle2 } from "lucide-vue-next";
 import { useAiStore } from "@/stores/aiStore";
 import { useImageStore } from "@/stores/imageStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -49,25 +49,38 @@ const showWsKey        = ref(false);
 const wsSaved          = ref(false);
 
 // ── Topaz Labs Settings ───────────────────────────────────────────────────
-const topazApiKey  = ref("");
-const showTopazKey = ref(false);
-const topazSaved   = ref(false);
+const topazApiKey      = ref("");
+const showTopazKey     = ref(false);
+const topazOutputFolder = ref("");
+const topazSaved       = ref(false);
 
-async function loadTopazKey() {
-  const rows = await window.desktop.db.select<Array<{ value: string }>>(
-    "SELECT value FROM ai_config WHERE key = 'topaz_api_key'",
+async function loadTopazSettings() {
+  const rows = await window.desktop.db.select<Array<{ key: string; value: string }>>(
+    "SELECT key, value FROM ai_config WHERE key IN ('topaz_api_key','topaz_output_folder')",
   );
-  topazApiKey.value = rows[0]?.value ?? "";
+  for (const r of rows) {
+    if (r.key === "topaz_api_key") topazApiKey.value = r.value;
+    if (r.key === "topaz_output_folder") topazOutputFolder.value = r.value;
+  }
 }
 
 function openTopazDashboard() {
   window.desktop.opener.openUrl("https://account.topazlabs.com/manage-api");
 }
 
+async function pickTopazOutputFolder() {
+  const folder = await window.desktop.dialog.open({ title: "Select Topaz output folder", directory: true });
+  if (folder && typeof folder === "string") topazOutputFolder.value = folder;
+}
+
 async function saveTopazSettings() {
   await window.desktop.db.execute(
     "INSERT INTO ai_config (key, value) VALUES ('topaz_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = ?",
     [topazApiKey.value, topazApiKey.value],
+  );
+  await window.desktop.db.execute(
+    "INSERT INTO ai_config (key, value) VALUES ('topaz_output_folder', ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+    [topazOutputFolder.value, topazOutputFolder.value],
   );
   topazSaved.value = true;
   setTimeout(() => (topazSaved.value = false), 2500);
@@ -204,7 +217,7 @@ onMounted(async () => {
   await ai.loadPersonas();
   await ai.loadStorylines();
   await loadWavespeedKey();
-  await loadTopazKey();
+  await loadTopazSettings();
 });
 </script>
 
@@ -323,9 +336,26 @@ onMounted(async () => {
           </button>
         </div>
       </div>
-      <div class="mt-3 rounded-lg border border-line bg-ink px-3 py-2.5 text-xs text-slate-400 space-y-0.5">
-        <p><span class="text-white font-medium">Available models:</span> Standard V2 · Wonder 2 · Bloom Creative · Bloom Realism</p>
-        <p>Upscaled images are saved to <span class="text-slate-300">~/Pictures/TopazAI/</span> and revealed in Finder.</p>
+      <!-- Output folder -->
+      <div class="mt-3 flex flex-col gap-1">
+        <label class="text-xs text-slate-400">Output folder</label>
+        <div class="flex gap-2">
+          <input
+            v-model="topazOutputFolder"
+            class="field flex-1 font-mono text-xs"
+            placeholder="~/Pictures/TopazAI/ (default)"
+            aria-label="Topaz output folder path"
+          />
+          <button class="button px-2 text-xs" title="Browse…" @click="pickTopazOutputFolder">
+            <FolderOpen class="h-4 w-4" />
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-500">
+          Leave empty to use the default <span class="text-slate-300">~/Pictures/TopazAI/</span> folder.
+        </p>
+      </div>
+      <div class="mt-3 rounded-lg border border-line bg-ink px-3 py-2.5 text-xs text-slate-400">
+        <span class="text-white font-medium">Available models:</span> Standard V2 · Wonder 2 · Bloom Creative · Bloom Realism
       </div>
       <button class="button-primary mt-3 h-8 px-4 text-sm" @click="saveTopazSettings">
         {{ topazSaved ? '✓ Saved' : 'Save Topaz Settings' }}

@@ -1842,8 +1842,13 @@ app.whenReady().then(() => {
   // queue runner (Image Queue). Accepts a local file path.
   async function topazUpscaleFile(imagePath, model, outputFormat) {
     const db = await getDatabase();
-    const rows = db.exec("SELECT value FROM ai_config WHERE key = 'topaz_api_key'");
-    const apiKey = rows[0]?.values?.[0]?.[0] ?? "";
+    // Read both api key and custom output folder in one query
+    const cfgRows = db.exec("SELECT key, value FROM ai_config WHERE key IN ('topaz_api_key','topaz_output_folder')");
+    const cfg = {};
+    if (cfgRows.length && cfgRows[0].values) {
+      for (const [k, v] of cfgRows[0].values) cfg[k] = v;
+    }
+    const apiKey = cfg["topaz_api_key"] ?? "";
     if (!apiKey) throw new Error("No Topaz Labs API key configured. Add it in Settings → Topaz Labs.");
 
     const TOPAZ_BASE = "https://api.topazlabs.com/image/v1";
@@ -1890,7 +1895,10 @@ app.whenReady().then(() => {
     if (!imgRes.ok) throw new Error(`Failed to download Topaz result: HTTP ${imgRes.status}`);
     const buffer = Buffer.from(await imgRes.arrayBuffer());
 
-    const destDir = path.join(app.getPath("pictures"), "TopazAI");
+    // Use user-configured folder if set, otherwise fall back to ~/Pictures/TopazAI/
+    const destDir = (cfg["topaz_output_folder"] && cfg["topaz_output_folder"].trim())
+      ? cfg["topaz_output_folder"].trim()
+      : path.join(app.getPath("pictures"), "TopazAI");
     fs.mkdirSync(destDir, { recursive: true });
     const baseName = path.basename(imagePath, path.extname(imagePath));
     const modelSlug = (model || "standard").toLowerCase().replace(/\s+/g, "_");
