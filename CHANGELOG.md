@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.116 - 2026-06-09
+
+- Release v0.2.116
+
+
 ## v0.2.115 - 2026-06-09
 
 - feat(topaz): full param UI — Standard/Realism/Wonder3, creativity, enhancement, scale, outputs, preserve faces, AI prompt
