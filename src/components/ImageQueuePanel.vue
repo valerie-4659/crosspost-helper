@@ -368,6 +368,11 @@ function computeNewJobSize(): string {
   return `${ar.w * scale}*${ar.h * scale}`;
 }
 
+function closeNewJob() {
+  if (newJobBusy.value) return;
+  showNewJob.value = false;
+}
+
 function openNewJob() {
   newJobRoughPrompt.value = "";
   newJobPrompt.value      = "";
@@ -876,7 +881,7 @@ onUnmounted(() => {
   <!-- ── New Job Modal (txt2img) ──────────────────────────────────────────── -->
   <Teleport to="body">
     <Transition enter-active-class="transition-opacity duration-150" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-100" leave-to-class="opacity-0">
-      <div v-if="showNewJob" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" @click.self="if (!newJobBusy) showNewJob = false">
+      <div v-if="showNewJob" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" @click.self="closeNewJob">
         <div class="surface flex w-full max-w-lg flex-col rounded-xl border border-line shadow-2xl" style="max-height: 92vh">
           <!-- header -->
           <div class="flex shrink-0 items-center justify-between border-b border-line px-5 py-3">

@@ -228,6 +228,11 @@ function openTopazModal() {
   showTopazModal.value = true;
 }
 
+function closeTopazModal() {
+  if (topazUpscaling.value) return;
+  showTopazModal.value = false;
+}
+
 async function submitTopazUpscale() {
   const localPath = picker.currentImage?.localPath;
   if (!localPath || topazUpscaling.value) return;
@@ -737,7 +742,7 @@ onMounted(async () => {
   <!-- ── Topaz Upscale Modal ──────────────────────────────────────────────── -->
   <Teleport to="body">
     <Transition enter-active-class="transition-opacity duration-150" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-100" leave-to-class="opacity-0">
-      <div v-if="showTopazModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" @click.self="if (!topazUpscaling) showTopazModal = false">
+      <div v-if="showTopazModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" @click.self="closeTopazModal">
         <div class="surface w-full max-w-sm rounded-xl border border-line shadow-2xl">
           <!-- Header -->
           <div class="flex items-center justify-between border-b border-line px-4 py-3">
