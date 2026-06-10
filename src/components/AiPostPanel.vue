@@ -21,10 +21,18 @@ const props = withDefaults(defineProps<{
   queueLimit?: number;
   /**
    * Queue-panel / generated-image mode.
-   * When true and no imageIds are given, shows a "Send text to Plugin" button
-   * that calls setPostContent only (no setQueue — image is not in the library).
+   * When true and no imageIds are given, shows a "Send to Plugin" button.
+   * If imagePath is also set, queues the image + copies text to clipboard.
+   * Otherwise falls back to setPostContent only (legacy text-only mode).
    */
   allowTextSend?: boolean;
+  /**
+   * Absolute local path of the image to send when in allowTextSend mode.
+   * When provided the button queues this file via bridge.setQueue (using the
+   * path as the image ID — the bridge HTTP server serves it directly) and
+   * copies the post text to the clipboard, mirroring the Library "images_only" flow.
+   */
+  imagePath?: string;
 }>(), {
   networkName: "",
   disabled: false,
@@ -216,17 +224,30 @@ async function generate() {
 const sendDone         = ref(false);
 const sendTextOnlyDone = ref(false);
 
-/** Send only the generated post text to the extension — no image queue.
- *  Used in queue-panel mode (allowTextSend=true) where the image is not in the library. */
+/** Send image to extension queue + copy text to clipboard.
+ *  Used in queue-panel mode (allowTextSend=true).
+ *  If imagePath prop is set: queues the file path in the bridge + copies text to clipboard.
+ *  Fallback (no imagePath): sends only post content to the extension (legacy). */
 async function sendTextOnly() {
   if (!ai.generatedPost) return;
   queueError.value = "";
   try {
-    await window.desktop.bridge.setPostContent(props.network, {
-      title:       ai.editedTitle,
-      description: ai.editedDescription,
-      tags:        ai.editedTags.split(/\s+/).filter(Boolean),
-    });
+    if (props.imagePath) {
+      // Queue the image via its local path (bridge /image-file serves it directly)
+      // and copy the post text to clipboard — mirrors Library "images_only" mode.
+      await window.desktop.bridge.setQueue(props.network, [props.imagePath]);
+      await window.desktop.bridge.clearPostContent(props.network);
+      if (copyableText.value) {
+        await navigator.clipboard.writeText(copyableText.value).catch(() => {});
+      }
+    } else {
+      // Legacy: no local file available — push only the text content.
+      await window.desktop.bridge.setPostContent(props.network, {
+        title:       ai.editedTitle,
+        description: ai.editedDescription,
+        tags:        ai.editedTags.split(/\s+/).filter(Boolean),
+      });
+    }
     sendTextOnlyDone.value = true;
     setTimeout(() => (sendTextOnlyDone.value = false), 2500);
   } catch (err) {
@@ -561,7 +582,7 @@ onMounted(async () => {
       <!-- Action row -->
       <div class="flex flex-col gap-2 border-t border-line pt-3">
 
-        <!-- Send text to Plugin (Queue-panel mode — no image IDs) -->
+        <!-- Send to Plugin (Queue-panel mode — no image IDs) -->
         <button
           v-if="allowTextSend && !imageIds?.length"
           class="button-primary w-full py-2 text-sm font-medium"
@@ -570,7 +591,7 @@ onMounted(async () => {
         >
           <Check v-if="sendTextOnlyDone" class="h-4 w-4" />
           <Send v-else class="h-4 w-4" />
-          {{ sendTextOnlyDone ? 'Sent!' : 'Send text to Plugin' }}
+          {{ sendTextOnlyDone ? (imagePath ? 'Image queued, text copied!' : 'Sent!') : (imagePath ? 'Send to Plugin' : 'Send text to Plugin') }}
         </button>
 
         <!-- Send to Extension split-button (Library mode only) -->

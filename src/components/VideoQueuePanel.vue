@@ -518,6 +518,7 @@ onUnmounted(() => {
           <div class="max-h-[70vh] overflow-y-auto p-4">
             <AiPostPanel
               :image-paths="postImagePath ? [postImagePath] : []"
+              :image-path="postImagePath ?? undefined"
               :network="postNetwork"
               :network-name="POST_NETWORKS.find(n => n.id === postNetwork)?.label ?? postNetwork"
               :allow-text-send="true"

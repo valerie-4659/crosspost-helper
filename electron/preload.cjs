@@ -68,8 +68,8 @@ contextBridge.exposeInMainWorld("desktop", {
     generatePost: (imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions) =>
       ipcRenderer.invoke("ai:generate-post", imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions),
     // Generate a video prompt for the given video model. Returns plain text string.
-    generateVideoPrompt: (imagePaths, videoModel, instructions) =>
-      ipcRenderer.invoke("ai:generate-video-prompt", imagePaths, videoModel, instructions),
+    generateVideoPrompt: (imagePaths, videoModel, instructions, includeCameraMoves) =>
+      ipcRenderer.invoke("ai:generate-video-prompt", imagePaths, videoModel, instructions, includeCameraMoves),
     // Generate an image recreation prompt (always SFW, model-specific). Returns plain text string.
     generateImagePrompt: (imagePaths, imageModel, instructions) =>
       ipcRenderer.invoke("ai:generate-image-prompt", imagePaths, imageModel, instructions),

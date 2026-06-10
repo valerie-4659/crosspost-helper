@@ -94,7 +94,15 @@ declare global {
         execute(sql: string, params?: unknown[]): Promise<{ rowsAffected: number; lastInsertId: number }>;
       };
       dialog: {
-        open(options?: { directory?: boolean; multiple?: boolean; title?: string }): Promise<string | string[] | null>;
+        open(options?: {
+          directory?: boolean;
+          multiple?: boolean;
+          title?: string;
+          /** Electron dialog properties (e.g. "openFile", "openDirectory"). */
+          properties?: string[];
+          /** File type filters for the dialog. */
+          filters?: Array<{ name: string; extensions: string[] }>;
+        }): Promise<string | null>;
       };
       opener: {
         openUrl(url: string): Promise<void>;
@@ -164,6 +172,7 @@ declare global {
           imagePaths: string[],
           videoModel: string,
           instructions?: string,
+          includeCameraMoves?: boolean,
         ): Promise<string>;
         /** Generate a SFW image recreation prompt for the given image model. Returns plain text. */
         generateImagePrompt(
@@ -180,6 +189,12 @@ declare global {
           resolution?: string;
           duration?: number;
           seed?: number;
+          /** Optional end-frame image path (WAN 2.7, Kling 3.0). */
+          endImagePath?: string;
+          /** Whether to generate native audio (Seedance, Vidu Q3, Kling 3.0). */
+          generateAudio?: boolean;
+          /** Camera movement intensity for Vidu Q3. */
+          movementAmplitude?: "auto" | "small" | "medium" | "large";
         }): Promise<WavespeedJob>;
         getJobs(): Promise<WavespeedJobRecord[]>;
         deleteJob(localId: string): Promise<{ ok: boolean }>;

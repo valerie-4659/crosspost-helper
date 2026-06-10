@@ -632,6 +632,20 @@ async function handleBridge(req, res) {
   if (req.method === "GET" && url.pathname === "/image-file") {
     const imageId = url.searchParams.get("id");
     if (!imageId) { bridgeSendJson(res, { error: "id required" }, 400); return; }
+
+    // If the "id" is an absolute file path (non-library image, e.g. WaveSpeed result),
+    // serve it directly from disk without a DB lookup.
+    const isAbsPath = imageId.startsWith("/") || /^[A-Za-z]:[\\/]/.test(imageId);
+    if (isAbsPath) {
+      if (!fs.existsSync(imageId)) { bridgeSendJson(res, { error: "File missing on disk" }, 404); return; }
+      const ext  = path.extname(imageId).toLowerCase();
+      const mime = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif" }[ext] ?? "image/png";
+      const data = fs.readFileSync(imageId);
+      res.writeHead(200, { "Content-Type": mime, "Content-Length": data.length, "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" });
+      res.end(data);
+      return;
+    }
+
     const stmt = db.prepare("SELECT local_path, mime_type FROM images WHERE id = ? LIMIT 1");
     stmt.bind([imageId]);
     const rows = [];
@@ -1075,17 +1089,23 @@ Respond with ONLY valid JSON, no markdown fences:
 
 // ─── Video Prompt Generation ──────────────────────────────────────────────────
 
+// explicit: true  → NSFW descriptions are OK (only WAN 2.2 Spicy)
+// strictChinese:  → ByteDance / Kuaishou / Vidu — zero tolerance for even suggestive content
 const VIDEO_MODELS = {
-  wan_2_2_explicit: { name: "WAN 2.2 Explicit", explicit: true,  maxWords: 350 },
-  wan_2_5:          { name: "WAN 2.5",           explicit: false, maxWords: 300 },
-  wan_2_7:          { name: "WAN 2.7",           explicit: false, maxWords: 300 },
-  grok_imagine:     { name: "GROK Imagine",       explicit: false, maxWords: 250 },
-  seedance:         { name: "Seedance",           explicit: false, maxWords: 350 },
+  wan_2_2_spicy:    { name: "WAN 2.2 Spicy",     explicit: true,  strictChinese: false, maxWords: 350 },
+  wan_2_5:          { name: "WAN 2.5",            explicit: false, strictChinese: false, maxWords: 300 },
+  wan_2_7:          { name: "WAN 2.7",            explicit: false, strictChinese: false, maxWords: 300 },
+  kling_v3_0_pro:   { name: "Kling 3.0 Pro",      explicit: false, strictChinese: true,  maxWords: 280 },
+  grok_imagine:     { name: "Grok Imagine Video",  explicit: false, strictChinese: false, maxWords: 250 },
+  seedance_2_0:     { name: "Seedance 2.0",        explicit: false, strictChinese: true,  maxWords: 350 },
+  seedance_1_5_pro: { name: "Seedance 1.5 Pro",    explicit: false, strictChinese: true,  maxWords: 300 },
+  vidu_q3:          { name: "Vidu Q3",             explicit: false, strictChinese: true,  maxWords: 280 },
 };
 
 // videoModel: one of the VIDEO_MODELS keys
 // instructions: optional character names / specific scene details
-async function generateVideoPrompt(imagePaths, videoModel = "wan_2_5", instructions = "") {
+// includeCameraMoves: whether to include camera movement directives
+async function generateVideoPrompt(imagePaths, videoModel = "wan_2_5", instructions = "", includeCameraMoves = true) {
   const db = await getDatabase();
   const rows = db.exec("SELECT key, value FROM ai_config");
   const cfg = {};
@@ -1118,10 +1138,19 @@ async function generateVideoPrompt(imagePaths, videoModel = "wan_2_5", instructi
     }
   }
 
-  // Content policy rule — explicit only for WAN 2.2 Explicit
-  const contentRule = vm.explicit
-    ? `EXPLICIT CONTENT IS ALLOWED and expected — describe nudity, explicit poses, and adult scenarios accurately and vividly. Do not sanitize.`
-    : `CONTENT SAFETY REQUIRED — this model has strict content moderation. NEVER use explicit sexual terms, genital names, sexual acts, or NSFW language. Use tasteful alternatives: "bare skin", "curves", "sensual pose", "intimate embrace", "alluring figure", "close together". Violating this will cause the generation to fail.`;
+  // Content policy rule per model family
+  let contentRule;
+  if (vm.explicit) {
+    contentRule = `EXPLICIT CONTENT IS ALLOWED and expected — describe nudity, explicit poses, and adult scenarios accurately and vividly. Do not sanitize.`;
+  } else if (vm.strictChinese) {
+    contentRule = `STRICT CONTENT POLICY — this model (${vm.name}) is operated by a Chinese company with zero tolerance for any sexual, suggestive, or adult content. NEVER use: nudity, revealing clothing, sexual acts, intimate touching, or any sensual language. Describe the scene in a completely neutral, family-safe way. Focus on motion, environment, and cinematic quality only. Any violation will cause the generation to be blocked.`;
+  } else {
+    contentRule = `CONTENT SAFETY REQUIRED — this model has strict content moderation. NEVER use explicit sexual terms, genital names, sexual acts, or NSFW language. Use tasteful alternatives: "bare skin", "curves", "sensual pose", "intimate embrace", "alluring figure", "close together". Violating this will cause the generation to fail.`;
+  }
+
+  const cameraLine = includeCameraMoves
+    ? `- Camera work: angle, movement (slow zoom, tracking shot, dolly, close-up, static, crane shot).`
+    : `- Do NOT include any camera movement or cinematography instructions — the model handles camera work internally.`;
 
   const instructionsLine = instructions?.trim()
     ? `\nSPECIFIC DETAILS (mandatory, use exactly as given): ${instructions.trim()}`
@@ -1135,7 +1164,7 @@ Requirements:
 - Maximum ${vm.maxWords} words. Be precise but concise.
 - Describe the subject(s): appearance, clothing (or lack thereof), pose, expression.
 - Describe the action and MOTION — what moves, how it moves (hair, fabric, body, environment).
-- Camera work: angle, movement (slow zoom, tracking shot, dolly, close-up, static).
+${cameraLine}
 - Lighting: quality, direction, color temperature, shadows.
 - Atmosphere and mood: intimate, dramatic, playful, tense, ethereal — match the image energy.
 - Visual style: cinematic, photorealistic, high detail, film grain (if appropriate).
@@ -1521,46 +1550,71 @@ app.whenReady().then(() => {
   // Maps the app's video model keys to Wavespeed REST API endpoint slugs.
   const WAVESPEED_VIDEO_ENDPOINT_MAP = {
     // ── WAN family ──────────────────────────────────────────────────────────
-    wan_2_2_explicit:  "wavespeed-ai/wan-2.2-spicy/image-to-video",
-    wan_2_5:           "alibaba/wan-2.5/image-to-video",
-    wan_2_6_spicy:     "alibaba/wan-2.6/image-to-video-spicy",
-    wan_2_7:           "alibaba/wan-2.7/image-to-video",
-    wan_2_7_spicy:     "alibaba/wan-2.7/image-to-video-spicy",
-    // ── Kling family ────────────────────────────────────────────────────────
-    // duration: 5 or 10 s; no resolution/seed param; uses guidance_scale
-    kling_v2_5:        "kwaivgi/kling-v2.5-turbo-pro/image-to-video",
-    kling_v3_0_pro:    "kwaivgi/kling-v3.0-pro/image-to-video",
+    wan_2_2_spicy:    "wavespeed-ai/wan-2.2-spicy/image-to-video",
+    wan_2_5:          "alibaba/wan-2.5/image-to-video",
+    wan_2_7:          "alibaba/wan-2.7/image-to-video",
+    // ── Kling ────────────────────────────────────────────────────────────────
+    kling_v3_0_pro:   "kwaivgi/kling-v3.0-pro/image-to-video",
     // ── Grok ────────────────────────────────────────────────────────────────
-    grok_imagine:      "x-ai/grok-imagine-video/image-to-video",
+    grok_imagine:     "x-ai/grok-imagine-video/image-to-video",
     // ── Seedance family ─────────────────────────────────────────────────────
     // duration: 4–15 s; resolution 720p or 1080p; adds generate_audio
-    seedance_2_0:      "bytedance/seedance-2.0/image-to-video",
-    seedance_1_5_pro:  "bytedance/seedance-v1.5-pro/image-to-video",
+    seedance_2_0:     "bytedance/seedance-2.0/image-to-video",
+    seedance_1_5_pro: "bytedance/seedance-v1.5-pro/image-to-video",
+    // ── Vidu ─────────────────────────────────────────────────────────────────
+    vidu_q3:          "vidu/q3/image-to-video",
   };
 
   /** Build a model-specific request body for image-to-video. */
-  function buildVideoBody(videoModel, imageDataUri, prompt, resolution, duration, seed) {
+  function buildVideoBody(videoModel, imageDataUri, prompt, resolution, duration, seed, endImageDataUri, generateAudio, movementAmplitude) {
     const base = { prompt: prompt || "", image: imageDataUri };
-    if (videoModel && videoModel.startsWith("kling")) {
-      // Kling: guidance_scale, duration 5 or 10, no resolution/seed
-      const klDuration = [5, 10].includes(Number(duration)) ? Number(duration) : 5;
-      return { ...base, guidance_scale: 0.5, duration: klDuration };
+
+    if (videoModel === "kling_v3_0_pro") {
+      // Kling 3.0 Pro: cfg_scale, duration 3-15, optional end_image
+      const klDuration = Math.min(15, Math.max(3, Number(duration) || 5));
+      const body = { ...base, duration: klDuration, cfg_scale: 0.5, shot_type: "intelligent" };
+      if (endImageDataUri) body.end_image = endImageDataUri;
+      if (generateAudio) body.sound = true;
+      return body;
     }
+
     if (videoModel === "grok_imagine") {
-      // Grok: just prompt + image
-      return base;
+      // Grok: prompt + image + duration (6 or 10) + resolution (720p/480p)
+      const gkDuration = [6, 10].includes(Number(duration)) ? Number(duration) : 6;
+      const gkRes = ["720p", "480p"].includes(resolution) ? resolution : "720p";
+      return { ...base, duration: gkDuration, resolution: gkRes };
     }
+
     if (videoModel && videoModel.startsWith("seedance")) {
       // Seedance: resolution 720p/1080p, duration 4-15, generate_audio
       const sdDuration = Math.min(15, Math.max(4, Number(duration) || 5));
       const sdRes = ["720p", "1080p"].includes(resolution) ? resolution : "720p";
-      return { ...base, resolution: sdRes, duration: sdDuration, generate_audio: true };
+      return { ...base, resolution: sdRes, duration: sdDuration, generate_audio: generateAudio !== false };
     }
-    // WAN family (default): resolution, duration, seed
-    return { ...base, resolution: resolution || "720p", duration: Number(duration) || 8, seed: seed ?? -1 };
+
+    if (videoModel === "vidu_q3") {
+      // Vidu Q3: resolution 540p/720p/1080p, duration 1-16, movement_amplitude, generate_audio
+      const vdDuration = Math.min(16, Math.max(1, Number(duration) || 5));
+      const vdRes = ["540p", "720p", "1080p"].includes(resolution) ? resolution : "720p";
+      const vdAmplitude = ["auto", "small", "medium", "large"].includes(movementAmplitude) ? movementAmplitude : "auto";
+      return { ...base, resolution: vdRes, duration: vdDuration, movement_amplitude: vdAmplitude, generate_audio: generateAudio !== false, bgm: false, seed: seed ?? -1 };
+    }
+
+    if (videoModel === "wan_2_7") {
+      // WAN 2.7: resolution 720p/1080p, duration 2-15, optional last_image, seed
+      const w27Duration = Math.min(15, Math.max(2, Number(duration) || 5));
+      const w27Res = ["720p", "1080p"].includes(resolution) ? resolution : "720p";
+      const body = { ...base, resolution: w27Res, duration: w27Duration, seed: seed ?? -1 };
+      if (endImageDataUri) body.last_image = endImageDataUri;
+      return body;
+    }
+
+    // WAN 2.2 Spicy / WAN 2.5 (default WAN family): resolution 480p/720p, duration, seed
+    const wanRes = ["480p", "720p"].includes(resolution) ? resolution : "720p";
+    return { ...base, resolution: wanRes, duration: Number(duration) || 5, seed: seed ?? -1 };
   }
 
-  ipcMain.handle("wavespeed:submit", async (_event, { imagePath, prompt, videoModel, resolution, duration, seed }) => {
+  ipcMain.handle("wavespeed:submit", async (_event, { imagePath, prompt, videoModel, resolution, duration, seed, endImagePath, generateAudio, movementAmplitude }) => {
     const db = await getDatabase();
     const rows = db.exec("SELECT key, value FROM ai_config");
     const cfg = {};
@@ -1587,8 +1641,15 @@ app.whenReady().then(() => {
       imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
     }
 
-    const endpointSlug = WAVESPEED_VIDEO_ENDPOINT_MAP[videoModel] ?? WAVESPEED_VIDEO_ENDPOINT_MAP["wan_2_2_explicit"];
-    const body = buildVideoBody(videoModel, imageDataUri, prompt, resolution, duration, seed);
+    // Optional end frame image
+    let endImageDataUri = null;
+    if (endImagePath && fs.existsSync(endImagePath)) {
+      const rawEnd = fs.readFileSync(endImagePath);
+      endImageDataUri = `data:${imageMime(endImagePath)};base64,` + rawEnd.toString("base64");
+    }
+
+    const endpointSlug = WAVESPEED_VIDEO_ENDPOINT_MAP[videoModel] ?? WAVESPEED_VIDEO_ENDPOINT_MAP["wan_2_2_spicy"];
+    const body = buildVideoBody(videoModel, imageDataUri, prompt, resolution, duration, seed, endImageDataUri, generateAudio, movementAmplitude);
 
     const res = await fetch(`https://api.wavespeed.ai/api/v3/${endpointSlug}`, {
       method:  "POST",
@@ -1610,7 +1671,7 @@ app.whenReady().then(() => {
     );
     insertStmt.run([
       localId, jobData.id, imagePath || "",
-      prompt || "", videoModel || "wan_2_2_explicit",
+      prompt || "", videoModel || "wan_2_2_spicy",
       resolution || "720p", duration || 8,
       jobData.status || "created", null, null, now, now,
     ]);
@@ -2232,8 +2293,8 @@ app.whenReady().then(() => {
   });
 
   // ── AI video prompt generation ─────────────────────────────────────────────
-  ipcMain.handle("ai:generate-video-prompt", async (_event, imagePaths, videoModel, instructions) => {
-    return generateVideoPrompt(imagePaths, videoModel, instructions);
+  ipcMain.handle("ai:generate-video-prompt", async (_event, imagePaths, videoModel, instructions, includeCameraMoves) => {
+    return generateVideoPrompt(imagePaths, videoModel, instructions, includeCameraMoves !== false);
   });
 
   // ── AI image recreation prompt (SFW, model-specific) ──────────────────────

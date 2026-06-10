@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref, watch } from "vue";
 import type { AppPage } from "@/components/SidebarNavigation.vue";
 import { Check, Clapperboard, Copy, FolderOpen, X } from "lucide-vue-next";
 
@@ -8,44 +8,87 @@ const props = defineProps<{
   disabled?: boolean;
 }>();
 
+// ── Model definitions ──────────────────────────────────────────────────────
+// nsfw:          explicit content allowed (WAN 2.2 Spicy only)
+// strictChinese: ByteDance / Kuaishou / Vidu — zero tolerance for suggestive content
+// hasEndImage:   supports an optional end-frame image
+// hasAudio:      supports native audio generation
+// hasMovement:   supports movement_amplitude (Vidu Q3)
 const VIDEO_MODELS = [
-  // WAN family
-  { value: "wan_2_2_explicit", label: "WAN 2.2 Spicy",    nsfw: true,  wavespeed: true,  durationOptions: [5, 8],    resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_5",          label: "WAN 2.5",           nsfw: false, wavespeed: true,  durationOptions: [5, 8],    resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_6_spicy",    label: "WAN 2.6 Spicy",     nsfw: true,  wavespeed: true,  durationOptions: [5, 8],    resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_7",          label: "WAN 2.7",           nsfw: false, wavespeed: true,  durationOptions: [5, 8],    resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_7_spicy",    label: "WAN 2.7 Spicy",     nsfw: true,  wavespeed: true,  durationOptions: [5, 8],    resolutionOptions: ["480p","720p"] },
-  // Kling family — duration 5 or 10 s, no resolution param
-  { value: "kling_v2_5",       label: "Kling V2.5 Turbo",  nsfw: false, wavespeed: true,  durationOptions: [5, 10],   resolutionOptions: [] },
-  { value: "kling_v3_0_pro",   label: "Kling V3.0 Pro",    nsfw: false, wavespeed: true,  durationOptions: [5, 10],   resolutionOptions: [] },
-  // Grok
-  { value: "grok_imagine",     label: "Grok Imagine",      nsfw: false, wavespeed: true,  durationOptions: [5],       resolutionOptions: [] },
-  // Seedance family — duration 4-15 s, resolution 720p or 1080p
-  { value: "seedance_2_0",     label: "Seedance 2.0",      nsfw: false, wavespeed: true,  durationOptions: [5,8,10,15], resolutionOptions: ["720p","1080p"] },
-  { value: "seedance_1_5_pro", label: "Seedance 1.5 Pro",  nsfw: false, wavespeed: true,  durationOptions: [5,8,10],  resolutionOptions: ["720p","1080p"] },
-];
+  {
+    value: "wan_2_2_spicy", label: "WAN 2.2 Spicy", nsfw: true, strictChinese: false,
+    resolutions: ["480p", "720p"], durations: [5, 8],
+    hasEndImage: false, hasAudio: false, hasMovement: false,
+  },
+  {
+    value: "wan_2_5", label: "WAN 2.5", nsfw: false, strictChinese: false,
+    resolutions: ["480p", "720p"], durations: [5, 8],
+    hasEndImage: false, hasAudio: false, hasMovement: false,
+  },
+  {
+    value: "wan_2_7", label: "WAN 2.7", nsfw: false, strictChinese: false,
+    resolutions: ["720p", "1080p"], durations: [2,3,4,5,6,7,8,9,10,12,15],
+    hasEndImage: true, hasAudio: false, hasMovement: false,
+  },
+  {
+    value: "kling_v3_0_pro", label: "Kling 3.0 Pro", nsfw: false, strictChinese: true,
+    resolutions: [], durations: [3,4,5,6,7,8,9,10,12,15],
+    hasEndImage: true, hasAudio: true, hasMovement: false,
+  },
+  {
+    value: "grok_imagine", label: "Grok Imagine", nsfw: false, strictChinese: false,
+    resolutions: ["480p", "720p"], durations: [6, 10],
+    hasEndImage: false, hasAudio: false, hasMovement: false,
+  },
+  {
+    value: "seedance_2_0", label: "Seedance 2.0", nsfw: false, strictChinese: true,
+    resolutions: ["720p", "1080p"], durations: [4,5,6,7,8,9,10,12,15],
+    hasEndImage: false, hasAudio: true, hasMovement: false,
+  },
+  {
+    value: "seedance_1_5_pro", label: "Seedance 1.5 Pro", nsfw: false, strictChinese: true,
+    resolutions: ["720p", "1080p"], durations: [4,5,6,7,8,9,10],
+    hasEndImage: false, hasAudio: true, hasMovement: false,
+  },
+  {
+    value: "vidu_q3", label: "Vidu Q3", nsfw: false, strictChinese: true,
+    resolutions: ["540p", "720p", "1080p"], durations: [1,2,3,4,5,6,7,8,9,10,12,14,16],
+    hasEndImage: false, hasAudio: true, hasMovement: true,
+  },
+] as const;
 
-type VideoModel = typeof VIDEO_MODELS[number];
+type VideoModelValue = typeof VIDEO_MODELS[number]["value"];
 
-// Computed model config for currently selected model
-function currentModelCfg(): VideoModel {
-  return VIDEO_MODELS.find((m) => m.value === selectedModel.value) ?? VIDEO_MODELS[0];
-}
+const selectedModel    = ref<VideoModelValue>("wan_2_2_spicy");
+const instructions     = ref("");
+const includeCameraMoves = ref(true);
+const generating       = ref(false);
+const generateError    = ref("");
+const generatedPrompt  = ref("");
+const copied           = ref(false);
 
-const selectedModel   = ref("wan_2_2_explicit");
-const instructions    = ref("");
-const generating      = ref(false);
-const generateError   = ref("");
-const generatedPrompt = ref("");
-const copied          = ref(false);
+const modelCfg = computed(() => VIDEO_MODELS.find((m) => m.value === selectedModel.value) ?? VIDEO_MODELS[0]);
 
-// ── Wavespeed ──────────────────────────────────────────────────────────────
-const wavespeedAvailable = ref(false);
-const wsResolution = ref("720p");
-const wsDuration   = ref(8);
-const wsSubmitting = ref(false);
-const wsSubmitted  = ref(false);   // true after job was queued successfully
-const wsError      = ref("");
+// ── Wavespeed submit state ─────────────────────────────────────────────────
+const wavespeedAvailable  = ref(false);
+const wsResolution        = ref("720p");
+const wsDuration          = ref(5);
+const wsEndImagePath      = ref("");
+const wsGenerateAudio     = ref(true);
+const wsMovementAmplitude = ref<"auto"|"small"|"medium"|"large">("auto");
+const wsSubmitting        = ref(false);
+const wsSubmitted         = ref(false);
+const wsError             = ref("");
+
+// Reset resolution/duration to valid defaults when model changes
+watch(selectedModel, () => {
+  const m = modelCfg.value;
+  wsResolution.value    = m.resolutions.length ? (m.resolutions.includes("720p") ? "720p" : m.resolutions[0] as string) : "720p";
+  wsDuration.value      = m.durations[Math.min(3, m.durations.length - 1)];
+  wsEndImagePath.value  = "";
+  wsMovementAmplitude.value = "auto";
+  resetWavespeed();
+});
 
 onMounted(async () => {
   const rows = await window.desktop.db.select<Array<{ value: string }>>(
@@ -65,6 +108,7 @@ async function generate() {
       props.imagePaths,
       selectedModel.value,
       instructions.value.trim() || undefined,
+      includeCameraMoves.value,
     );
   } catch (err) {
     generateError.value = err instanceof Error ? err.message : String(err);
@@ -87,6 +131,13 @@ function revealSourceImage() {
   }
 }
 
+async function pickEndImage() {
+  const result = await window.desktop.dialog.open({
+    filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp"] }],
+  });
+  if (result) wsEndImagePath.value = result;
+}
+
 const setPage = inject<(page: AppPage) => void>("setPage");
 
 async function submitToWavespeed() {
@@ -98,10 +149,13 @@ async function submitToWavespeed() {
   try {
     await window.desktop.wavespeed.submit({
       imagePath,
-      prompt:     generatedPrompt.value,
-      videoModel: selectedModel.value,
-      resolution: wsResolution.value,
-      duration:   wsDuration.value,
+      prompt:             generatedPrompt.value,
+      videoModel:         selectedModel.value,
+      resolution:         wsResolution.value,
+      duration:           wsDuration.value,
+      endImagePath:       wsEndImagePath.value || undefined,
+      generateAudio:      wsGenerateAudio.value,
+      movementAmplitude:  wsMovementAmplitude.value,
     });
     wsSubmitted.value = true;
   } catch (err) {
@@ -135,25 +189,29 @@ function resetWavespeed() {
                 : 'border-accent bg-accent/15 text-accent'
               : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200',
           ]"
-          @click="selectedModel = m.value"
+          @click="selectedModel = m.value as VideoModelValue"
         >
           {{ m.label }}
           <span v-if="m.nsfw" class="ml-1 text-[10px] opacity-70">🔞</span>
         </button>
       </div>
-      <!-- NSFW warning -->
-      <p v-if="currentModelCfg().nsfw" class="mt-1 text-[11px] text-rose/70">
+      <!-- Content policy note -->
+      <p v-if="modelCfg.nsfw" class="mt-1 text-[11px] text-rose/70">
         Explicit content allowed — prompt will include uncensored descriptions.
+      </p>
+      <p v-else-if="modelCfg.strictChinese" class="mt-1 text-[11px] text-amber-500/70">
+        Chinese-operated model — prompts are strictly family-safe, no suggestive language.
       </p>
       <p v-else class="mt-1 text-[11px] text-slate-600">
         Content-safe — explicit terms replaced with tasteful alternatives.
-        <span v-if="!currentModelCfg().wavespeed" class="text-amber-500/70"> (Wavespeed not supported)</span>
       </p>
     </div>
 
     <!-- Instructions (optional) -->
     <div>
-      <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Instructions <span class="normal-case text-slate-600">(optional — character names, scene details)</span></p>
+      <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+        Instructions <span class="normal-case text-slate-600">(optional — character names, scene details)</span>
+      </p>
       <textarea
         v-model="instructions"
         rows="2"
@@ -161,6 +219,13 @@ function resetWavespeed() {
         placeholder="e.g. The woman is Valerie. Setting is a moonlit rooftop."
       />
     </div>
+
+    <!-- Camera moves checkbox -->
+    <label class="flex cursor-pointer items-center gap-2 select-none">
+      <input type="checkbox" v-model="includeCameraMoves" aria-label="Include camera moves in prompt" class="h-3.5 w-3.5 accent-accent" />
+      <span class="text-xs text-slate-300">Include camera moves in prompt</span>
+      <span class="text-[10px] text-slate-600">(zoom, tracking, dolly, etc.)</span>
+    </label>
 
     <!-- Generate + Reveal row -->
     <div class="flex gap-2">
@@ -214,7 +279,7 @@ function resetWavespeed() {
 
     <!-- ── Send to Wavespeed ─────────────────────────────────────────────── -->
     <div
-      v-if="generatedPrompt && wavespeedAvailable && currentModelCfg().wavespeed"
+      v-if="generatedPrompt && wavespeedAvailable"
       class="space-y-2.5 rounded-xl border border-violet-500/20 bg-panel p-4"
     >
       <p class="text-[10px] font-semibold uppercase tracking-wide text-violet-400/70">
@@ -222,20 +287,57 @@ function resetWavespeed() {
         <span class="normal-case font-normal text-slate-600"> — start a render job directly</span>
       </p>
 
-      <!-- Resolution + Duration (dynamic per model) -->
+      <!-- Resolution + Duration -->
       <div class="flex gap-2">
-        <div v-if="currentModelCfg().resolutionOptions.length" class="flex-1 flex flex-col gap-1">
+        <div v-if="modelCfg.resolutions.length" class="flex-1 flex flex-col gap-1">
           <label class="text-[11px] text-slate-500">Resolution</label>
           <select v-model="wsResolution" class="field text-xs py-1">
-            <option v-for="r in currentModelCfg().resolutionOptions" :key="r" :value="r">{{ r }}</option>
+            <option v-for="r in modelCfg.resolutions" :key="r" :value="r">{{ r }}</option>
           </select>
         </div>
         <div class="flex-1 flex flex-col gap-1">
           <label class="text-[11px] text-slate-500">Duration</label>
           <select v-model="wsDuration" class="field text-xs py-1">
-            <option v-for="d in currentModelCfg().durationOptions" :key="d" :value="d">{{ d }} seconds</option>
+            <option v-for="d in modelCfg.durations" :key="d" :value="d">{{ d }}s</option>
           </select>
         </div>
+      </div>
+
+      <!-- End image (WAN 2.7, Kling 3.0) -->
+      <div v-if="modelCfg.hasEndImage" class="flex flex-col gap-1">
+        <label class="text-[11px] text-slate-500">End frame image <span class="text-slate-600">(optional)</span></label>
+        <div class="flex gap-1.5 items-center">
+          <input
+            type="text"
+            :value="wsEndImagePath"
+            readonly
+            placeholder="No end frame selected"
+            class="flex-1 rounded-md border border-line bg-panelSoft px-2.5 py-1 text-xs text-slate-400 placeholder:text-slate-600 cursor-default"
+          />
+          <button class="button h-7 w-7 shrink-0 p-0" title="Pick end frame image" @click="pickEndImage">
+            <FolderOpen class="h-3.5 w-3.5" />
+          </button>
+          <button v-if="wsEndImagePath" class="button h-7 w-7 shrink-0 p-0 text-slate-500" @click="wsEndImagePath = ''">
+            <X class="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+
+      <!-- Audio toggle (Seedance, Vidu Q3, Kling) -->
+      <label v-if="modelCfg.hasAudio" class="flex cursor-pointer items-center gap-2 select-none">
+        <input type="checkbox" v-model="wsGenerateAudio" aria-label="Generate native audio" class="h-3.5 w-3.5 accent-accent" />
+        <span class="text-xs text-slate-300">Generate native audio</span>
+      </label>
+
+      <!-- Movement amplitude (Vidu Q3) -->
+      <div v-if="modelCfg.hasMovement" class="flex flex-col gap-1">
+        <label class="text-[11px] text-slate-500">Movement amplitude</label>
+        <select v-model="wsMovementAmplitude" class="field text-xs py-1">
+          <option value="auto">Auto</option>
+          <option value="small">Small</option>
+          <option value="medium">Medium</option>
+          <option value="large">Large</option>
+        </select>
       </div>
 
       <!-- Submit / submitting / submitted states -->
