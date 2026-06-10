@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.119 - 2026-06-10
+
+- refactor: extract VIDEO_MODELS to shared composable; fix rerun dialog models
+
+
 ## v0.2.118 - 2026-06-10
 
 - feat: overhaul video generation — 8 WaveSpeed models, per-model params, camera-moves checkbox, image queue bridge fix

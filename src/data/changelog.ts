@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.119",
+    date: "2026-06-10",
+    items: [
+      "refactor: extract VIDEO_MODELS to shared composable; fix rerun dialog models",
+    ],
+  },
+  {
     version: "0.2.118",
     date: "2026-06-10",
     items: [
