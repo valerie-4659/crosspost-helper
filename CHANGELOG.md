@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.118 - 2026-06-10
+
+- feat: overhaul video generation — 8 WaveSpeed models, per-model params, camera-moves checkbox, image queue bridge fix
+
+
 ## v0.2.117 - 2026-06-09
 
 - Release v0.2.117

@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.118",
+    date: "2026-06-10",
+    items: [
+      "feat: overhaul video generation — 8 WaveSpeed models, per-model params, camera-moves checkbox, image queue bridge fix",
+    ],
+  },
+  {
     version: "0.2.117",
     date: "2026-06-09",
     items: [
