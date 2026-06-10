@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { Check, Clapperboard, ExternalLink, Film, FolderOpen, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
+import { VIDEO_MODELS, getVideoModelCfg, isValidVideoModel } from "@/composables/useVideoModels";
 
 const jobs = ref<WavespeedJobRecord[]>([]);
 const loading = ref(false);
@@ -48,53 +49,54 @@ function openNewVideoFromPath(imagePath: string) {
 }
 
 // ── Re-run state ──────────────────────────────────────────────────────────
-const rerunJob      = ref<WavespeedJobRecord | null>(null);
-const rerunPrompt   = ref("");
-const rerunModel    = ref("");
-const rerunRes      = ref("720p");
-const rerunDuration = ref(8);
-const rerunBusy     = ref(false);
-const rerunError    = ref("");
-const rerunDone     = ref(false);
-// AI prompt analysis
-const rerunAnalysing      = ref(false);
-const rerunAnalyseError   = ref("");
+const rerunJob               = ref<WavespeedJobRecord | null>(null);
+const rerunPrompt            = ref("");
+const rerunModel             = ref("wan_2_7");
+const rerunRes               = ref("720p");
+const rerunDuration          = ref(5);
+const rerunEndImagePath      = ref("");
+const rerunGenerateAudio     = ref(true);
+const rerunMovementAmplitude = ref<"auto"|"small"|"medium"|"large">("auto");
+const rerunBusy              = ref(false);
+const rerunError             = ref("");
+const rerunDone              = ref(false);
+const rerunAnalysing         = ref(false);
+const rerunAnalyseError      = ref("");
 
-const VIDEO_MODELS_SIMPLE = [
-  { value: "wan_2_2_explicit", label: "WAN 2.2 Spicy",   durationOptions: [5,8],    resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_5",          label: "WAN 2.5",          durationOptions: [5,8],    resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_6_spicy",    label: "WAN 2.6 Spicy",    durationOptions: [5,8],    resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_7",          label: "WAN 2.7",          durationOptions: [5,8],    resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_7_spicy",    label: "WAN 2.7 Spicy",    durationOptions: [5,8],    resolutionOptions: ["480p","720p"] },
-  { value: "kling_v2_5",       label: "Kling V2.5 Turbo", durationOptions: [5,10],   resolutionOptions: [] },
-  { value: "kling_v3_0_pro",   label: "Kling V3.0 Pro",   durationOptions: [5,10],   resolutionOptions: [] },
-  { value: "grok_imagine",     label: "Grok Imagine",     durationOptions: [5],      resolutionOptions: [] },
-  { value: "seedance_2_0",     label: "Seedance 2.0",     durationOptions: [5,8,10,15], resolutionOptions: ["720p","1080p"] },
-  { value: "seedance_1_5_pro", label: "Seedance 1.5 Pro", durationOptions: [5,8,10], resolutionOptions: ["720p","1080p"] },
-];
+const rerunModelCfg = computed(() => getVideoModelCfg(rerunModel.value));
 
-function currentRerunModelCfg() {
-  return VIDEO_MODELS_SIMPLE.find((m) => m.value === rerunModel.value) ?? VIDEO_MODELS_SIMPLE[0];
-}
-
-const rerunModelCfg = computed(() => currentRerunModelCfg());
+// Reset resolution/duration to model defaults when model changes
+watch(rerunModel, () => {
+  const m = rerunModelCfg.value;
+  rerunRes.value      = m.resolutions.length ? (m.resolutions.includes("720p") ? "720p" : m.resolutions[0]) : "720p";
+  rerunDuration.value = m.durations[Math.min(3, m.durations.length - 1)];
+  rerunEndImagePath.value = "";
+});
 
 function openRerun(job: WavespeedJobRecord) {
-  rerunJob.value          = job;
-  rerunPrompt.value       = job.prompt;
-  rerunModel.value        = job.model in Object.fromEntries(VIDEO_MODELS_SIMPLE.map((m) => [m.value, true]))
-    ? job.model : "wan_2_7";
-  rerunRes.value          = job.resolution || "720p";
-  rerunDuration.value     = Number(job.duration) || 8;
-  rerunBusy.value         = false;
-  rerunError.value        = "";
-  rerunDone.value         = false;
-  rerunAnalysing.value    = false;
-  rerunAnalyseError.value = "";
+  rerunJob.value               = job;
+  rerunPrompt.value            = job.prompt;
+  rerunModel.value             = isValidVideoModel(job.model) ? job.model : "wan_2_7";
+  const m                      = getVideoModelCfg(rerunModel.value);
+  rerunRes.value               = m.resolutions.includes(job.resolution) ? job.resolution : (m.resolutions[0] ?? "720p");
+  rerunDuration.value          = m.durations.includes(Number(job.duration) as never) ? Number(job.duration) : m.durations[Math.min(3, m.durations.length - 1)];
+  rerunEndImagePath.value      = "";
+  rerunGenerateAudio.value     = true;
+  rerunMovementAmplitude.value = "auto";
+  rerunBusy.value              = false;
+  rerunError.value             = "";
+  rerunDone.value              = false;
+  rerunAnalysing.value         = false;
+  rerunAnalyseError.value      = "";
 }
 
-function closeRerun() {
-  rerunJob.value = null;
+function closeRerun() { rerunJob.value = null; }
+
+async function pickRerunEndImage() {
+  const result = await window.desktop.dialog.open({
+    filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp"] }],
+  });
+  if (result) rerunEndImagePath.value = result;
 }
 
 async function rerunAnalyse() {
@@ -121,13 +123,15 @@ async function submitRerun() {
   rerunDone.value  = false;
   try {
     const result = await window.desktop.wavespeed.submit({
-      imagePath:  rerunJob.value.image_path,
-      prompt:     rerunPrompt.value.trim(),
-      videoModel: rerunModel.value,
-      resolution: rerunRes.value as "480p" | "720p",
-      duration:   rerunDuration.value as 5 | 8,
+      imagePath:         rerunJob.value.image_path,
+      prompt:            rerunPrompt.value.trim(),
+      videoModel:        rerunModel.value,
+      resolution:        rerunRes.value,
+      duration:          rerunDuration.value,
+      endImagePath:      rerunEndImagePath.value || undefined,
+      generateAudio:     rerunGenerateAudio.value,
+      movementAmplitude: rerunMovementAmplitude.value,
     });
-    // Add the new job to the top of the list
     const newJob: WavespeedJobRecord = {
       id:         result.localId ?? `wsjob_${Date.now()}`,
       job_id:     result.id,
@@ -402,31 +406,66 @@ onUnmounted(() => {
                 <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Model</p>
                 <div class="flex flex-wrap gap-1.5">
                   <button
-                    v-for="m in VIDEO_MODELS_SIMPLE"
+                    v-for="m in VIDEO_MODELS"
                     :key="m.value"
                     class="rounded-lg border px-2.5 py-1 text-[11px] font-medium transition"
                     :class="rerunModel === m.value
-                      ? 'border-accent bg-accent/15 text-accent'
+                      ? m.nsfw ? 'border-rose/50 bg-rose/15 text-rose' : 'border-accent bg-accent/15 text-accent'
                       : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200'"
                     @click="rerunModel = m.value"
-                  >{{ m.label }}</button>
+                  >
+                    {{ m.label }}
+                    <span v-if="m.nsfw" class="ml-1 text-[10px] opacity-70">🔞</span>
+                  </button>
                 </div>
               </div>
 
-              <!-- Duration + Resolution -->
+              <!-- Resolution + Duration -->
               <div class="flex gap-2">
-                <div v-if="rerunModelCfg.resolutionOptions.length" class="flex-1 flex flex-col gap-1">
+                <div v-if="rerunModelCfg.resolutions.length" class="flex-1 flex flex-col gap-1">
                   <label class="text-[11px] text-slate-500">Resolution</label>
                   <select v-model="rerunRes" class="field text-xs py-1">
-                    <option v-for="r in rerunModelCfg.resolutionOptions" :key="r" :value="r">{{ r }}</option>
+                    <option v-for="r in rerunModelCfg.resolutions" :key="r" :value="r">{{ r }}</option>
                   </select>
                 </div>
                 <div class="flex-1 flex flex-col gap-1">
                   <label class="text-[11px] text-slate-500">Duration</label>
                   <select v-model="rerunDuration" class="field text-xs py-1">
-                    <option v-for="d in rerunModelCfg.durationOptions" :key="d" :value="d">{{ d }} seconds</option>
+                    <option v-for="d in rerunModelCfg.durations" :key="d" :value="d">{{ d }}s</option>
                   </select>
                 </div>
+              </div>
+
+              <!-- End frame image (WAN 2.7, Kling 3.0) -->
+              <div v-if="rerunModelCfg.hasEndImage" class="flex flex-col gap-1">
+                <label class="text-[11px] text-slate-500">End frame <span class="text-slate-600">(optional)</span></label>
+                <div class="flex gap-1.5 items-center">
+                  <input type="text" :value="rerunEndImagePath" readonly placeholder="No end frame selected"
+                    class="flex-1 rounded-md border border-line bg-panelSoft px-2.5 py-1 text-xs text-slate-400 placeholder:text-slate-600 cursor-default" />
+                  <button class="button h-7 w-7 shrink-0 p-0" title="Pick end frame" @click="pickRerunEndImage">
+                    <FolderOpen class="h-3.5 w-3.5" />
+                  </button>
+                  <button v-if="rerunEndImagePath" class="button h-7 w-7 shrink-0 p-0 text-slate-500" @click="rerunEndImagePath = ''">
+                    <X class="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Audio toggle (Seedance, Vidu Q3, Kling) -->
+              <label v-if="rerunModelCfg.hasAudio" class="flex cursor-pointer items-center gap-2 select-none">
+                <input type="checkbox" v-model="rerunGenerateAudio" aria-label="Generate native audio" class="h-3.5 w-3.5 accent-accent" />
+                <span class="text-xs text-slate-300">Generate native audio</span>
+              </label>
+
+              <!-- Movement amplitude (Vidu Q3) -->
+              <div v-if="rerunModelCfg.hasMovement" class="flex flex-col gap-1">
+                <label class="text-[11px] text-slate-500">Movement amplitude</label>
+                <select v-model="rerunMovementAmplitude" class="field text-xs py-1">
+                  <option value="auto">Auto</option>
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
               </div>
 
               <!-- Prompt + AI Analyse -->

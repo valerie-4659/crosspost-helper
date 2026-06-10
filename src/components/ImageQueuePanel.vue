@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { Clapperboard, Check, Download, ExternalLink, Film, FolderOpen, Image, Plus, RefreshCcw, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import { convertFileSrc } from "@/electron-shims/core";
+import { VIDEO_MODELS, getVideoModelCfg } from "@/composables/useVideoModels";
 
 const jobs = ref<WavespeedImageJobRecord[]>([]);
 const loading = ref(false);
@@ -124,21 +125,7 @@ const makeVideoBusy         = ref(false);
 const makeVideoError        = ref("");
 const makeVideoDone         = ref(false);
 
-const VIDEO_MODELS_SIMPLE = [
-  { value: "wan_2_5",          label: "WAN 2.5",          durationOptions: [5,8],       resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_6_spicy",    label: "WAN 2.6 Spicy",    durationOptions: [5,8],       resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_7",          label: "WAN 2.7",          durationOptions: [5,8],       resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_7_spicy",    label: "WAN 2.7 Spicy",    durationOptions: [5,8],       resolutionOptions: ["480p","720p"] },
-  { value: "wan_2_2_explicit", label: "WAN 2.2 Spicy",    durationOptions: [5,8],       resolutionOptions: ["480p","720p"] },
-  { value: "kling_v2_5",       label: "Kling V2.5 Turbo", durationOptions: [5,10],      resolutionOptions: []              },
-  { value: "kling_v3_0_pro",   label: "Kling V3.0 Pro",   durationOptions: [5,10],      resolutionOptions: []              },
-  { value: "seedance_2_0",     label: "Seedance 2.0",     durationOptions: [5,8,10,15], resolutionOptions: ["720p","1080p"] },
-  { value: "seedance_1_5_pro", label: "Seedance 1.5 Pro", durationOptions: [5,8,10],    resolutionOptions: ["720p","1080p"] },
-];
-
-const makeVideoModelCfg = computed(() =>
-  VIDEO_MODELS_SIMPLE.find((m) => m.value === makeVideoModel.value) ?? VIDEO_MODELS_SIMPLE[0]
-);
+const makeVideoModelCfg = computed(() => getVideoModelCfg(makeVideoModel.value));
 
 async function openMakeVideo(job: WavespeedImageJobRecord) {
   if (!job.result_url) return;
@@ -196,8 +183,8 @@ async function submitMakeVideo() {
       imagePath:  makeVideoPath.value,
       prompt:     makeVideoPrompt.value.trim(),
       videoModel: makeVideoModel.value,
-      resolution: makeVideoRes.value as "480p" | "720p" | "1080p",
-      duration:   makeVideoDuration.value as 5 | 8 | 10 | 15,
+      resolution: makeVideoRes.value,
+      duration:   makeVideoDuration.value,
     });
     makeVideoDone.value = true;
   } catch (err) {
@@ -964,7 +951,7 @@ onUnmounted(() => {
               <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Model</p>
               <div class="flex flex-wrap gap-1.5">
                 <button
-                  v-for="m in VIDEO_MODELS_SIMPLE"
+                  v-for="m in VIDEO_MODELS"
                   :key="m.value"
                   class="rounded-lg border px-2.5 py-1 text-[11px] font-medium transition"
                   :class="makeVideoModel === m.value
@@ -977,16 +964,16 @@ onUnmounted(() => {
 
             <!-- Duration + Resolution -->
             <div class="flex gap-2">
-              <div v-if="makeVideoModelCfg.resolutionOptions.length" class="flex-1 flex flex-col gap-1">
+              <div v-if="makeVideoModelCfg.resolutions.length" class="flex-1 flex flex-col gap-1">
                 <label class="text-[11px] text-slate-500">Resolution</label>
                 <select v-model="makeVideoRes" class="field text-xs py-1">
-                  <option v-for="r in makeVideoModelCfg.resolutionOptions" :key="r" :value="r">{{ r }}</option>
+                  <option v-for="r in makeVideoModelCfg.resolutions" :key="r" :value="r">{{ r }}</option>
                 </select>
               </div>
               <div class="flex-1 flex flex-col gap-1">
                 <label class="text-[11px] text-slate-500">Duration</label>
                 <select v-model="makeVideoDuration" class="field text-xs py-1">
-                  <option v-for="d in makeVideoModelCfg.durationOptions" :key="d" :value="d">{{ d }} seconds</option>
+                  <option v-for="d in makeVideoModelCfg.durations" :key="d" :value="d">{{ d }}s</option>
                 </select>
               </div>
             </div>

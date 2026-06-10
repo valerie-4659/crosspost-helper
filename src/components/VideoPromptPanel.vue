@@ -2,62 +2,12 @@
 import { computed, inject, onMounted, ref, watch } from "vue";
 import type { AppPage } from "@/components/SidebarNavigation.vue";
 import { Check, Clapperboard, Copy, FolderOpen, X } from "lucide-vue-next";
+import { VIDEO_MODELS, type VideoModelValue } from "@/composables/useVideoModels";
 
 const props = defineProps<{
   imagePaths: string[];
   disabled?: boolean;
 }>();
-
-// ── Model definitions ──────────────────────────────────────────────────────
-// nsfw:          explicit content allowed (WAN 2.2 Spicy only)
-// strictChinese: ByteDance / Kuaishou / Vidu — zero tolerance for suggestive content
-// hasEndImage:   supports an optional end-frame image
-// hasAudio:      supports native audio generation
-// hasMovement:   supports movement_amplitude (Vidu Q3)
-const VIDEO_MODELS = [
-  {
-    value: "wan_2_2_spicy", label: "WAN 2.2 Spicy", nsfw: true, strictChinese: false,
-    resolutions: ["480p", "720p"], durations: [5, 8],
-    hasEndImage: false, hasAudio: false, hasMovement: false,
-  },
-  {
-    value: "wan_2_5", label: "WAN 2.5", nsfw: false, strictChinese: false,
-    resolutions: ["480p", "720p"], durations: [5, 8],
-    hasEndImage: false, hasAudio: false, hasMovement: false,
-  },
-  {
-    value: "wan_2_7", label: "WAN 2.7", nsfw: false, strictChinese: false,
-    resolutions: ["720p", "1080p"], durations: [2,3,4,5,6,7,8,9,10,12,15],
-    hasEndImage: true, hasAudio: false, hasMovement: false,
-  },
-  {
-    value: "kling_v3_0_pro", label: "Kling 3.0 Pro", nsfw: false, strictChinese: true,
-    resolutions: [], durations: [3,4,5,6,7,8,9,10,12,15],
-    hasEndImage: true, hasAudio: true, hasMovement: false,
-  },
-  {
-    value: "grok_imagine", label: "Grok Imagine", nsfw: false, strictChinese: false,
-    resolutions: ["480p", "720p"], durations: [6, 10],
-    hasEndImage: false, hasAudio: false, hasMovement: false,
-  },
-  {
-    value: "seedance_2_0", label: "Seedance 2.0", nsfw: false, strictChinese: true,
-    resolutions: ["720p", "1080p"], durations: [4,5,6,7,8,9,10,12,15],
-    hasEndImage: false, hasAudio: true, hasMovement: false,
-  },
-  {
-    value: "seedance_1_5_pro", label: "Seedance 1.5 Pro", nsfw: false, strictChinese: true,
-    resolutions: ["720p", "1080p"], durations: [4,5,6,7,8,9,10],
-    hasEndImage: false, hasAudio: true, hasMovement: false,
-  },
-  {
-    value: "vidu_q3", label: "Vidu Q3", nsfw: false, strictChinese: true,
-    resolutions: ["540p", "720p", "1080p"], durations: [1,2,3,4,5,6,7,8,9,10,12,14,16],
-    hasEndImage: false, hasAudio: true, hasMovement: true,
-  },
-] as const;
-
-type VideoModelValue = typeof VIDEO_MODELS[number]["value"];
 
 const selectedModel    = ref<VideoModelValue>("wan_2_2_spicy");
 const instructions     = ref("");
