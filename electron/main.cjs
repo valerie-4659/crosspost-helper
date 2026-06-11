@@ -1735,21 +1735,23 @@ app.whenReady().then(() => {
   // formats  []        → no output_format;  non-empty list → allowed output_format values
   // strength true      → include strength 0-1 (Z-Image Turbo only)
   // singleImage true   → use singular "image" field instead of "images" array
+  // requiresImage true → endpoint always needs a reference image (no txt2img mode)
+  // txtOnly   true     → endpoint is text-to-image only (no image input accepted)
   const IMAGE_MODEL_CAPS = {
-    gpt_image_2:     { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false                  },
-    gpt_image_1_5:   { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false                  },
-    nano_banana_2:   { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false                  },
-    nano_banana_pro: { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false                  },
-    nano_banana:     { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false                  },
-    seedream_4_5:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
-    seedream_5_lite: { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
-    qwen_image_2:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
-    qwen_image:      { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
-    wan_2_7_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
-    wan_2_6_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
-    wan_2_5_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
-    flux_2_klein:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false                  },
-    z_image_turbo:   { sizeMode: "wh",     quality: false, formats: ["jpeg","png","webp"], strength: true, singleImage: true },
+    gpt_image_2:     { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false, requiresImage: true  },
+    gpt_image_1_5:   { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false, requiresImage: true  },
+    nano_banana_2:   { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false, requiresImage: true  },
+    nano_banana_pro: { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false, requiresImage: true  },
+    nano_banana:     { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false, requiresImage: true  },
+    seedream_4_5:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false                       },
+    seedream_5_lite: { sizeMode: "wh",     quality: false, formats: [],                   strength: false                       },
+    qwen_image_2:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false                       },
+    qwen_image:      { sizeMode: "wh",     quality: false, formats: [],                   strength: false                       },
+    wan_2_7_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false, requiresImage: true  },
+    wan_2_6_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false, requiresImage: true  },
+    wan_2_5_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false, txtOnly: true        },
+    flux_2_klein:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false, requiresImage: true  },
+    z_image_turbo:   { sizeMode: "wh",     quality: false, formats: ["jpeg","png","webp"], strength: true,  requiresImage: true, singleImage: true },
   };
 
   /** Build a model-specific request body for image generation/editing. */
@@ -1757,8 +1759,10 @@ app.whenReady().then(() => {
     const caps = IMAGE_MODEL_CAPS[imageModel] ?? { sizeMode: "wh", quality: false, formats: [], strength: false };
     const body = { prompt: prompt || "" };
 
-    // Attach reference image when opted in
-    if (useRefImage !== false && imageDataUri) {
+    // Attach reference image when one was loaded.
+    // txt2img mode is signalled by NOT passing an imagePath from the frontend;
+    // useRefImage is handled at the call site (empty imagePath ↔ no image).
+    if (imageDataUri) {
       if (caps.singleImage) {
         body.image = imageDataUri;        // Z-Image Turbo: singular field
       } else {
@@ -1803,20 +1807,24 @@ app.whenReady().then(() => {
     const apiKey = cfg["wavespeed_api_key"] || "";
     if (!apiKey) throw new Error("No Wavespeed API key configured. Add it in Settings → Wavespeed AI.");
 
-    // Resize image to max 1024 px for image generation
+    // Resize image to max 1024 px for image generation.
+    // imagePath may be empty (txt2img mode) — in that case imageDataUri stays undefined.
     let imageDataUri;
-    try {
-      if (!imagePath || !fs.existsSync(imagePath)) throw new Error("Image not found: " + imagePath);
-      const img = await nativeImage.createThumbnailFromPath(imagePath, { width: 1024, height: 1024 });
-      if (!img.isEmpty()) {
-        imageDataUri = "data:image/jpeg;base64," + img.toJPEG(90).toString("base64");
-      } else {
-        const raw = fs.readFileSync(imagePath);
-        imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
+    if (imagePath && fs.existsSync(imagePath)) {
+      try {
+        const img = await nativeImage.createThumbnailFromPath(imagePath, { width: 1024, height: 1024 });
+        if (!img.isEmpty()) {
+          imageDataUri = "data:image/jpeg;base64," + img.toJPEG(90).toString("base64");
+        } else {
+          const raw = fs.readFileSync(imagePath);
+          imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
+        }
+      } catch {
+        try {
+          const raw = fs.readFileSync(imagePath);
+          imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
+        } catch { /* could not encode — imageDataUri stays undefined */ }
       }
-    } catch (e) {
-      const raw = fs.readFileSync(imagePath);
-      imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
     }
 
     const endpointSlug = WAVESPEED_IMAGE_ENDPOINT_MAP[imageModel] ?? WAVESPEED_IMAGE_ENDPOINT_MAP["flux_2_klein"];

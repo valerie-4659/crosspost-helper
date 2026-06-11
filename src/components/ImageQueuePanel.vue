@@ -232,32 +232,50 @@ const RESOLUTIONS = [
 ];
 
 // Model capability map — mirrors IMAGE_MODEL_CAPS in main.cjs
-const IMAGE_MODEL_CAPS: Record<string, { sizeMode: "aspect" | "wh"; quality: boolean; formats: string[]; strength: boolean }> = {
-  gpt_image_2:     { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false },
-  gpt_image_1_5:   { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false },
-  nano_banana_2:   { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false },
-  nano_banana_pro: { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false },
-  nano_banana:     { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false },
-  seedream_4_5:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
-  seedream_5_lite: { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
-  qwen_image_2:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
-  qwen_image:      { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
-  wan_2_7_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
-  wan_2_6_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
-  wan_2_5_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
-  flux_2_klein:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false },
-  z_image_turbo:   { sizeMode: "wh",     quality: false, formats: ["jpeg","png","webp"], strength: true  },
+// requiresImage: endpoint always needs a reference image (no txt2img mode)
+// txtOnly:       endpoint is text-to-image only (no image input accepted)
+const IMAGE_MODEL_CAPS: Record<string, {
+  sizeMode: "aspect" | "wh";
+  quality: boolean;
+  formats: string[];
+  strength: boolean;
+  requiresImage?: boolean;
+  txtOnly?: boolean;
+}> = {
+  gpt_image_2:     { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false, requiresImage: true  },
+  gpt_image_1_5:   { sizeMode: "aspect", quality: true,  formats: ["png","jpeg","webp"], strength: false, requiresImage: true  },
+  nano_banana_2:   { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false, requiresImage: true  },
+  nano_banana_pro: { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false, requiresImage: true  },
+  nano_banana:     { sizeMode: "aspect", quality: false, formats: ["png","jpeg"],        strength: false, requiresImage: true  },
+  seedream_4_5:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false                       },
+  seedream_5_lite: { sizeMode: "wh",     quality: false, formats: [],                   strength: false                       },
+  qwen_image_2:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false                       },
+  qwen_image:      { sizeMode: "wh",     quality: false, formats: [],                   strength: false                       },
+  wan_2_7_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false, requiresImage: true  },
+  wan_2_6_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false, requiresImage: true  },
+  wan_2_5_img:     { sizeMode: "wh",     quality: false, formats: [],                   strength: false, txtOnly: true        },
+  flux_2_klein:    { sizeMode: "wh",     quality: false, formats: [],                   strength: false, requiresImage: true  },
+  z_image_turbo:   { sizeMode: "wh",     quality: false, formats: ["jpeg","png","webp"], strength: true,  requiresImage: true  },
 };
 
 const rerunModelCaps = computed(() =>
   IMAGE_MODEL_CAPS[rerunModel.value] ?? { sizeMode: "wh", quality: false, formats: [], strength: false }
 );
 
-// Clamp format if the new model doesn't support the current selection
+// Clamp format + enforce image requirements on model change
 watch(rerunModel, () => {
-  const fmts = rerunModelCaps.value.formats;
+  const caps = rerunModelCaps.value;
+  const fmts = caps.formats;
   if (fmts.length > 0 && !fmts.includes(rerunFormat.value)) {
     rerunFormat.value = fmts[0] as "png" | "jpeg" | "webp";
+  }
+  // Models that always require a reference image: force toggle on
+  if (caps.requiresImage && rerunJob.value?.image_path) {
+    rerunUseRef.value = true;
+  }
+  // Text-to-image only models: force toggle off
+  if (caps.txtOnly) {
+    rerunUseRef.value = false;
   }
 });
 
@@ -274,7 +292,6 @@ function openRerun(job: WavespeedImageJobRecord) {
   rerunModel.value      = IMAGE_MODELS.find((m) => m.value === job.model) ? job.model : "gpt_image_2";
   rerunAspect.value     = "auto";
   rerunResolution.value = "1k";
-  rerunUseRef.value     = !!job.image_path;
   rerunQuality.value    = "auto";
   rerunFormat.value     = "png";
   rerunStrength.value   = 0.6;
@@ -283,6 +300,15 @@ function openRerun(job: WavespeedImageJobRecord) {
   rerunDone.value       = false;
   rerunAnalysing.value  = false;
   rerunAnalyseError.value = "";
+  // Enforce image requirements
+  const caps = IMAGE_MODEL_CAPS[rerunModel.value] ?? {};
+  if (caps.requiresImage) {
+    rerunUseRef.value = !!job.image_path; // can only enable if image is available
+  } else if (caps.txtOnly) {
+    rerunUseRef.value = false;
+  } else {
+    rerunUseRef.value = !!job.image_path;
+  }
 }
 
 /** Re-analyse the source image with the currently selected model and replace the prompt. */
@@ -315,8 +341,10 @@ async function submitRerun() {
   rerunDone.value  = false;
   const sizeStr = computeRerunSize();
   try {
+    // Only pass imagePath when the user opted in — the backend includes it in
+    // the request body whenever the path is set, so passing "" = txt2img mode.
     const result = await window.desktop.wavespeed.submitImage({
-      imagePath:    rerunJob.value?.image_path ?? "",
+      imagePath:    rerunUseRef.value ? (rerunJob.value?.image_path ?? "") : "",
       prompt:       rerunPrompt.value.trim(),
       imageModel:   rerunModel.value,
       aspectRatio:  rerunAspect.value,
@@ -756,11 +784,29 @@ onUnmounted(() => {
             </div>
 
             <!-- Reference image toggle -->
-            <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-panel px-3 py-2 hover:border-slate-500 transition">
-              <input v-model="rerunUseRef" type="checkbox" class="h-3.5 w-3.5 accent-sky-400" aria-label="Use reference image" />
-              <span class="text-xs text-slate-300">Use reference image</span>
+            <!-- requiresImage: always on, txtOnly: always off, otherwise user can toggle -->
+            <div class="flex items-center gap-2 rounded-lg border px-3 py-2 transition"
+              :class="rerunModelCaps.requiresImage || rerunModelCaps.txtOnly
+                ? 'border-line bg-panel/50 cursor-default opacity-70'
+                : 'border-line bg-panel hover:border-slate-500 cursor-pointer'"
+            >
+              <input
+                v-model="rerunUseRef"
+                type="checkbox"
+                class="h-3.5 w-3.5 accent-sky-400"
+                aria-label="Use reference image"
+                :disabled="!!(rerunModelCaps.requiresImage || rerunModelCaps.txtOnly)"
+              />
+              <span class="text-xs text-slate-300">
+                <template v-if="rerunModelCaps.requiresImage">Always uses reference image</template>
+                <template v-else-if="rerunModelCaps.txtOnly">Text-to-image only (no reference)</template>
+                <template v-else>Use reference image</template>
+              </span>
               <span class="ml-auto text-[10px] text-slate-600">{{ rerunUseRef ? 'img2img' : 'txt2img' }}</span>
-            </label>
+            </div>
+            <p v-if="rerunModelCaps.requiresImage && !rerunJob.image_path" class="text-[11px] text-amber-400">
+              ⚠ This model requires a reference image — provide one or choose another model.
+            </p>
 
             <!-- Model selector -->
             <div>
@@ -880,7 +926,7 @@ onUnmounted(() => {
               <button class="button flex-1 gap-1.5 py-2 text-xs" @click="closeRerun">Cancel</button>
               <button
                 class="flex-1 rounded-lg bg-sky-600 hover:bg-sky-500 active:bg-sky-700 py-2 text-xs font-semibold text-white transition flex items-center justify-center gap-2 disabled:opacity-50"
-                :disabled="rerunBusy || !rerunPrompt.trim()"
+                :disabled="rerunBusy || !rerunPrompt.trim() || (rerunModelCaps.requiresImage && !rerunJob?.image_path)"
                 @click="submitRerun"
               >
                 <Image class="h-3.5 w-3.5" :class="rerunBusy ? 'animate-pulse' : ''" />
