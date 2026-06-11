@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.121",
+    date: "2026-06-11",
+    items: [
+      "fix: resolve 'images field required' error on image recreation",
+    ],
+  },
+  {
     version: "0.2.120",
     date: "2026-06-11",
     items: [

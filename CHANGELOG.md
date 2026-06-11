@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.121 - 2026-06-11
+
+- fix: resolve 'images field required' error on image recreation
+
+
 ## v0.2.120 - 2026-06-11
 
 - Release v0.2.120
