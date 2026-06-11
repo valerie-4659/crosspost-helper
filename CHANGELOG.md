@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.120 - 2026-06-11
+
+- Release v0.2.120
+
+
 ## v0.2.119 - 2026-06-10
 
 - refactor: extract VIDEO_MODELS to shared composable; fix rerun dialog models
