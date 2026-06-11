@@ -193,7 +193,9 @@ async function submitToWavespeed() {
   wsError.value      = "";
   try {
     await window.desktop.wavespeed.submitImage({
-      imagePath:    imagePath ?? "",
+      // Only pass the imagePath when the user opted in to use the reference image.
+      // An empty imagePath tells the backend to do txt2img (no images field in body).
+      imagePath:    useRefImage.value ? (imagePath ?? "") : "",
       prompt:       generatedPrompt.value,
       imageModel:   selectedModel.value,
       // Aspect-mode models (GPT, Nano Banana): aspect_ratio + resolution
