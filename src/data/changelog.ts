@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.122",
+    date: "2026-06-11",
+    items: [
+      "fix: ImageGeneratePanel — gate imagePath on useRefImage toggle",
+    ],
+  },
+  {
     version: "0.2.121",
     date: "2026-06-11",
     items: [

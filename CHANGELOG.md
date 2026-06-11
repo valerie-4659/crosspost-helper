@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.122 - 2026-06-11
+
+- fix: ImageGeneratePanel — gate imagePath on useRefImage toggle
+
+
 ## v0.2.121 - 2026-06-11
 
 - fix: resolve 'images field required' error on image recreation
