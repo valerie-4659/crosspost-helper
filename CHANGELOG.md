@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.123 - 2026-06-12
+
+- Release v0.2.123
+
+
 ## v0.2.122 - 2026-06-11
 
 - fix: ImageGeneratePanel — gate imagePath on useRefImage toggle
