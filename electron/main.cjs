@@ -903,7 +903,8 @@ EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero
     );
     const p = pRows[0]?.values?.[0]; // [name, tone, emoji_use, style_notes]
     if (p) {
-      const [pName, , pEmoji, pNotes] = p;
+      const [pName, pTone, pEmoji, pNotes] = p;
+      const toneBlock  = String(pTone  ?? "").trim();
       const notesBlock = String(pNotes ?? "").trim();
 
       // Emoji rule derived from persona setting — overrides the BASE_ROLE default.
@@ -913,15 +914,18 @@ EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero
           ? "Use 1–2 emojis where they fit naturally. No more."
           : "Do NOT use any emojis at all.";
 
+      const toneLabel = toneBlock ? ` Tone: ${toneBlock}.` : "";
+
       if (notesBlock) {
         // Full style notes present — persona voice completely replaces the generic style.
-        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}". NEVER slip into neutral, generic, or AI-sounding language. Your style notes below are LAW — follow them exactly.\n\n${notesBlock}\n\nEMOJI RULE (from persona settings): ${personaEmojiRule}\n\nRespond with valid JSON only — no markdown fences.`;
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}".${toneLabel} NEVER slip into neutral, generic, or AI-sounding language. Your style notes below are LAW — follow them exactly.\n\n${notesBlock}\n\nEMOJI RULE (from persona settings): ${personaEmojiRule}\n\nRespond with valid JSON only — no markdown fences.`;
       } else {
-        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You ARE "${pName}". Write EXCLUSIVELY in ${pName}'s voice and style. NEVER use neutral or generic language.\nEMOJI RULE: ${personaEmojiRule}\nRespond with valid JSON only — no markdown fences.`;
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You ARE "${pName}".${toneLabel} Write EXCLUSIVELY in ${pName}'s voice and style. NEVER use neutral or generic language.\nEMOJI RULE: ${personaEmojiRule}\nRespond with valid JSON only — no markdown fences.`;
       }
 
       // Short in-character reminder repeated in the user prompt for reinforcement.
-      personaLine = `- Voice: You ARE "${pName}" — write exclusively in their voice. Never sound like a generic AI. Emoji rule: ${personaEmojiRule}`;
+      const toneHint = toneBlock ? ` (${toneBlock})` : "";
+      personaLine = `- Voice: You ARE "${pName}"${toneHint} — write exclusively in their voice. Never sound like a generic AI. Emoji rule: ${personaEmojiRule}`;
     }
   } catch { /* personas table may not exist on very old DBs — skip */ }
 
@@ -978,8 +982,11 @@ Keep each line short. Total text under 280 characters.`;
 ${perspVoice} Be punchy and specific. No filler.`;
 
   // ── Morning greeting ────────────────────────────────────────────────────
-  // Always addressed to followers. Offer the AI style variety so each post feels different.
-  const morningRule = `Write a morning greeting post addressed to your followers. Use the image's mood and energy as inspiration.
+  // When a persona is active, trust the persona's established voice for style —
+  // no need to offer fixed style options that would pull against the persona.
+  const morningRule = hasPersona
+    ? `Write a morning greeting post addressed to your followers. Use the image's mood and energy as inspiration. Write in your established persona voice — let your tone and personality shine naturally. Vary the opening (e.g. "good morning", "morning loves", "rise and shine", "hey you" — never repeat the same phrase twice). Add one line connecting to the image's energy. Close with a short note or question directed at followers. ${perspVoice}`
+    : `Write a morning greeting post addressed to your followers. Use the image's mood and energy as inspiration.
 Pick ONE style (choose what fits the image — do NOT announce your choice):
 a) Tender & soft — warm, close, like a quiet morning together
 b) Playful & teasing — flirty, tongue-in-cheek, light energy
@@ -988,7 +995,9 @@ d) Dreamy & poetic — atmospheric, lingers like the first light
 Vary the opening (e.g. "good morning", "morning loves", "rise and shine", "hey you" — never repeat the same phrase twice). Add one line connecting to the image's energy. Close with a short note or question directed at followers.`;
 
   // ── Good Night ──────────────────────────────────────────────────────────
-  const goodnightRule = `Write a good-night post addressed to your followers. Use the image's mood as the emotional backdrop.
+  const goodnightRule = hasPersona
+    ? `Write a good-night post addressed to your followers. Use the image's mood as the emotional backdrop. Write in your established persona voice — let your tone and personality come through naturally. Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night night" — keep it fresh). Add one evocative line connecting to the image's mood. Close with something that lingers. ${perspVoice}`
+    : `Write a good-night post addressed to your followers. Use the image's mood as the emotional backdrop.
 Pick ONE style (choose what fits — do NOT announce your choice):
 a) Seductive & lingering — leaves them wanting more
 b) Tender & warm — intimate send-off, makes followers feel seen

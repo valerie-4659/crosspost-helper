@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Ban, Check, ChevronDown, ChevronLeft, Clapperboard, Clipboard, Copy, FolderOpen, Image, Layers, Send, SkipForward, Shuffle, Sparkles, X, Zap } from "lucide-vue-next";
+import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Clipboard, Copy, FolderOpen, Image, Images, Layers, Maximize2, Send, SkipForward, Shuffle, Sparkles, X, Zap } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import VideoPromptPanel from "@/components/VideoPromptPanel.vue";
 import ImageGeneratePanel from "@/components/ImageGeneratePanel.vue";
@@ -16,8 +16,11 @@ import { useSourceStore } from "@/stores/sourceStore";
 import { useTargetStore } from "@/stores/targetStore";
 import { useQueueStore } from "@/stores/queueStore";
 import { createSlot, listSlots } from "@/repositories/queueRepository";
+import { listImages } from "@/repositories/imageRepository";
+import { markImagePosted } from "@/services/pickerService";
 import type { PostingTargetType } from "@/types/postingTarget";
 import type { QueueSlot } from "@/types/queue";
+import type { ImageWithPostState } from "@/types/image";
 
 const picker = usePickerStore();
 const sources = useSourceStore();
@@ -68,13 +71,13 @@ const copyablePickerText = computed(() => {
 });
 
 async function sendToExtension() {
-  if (!picker.currentImage || !targets.activeTarget) return;
+  if (!activeImage.value || !targets.activeTarget) return;
   const targetType = targets.activeTarget.type;
   queueMsg.value = "";
   queueErr.value = "";
   sendDropdownOpen.value = false;
   try {
-    await window.desktop.bridge.setQueue(targetType, [picker.currentImage.id]);
+    await window.desktop.bridge.setQueue(targetType, activeImageIds.value);
 
     if (sendMode.value === "full" && ai.generatedPost) {
       await window.desktop.bridge.setPostContent(targetType, {
@@ -202,7 +205,80 @@ function deactivateMultiPick() {
 const folderHistory = useFolderHistoryStore();
 watch(() => picker.currentImage, (img) => {
   if (img?.folderPath) folderHistory.recordVisit(img.folderPath);
+  // Clear any alternative selection when a new random image is picked
+  alternativeImages.value = [];
 });
+
+// ── Alternative images from folder (multi-select) ─────────────────────────
+const alternativeImages    = ref<ImageWithPostState[]>([]);
+const showFolderBrowser    = ref(false);
+const folderImages         = ref<ImageWithPostState[]>([]);
+const folderBrowserLoading = ref(false);
+const lightboxImage        = ref<ImageWithPostState | null>(null);
+
+const lightboxIndex   = computed(() => folderImages.value.findIndex((i) => i.id === lightboxImage.value?.id));
+const lightboxHasPrev = computed(() => lightboxIndex.value > 0);
+const lightboxHasNext = computed(() => lightboxIndex.value >= 0 && lightboxIndex.value < folderImages.value.length - 1);
+function lightboxPrev() { if (lightboxHasPrev.value) lightboxImage.value = folderImages.value[lightboxIndex.value - 1]; }
+function lightboxNext() { if (lightboxHasNext.value) lightboxImage.value = folderImages.value[lightboxIndex.value + 1]; }
+function openLightbox(img: ImageWithPostState, e: Event) { e.stopPropagation(); lightboxImage.value = img; }
+
+/** First selected alternative (or random pick) — drives preview and single-image actions (AI, Video, Recreate, Topaz). */
+const activeImage = computed(() => alternativeImages.value[0] ?? picker.currentImage);
+/** All IDs to queue/send: selected alternatives if any, else just the random pick. */
+const activeImageIds = computed<string[]>(() =>
+  alternativeImages.value.length
+    ? alternativeImages.value.map((i) => i.id)
+    : picker.currentImage ? [picker.currentImage.id] : []
+);
+const hasAlternatives = computed(() => alternativeImages.value.length > 0);
+
+function isAltSelected(id: string) { return alternativeImages.value.some((i) => i.id === id); }
+
+function toggleAlternative(img: ImageWithPostState) {
+  const idx = alternativeImages.value.findIndex((i) => i.id === img.id);
+  if (idx >= 0) {
+    alternativeImages.value = alternativeImages.value.filter((_, i) => i !== idx);
+  } else if (alternativeImages.value.length < maxForActiveTarget.value) {
+    alternativeImages.value = [...alternativeImages.value, img];
+  }
+}
+
+function clearAlternatives() {
+  alternativeImages.value = [];
+}
+
+async function openFolderBrowser() {
+  const img = picker.currentImage;
+  if (!img) return;
+  showFolderBrowser.value = true;
+  folderBrowserLoading.value = true;
+  try {
+    folderImages.value = await listImages({
+      exactFolderPath: img.folderPath,
+      includeArchived: false,
+      includeSkipped: true,
+      sortBy: "alpha_asc",
+    });
+  } finally {
+    folderBrowserLoading.value = false;
+  }
+}
+
+/** Mark all selected alternatives (or the random pick if none selected). */
+async function markWithAlternative() {
+  if (!targets.activeTargetId) return;
+  if (alternativeImages.value.length) {
+    for (const img of alternativeImages.value) {
+      await markImagePosted(img.id, targets.activeTargetId);
+    }
+    picker.message = "Marked as posted.";
+    alternativeImages.value = [];
+    await picker.pickRandom();
+  } else {
+    await picker.markPosted();
+  }
+}
 
 // ── AI panel ──────────────────────────────────────────────────────────────────
 const showAiPanel    = ref(false);
@@ -249,7 +325,7 @@ function closeTopazModal() {
 }
 
 async function generateTopazPrompt() {
-  const localPath = picker.currentImage?.localPath;
+  const localPath = activeImage.value?.localPath;
   if (!localPath) return;
   topazGeneratingPrompt.value = true;
   try {
@@ -273,7 +349,7 @@ async function generateTopazPrompt() {
 }
 
 async function submitTopazUpscale() {
-  const localPath = picker.currentImage?.localPath;
+  const localPath = activeImage.value?.localPath;
   if (!localPath) return;
   topazSubmitError.value = "";
   const numOutputs = topazUIModel.value === "wonder3" ? 1 : topazOutputs.value;
@@ -303,7 +379,7 @@ function currentImagePaths(): string[] {
   if (picker.multiPickMode) {
     return picker.multiPickSlots.filter(Boolean).map((s) => s!.localPath).filter(Boolean) as string[];
   }
-  return picker.currentImage?.localPath ? [picker.currentImage.localPath] : [];
+  return activeImage.value?.localPath ? [activeImage.value.localPath] : [];
 }
 
 
@@ -515,7 +591,7 @@ onMounted(async () => {
 
     <!-- ══ SINGLE-PICK MODE (original) ═════════════════════════════════ -->
     <div v-else class="flex min-h-0 flex-1 gap-4">
-      <ImagePreview :image="picker.currentImage" />
+      <ImagePreview :image="activeImage" />
 
       <aside class="surface flex w-96 shrink-0 flex-col gap-2 overflow-y-auto rounded-lg p-3">
         <p class="text-xs font-semibold text-white">Use image</p>
@@ -540,6 +616,34 @@ onMounted(async () => {
           </button>
         </div>
 
+        <!-- Pick alternative from same folder -->
+        <button
+          class="button h-7 w-full gap-1.5 px-2 text-xs"
+          :class="hasAlternatives ? 'border-sky-500/60 bg-sky-500/10 text-sky-300' : ''"
+          :disabled="!picker.currentImage"
+          title="Browse siblings in the same folder and pick alternatives"
+          @click="openFolderBrowser"
+        >
+          <Images class="h-3.5 w-3.5" />
+          {{ hasAlternatives ? `${alternativeImages.length} alternative${alternativeImages.length > 1 ? 's' : ''} selected` : 'Pick alternative from folder' }}
+        </button>
+
+        <!-- Selected alternatives list -->
+        <div v-if="hasAlternatives" class="rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-1.5 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-semibold text-sky-400">{{ alternativeImages.length }} / {{ maxForActiveTarget }} selected</span>
+            <button class="text-[11px] text-slate-500 transition hover:text-rose-400" @click="clearAlternatives">Clear all</button>
+          </div>
+          <div v-for="alt in alternativeImages" :key="alt.id" class="flex items-center gap-1">
+            <span class="flex-1 truncate text-[11px] text-sky-300" :title="alt.filename">↳ {{ alt.filename }}</span>
+            <button
+              class="shrink-0 text-slate-500 transition hover:text-rose-400"
+              title="Remove"
+              @click="alternativeImages = alternativeImages.filter(i => i.id !== alt.id)"
+            ><X class="h-3.5 w-3.5" /></button>
+          </div>
+        </div>
+
         <!-- Global exclude -->
         <button
           class="button h-7 w-full gap-1.5 px-2 text-xs border-amber-800/50 bg-amber-900/20 text-amber-400 hover:border-amber-600 hover:bg-amber-900/40"
@@ -555,8 +659,14 @@ onMounted(async () => {
           {{ picker.cooldownCount }} image{{ picker.cooldownCount === 1 ? '' : 's' }} on cooldown
         </p>
 
-        <button class="button-primary h-8 rounded-md text-sm" :disabled="!picker.currentImage || !targets.activeTargetId" @click="picker.markPosted">
-          <Check class="h-4 w-4" />Mark {{ activeTargetName }}
+        <button
+          class="button-primary h-8 rounded-md text-sm"
+          :disabled="!activeImage || !targets.activeTargetId"
+          :title="hasAlternatives ? 'Marks only the selected alternative images as posted' : ''"
+          @click="markWithAlternative"
+        >
+          <Check class="h-4 w-4" />
+          Mark {{ alternativeImages.length > 1 ? alternativeImages.length + ' alternatives' : alternativeImages.length === 1 ? 'alternative' : activeTargetName }}
         </button>
 
         <!-- Send to Extension — split-button with send-mode dropdown -->
@@ -567,7 +677,7 @@ onMounted(async () => {
               <button
                 class="button flex flex-1 items-center justify-center gap-2 rounded-r-none py-2 text-sm font-medium"
                 :class="sendDone && sendMode === 'images_only' ? 'border-mint/60 bg-mint/10 text-mint' : (ai.generatedPost ? 'border-accent/50 bg-accent/5' : '')"
-                :disabled="!picker.currentImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
+                :disabled="!activeImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
                 @click="sendToExtension"
               >
                 <Check v-if="sendDone" class="h-4 w-4" />
@@ -577,7 +687,7 @@ onMounted(async () => {
               <!-- Dropdown toggle -->
               <button
                 class="button flex items-center rounded-l-none border-l border-white/20 px-2.5 py-2"
-                :disabled="!picker.currentImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
+                :disabled="!activeImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
                 :class="sendDropdownOpen ? 'bg-accent/10' : ''"
                 @click.stop="sendDropdownOpen = !sendDropdownOpen"
               >
@@ -666,7 +776,7 @@ onMounted(async () => {
               </button>
             </div>
           </div>
-          <button v-else class="mt-2 button w-full gap-1 text-xs" :disabled="!picker.currentImage" @click="openPickerAssignPanel">
+          <button v-else class="mt-2 button w-full gap-1 text-xs" :disabled="!activeImage" @click="openPickerAssignPanel">
             → Add to Queue Slot
           </button>
         </div>
@@ -676,7 +786,7 @@ onMounted(async () => {
           <button
             class="button w-full gap-2"
             :class="showAiPanel ? 'border-accent bg-accent/10 text-accent' : ''"
-            :disabled="!picker.currentImage"
+            :disabled="!activeImage"
             title="Generate AI post text for the selected network"
             @click="showAiPanel = !showAiPanel; if (showAiPanel) { showVideoPanel = false; showImagePanel = false; }"
           >
@@ -703,15 +813,15 @@ onMounted(async () => {
               :image-paths="currentImagePaths()"
               :network="targets.activeTarget?.type ?? 'x'"
               :network-name="activeTargetName"
-              :disabled="!picker.currentImage"
-              @mark="picker.markPosted"
+              :disabled="!activeImage"
+              @mark="markWithAlternative"
             />
             <!-- Bottom send shortcut — avoids scrolling up after generating -->
             <button
               v-if="ai.generatedPost"
               class="mt-2 button w-full gap-1.5 text-xs"
               :class="sendDone ? 'border-mint/60 bg-mint/10 text-mint' : (EXTENSION_TYPES.has(targets.activeTarget?.type as any) ? 'border-accent/40' : '')"
-              :disabled="!picker.currentImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
+              :disabled="!activeImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
               @click="sendToExtension"
             >
               <Check v-if="sendDone" class="h-3 w-3" />
@@ -726,7 +836,7 @@ onMounted(async () => {
           <button
             class="button w-full gap-2"
             :class="showVideoPanel ? 'border-violet-400/60 bg-violet-400/10 text-violet-300' : ''"
-            :disabled="!picker.currentImage"
+            :disabled="!activeImage"
             title="Generate a video prompt from the current image"
             @click="showVideoPanel = !showVideoPanel; if (showVideoPanel) { showAiPanel = false; showImagePanel = false; }"
           >
@@ -737,7 +847,7 @@ onMounted(async () => {
           <div v-if="showVideoPanel" class="mt-3">
             <VideoPromptPanel
               :image-paths="currentImagePaths()"
-              :disabled="!picker.currentImage"
+              :disabled="!activeImage"
             />
           </div>
         </div>
@@ -747,7 +857,7 @@ onMounted(async () => {
           <button
             class="button w-full gap-2"
             :class="showImagePanel ? 'border-sky-400/60 bg-sky-400/10 text-sky-300' : ''"
-            :disabled="!picker.currentImage"
+            :disabled="!activeImage"
             title="Recreate this image with AI via Wavespeed"
             @click="showImagePanel = !showImagePanel; if (showImagePanel) { showAiPanel = false; showVideoPanel = false; }"
           >
@@ -758,7 +868,7 @@ onMounted(async () => {
           <div v-if="showImagePanel" class="mt-3">
             <ImageGeneratePanel
               :image-paths="currentImagePaths()"
-              :disabled="!picker.currentImage"
+              :disabled="!activeImage"
             />
           </div>
         </div>
@@ -768,7 +878,7 @@ onMounted(async () => {
           <button
             class="button w-full gap-2"
             :class="showTopazModal ? 'border-amber-500/60 bg-amber-500/10 text-amber-300' : ''"
-            :disabled="!picker.currentImage || !picker.currentImage.localPath"
+            :disabled="!activeImage || !activeImage.localPath"
             title="Upscale this image with Topaz Labs AI"
             @click="openTopazModal"
           >
@@ -783,6 +893,184 @@ onMounted(async () => {
       </aside>
     </div><!-- end single-mode flex row -->
     </div><!-- end outer container -->
+
+  <!-- ── Folder Browser Modal (pick alternative) ───────────────────────────── -->
+  <Teleport to="body">
+    <Transition enter-active-class="transition-opacity duration-150" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-100" leave-to-class="opacity-0">
+      <div v-if="showFolderBrowser" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" @click.self="lightboxImage ? lightboxImage = null : showFolderBrowser = false">
+        <div class="surface flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-line shadow-2xl">
+
+          <!-- ── Header ── -->
+          <div class="flex shrink-0 items-center justify-between border-b border-line px-4 py-3">
+            <div class="flex items-center gap-2">
+              <!-- Back to grid when in lightbox view -->
+              <button v-if="lightboxImage" class="button h-7 gap-1 px-2 text-xs" @click="lightboxImage = null">
+                <ChevronLeft class="h-3.5 w-3.5" />Grid
+              </button>
+              <template v-else>
+                <Images class="h-4 w-4 text-sky-400" />
+                <h3 class="text-sm font-semibold text-white">Pick alternative from folder</h3>
+                <span class="text-xs text-slate-500 truncate max-w-[30ch]" :title="picker.currentImage?.folderPath">
+                  {{ picker.currentImage?.folderPath?.split('/').pop() }}
+                </span>
+                <span v-if="hasAlternatives" class="rounded bg-sky-500/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  {{ alternativeImages.length }} / {{ maxForActiveTarget }}
+                </span>
+              </template>
+              <!-- Lightbox title -->
+              <template v-if="lightboxImage">
+                <span class="truncate text-sm font-semibold text-white">{{ lightboxImage.filename }}</span>
+                <span class="text-xs text-slate-500">{{ lightboxIndex + 1 }} / {{ folderImages.length }}</span>
+              </template>
+            </div>
+            <button class="button h-7 w-7 p-0" @click="lightboxImage ? lightboxImage = null : showFolderBrowser = false">
+              <X v-if="!lightboxImage" class="h-4 w-4" />
+              <ChevronLeft v-else class="h-4 w-4" />
+            </button>
+          </div>
+
+          <!-- ── Lightbox view ── -->
+          <template v-if="lightboxImage">
+            <div class="relative flex min-h-0 flex-1 items-center justify-center bg-black/60">
+              <!-- Prev arrow -->
+              <button
+                v-if="lightboxHasPrev"
+                class="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-lg border border-line bg-ink/80 p-2 text-white opacity-60 transition hover:opacity-100"
+                @click="lightboxPrev"
+              ><ChevronLeft class="h-6 w-6" /></button>
+
+              <img
+                :src="lightboxImage.localPath ? convertFileSrc(lightboxImage.localPath) : (lightboxImage.thumbnailUrl ?? '')"
+                :alt="lightboxImage.filename"
+                class="max-h-full max-w-full object-contain p-4"
+                style="max-height: calc(92vh - 8rem)"
+              />
+
+              <!-- Next arrow -->
+              <button
+                v-if="lightboxHasNext"
+                class="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-lg border border-line bg-ink/80 p-2 text-white opacity-60 transition hover:opacity-100"
+                @click="lightboxNext"
+              ><ChevronRight class="h-6 w-6" /></button>
+            </div>
+
+            <!-- Lightbox footer -->
+            <div class="flex shrink-0 items-center justify-between border-t border-line px-4 py-3">
+              <div class="flex items-center gap-2">
+                <span v-if="picker.currentImage?.id === lightboxImage.id" class="rounded bg-accent/80 px-2 py-0.5 text-xs font-semibold text-white">Random pick</span>
+                <span v-if="isAltSelected(lightboxImage.id)" class="rounded bg-sky-500/90 px-2 py-0.5 text-xs font-semibold text-white">Selected</span>
+                <span v-if="!isAltSelected(lightboxImage.id) && alternativeImages.length >= maxForActiveTarget" class="text-xs text-amber-400">
+                  Max {{ maxForActiveTarget }} reached
+                </span>
+              </div>
+              <div class="flex gap-2">
+                <button class="button h-8 px-3 text-sm" @click="lightboxImage = null">Back to grid</button>
+                <button
+                  class="flex h-8 items-center gap-1.5 rounded-md border px-4 text-sm font-medium transition"
+                  :class="isAltSelected(lightboxImage.id)
+                    ? 'border-rose-500/60 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20'
+                    : alternativeImages.length >= maxForActiveTarget
+                    ? 'cursor-not-allowed border-line text-slate-500 opacity-50'
+                    : 'border-sky-600/50 bg-sky-600/10 text-sky-300 hover:bg-sky-600/25'"
+                  :disabled="!isAltSelected(lightboxImage.id) && alternativeImages.length >= maxForActiveTarget"
+                  @click="toggleAlternative(lightboxImage)"
+                >
+                  <X v-if="isAltSelected(lightboxImage.id)" class="h-4 w-4" />
+                  <Check v-else class="h-4 w-4" />
+                  {{ isAltSelected(lightboxImage.id) ? 'Deselect' : 'Pick this image' }}
+                </button>
+              </div>
+            </div>
+          </template>
+
+          <!-- ── Grid view ── -->
+          <template v-else>
+            <div class="min-h-0 flex-1 overflow-y-auto p-3">
+              <div v-if="folderBrowserLoading" class="flex items-center justify-center py-16 text-slate-500 text-sm">
+                Loading…
+              </div>
+              <div v-else-if="!folderImages.length" class="flex items-center justify-center py-16 text-slate-500 text-sm">
+                No images found in this folder.
+              </div>
+              <div v-else class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr))">
+                <button
+                  v-for="img in folderImages"
+                  :key="img.id"
+                  class="group relative flex flex-col overflow-hidden rounded-lg border transition focus:outline-none"
+                  :class="[
+                    isAltSelected(img.id)
+                      ? 'border-sky-500 ring-2 ring-sky-500/50'
+                      : picker.currentImage?.id === img.id
+                      ? 'border-accent/60 ring-1 ring-accent/30'
+                      : 'border-line hover:border-slate-500',
+                    !isAltSelected(img.id) && alternativeImages.length >= maxForActiveTarget ? 'opacity-50' : '',
+                  ]"
+                  :title="img.filename"
+                  @click="toggleAlternative(img)"
+                >
+                  <!-- Thumbnail — full image, no crop -->
+                  <div class="flex h-44 w-full items-center justify-center overflow-hidden bg-black/60">
+                    <img
+                      v-if="img.localPath || img.thumbnailUrl"
+                      :src="img.localPath ? convertFileSrc(img.localPath) : (img.thumbnailUrl ?? '')"
+                      :alt="img.filename"
+                      class="max-h-full max-w-full object-contain transition group-hover:brightness-110"
+                      loading="lazy"
+                    />
+                    <Image v-else class="h-8 w-8 text-slate-700" />
+                  </div>
+                  <!-- Label -->
+                  <div class="px-1.5 py-1">
+                    <p class="truncate text-[10px] text-slate-400 group-hover:text-slate-200">{{ img.filename }}</p>
+                  </div>
+                  <!-- Left badge: Random pick label -->
+                  <div class="absolute left-1 top-1">
+                    <span v-if="picker.currentImage?.id === img.id" class="rounded bg-accent/80 px-1 py-0.5 text-[9px] font-semibold text-white">Random pick</span>
+                  </div>
+                  <!-- Right: checkmark when selected, zoom button on hover (not selected) -->
+                  <div class="absolute right-1 top-1 flex flex-col items-end gap-1">
+                    <div v-if="isAltSelected(img.id)" class="flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-white">
+                      <Check class="h-3 w-3" />
+                    </div>
+                    <button
+                      class="hidden h-6 w-6 items-center justify-center rounded-md bg-black/70 text-white transition hover:bg-white/20 group-hover:flex"
+                      title="View full image"
+                      @click="openLightbox(img, $event)"
+                    >
+                      <Maximize2 class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <!-- Grid footer -->
+            <div class="flex shrink-0 items-center justify-between border-t border-line px-4 py-3">
+              <div class="flex items-center gap-3">
+                <p class="text-xs text-slate-500">{{ folderImages.length }} image{{ folderImages.length === 1 ? '' : 's' }} in folder</p>
+                <p v-if="hasAlternatives" class="text-xs text-sky-400">{{ alternativeImages.length }} / {{ maxForActiveTarget }} selected</p>
+              </div>
+              <div class="flex gap-2">
+                <button v-if="hasAlternatives" class="button h-8 px-3 text-sm text-slate-400" @click="clearAlternatives">Clear</button>
+                <button class="button h-8 px-3 text-sm" @click="showFolderBrowser = false">
+                  {{ hasAlternatives ? 'Cancel' : 'Close' }}
+                </button>
+                <button
+                  v-if="hasAlternatives"
+                  class="flex h-8 items-center gap-1.5 rounded-md border border-sky-500/60 bg-sky-500/15 px-4 text-sm font-medium text-sky-300 transition hover:bg-sky-500/25"
+                  @click="showFolderBrowser = false"
+                >
+                  <Check class="h-4 w-4" />
+                  Use {{ alternativeImages.length }} image{{ alternativeImages.length > 1 ? 's' : '' }}
+                </button>
+              </div>
+            </div>
+          </template>
+
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 
   <!-- ── Topaz Upscale Modal ──────────────────────────────────────────────── -->
   <Teleport to="body">
@@ -801,7 +1089,7 @@ onMounted(async () => {
           <!-- Scrollable body -->
           <div class="flex flex-col gap-4 overflow-y-auto p-4">
             <p class="truncate text-xs text-slate-400">
-              <span class="text-slate-500">Image:</span> {{ picker.currentImage?.filename }}
+              <span class="text-slate-500">Image:</span> {{ activeImage?.filename }}
             </p>
 
             <!-- ── 1. Model ────────────────────────────────────────────── -->
@@ -899,7 +1187,7 @@ onMounted(async () => {
                   <label class="text-xs font-medium text-slate-400">Image Description <span class="font-normal text-slate-600">(optional)</span></label>
                   <button
                     class="flex h-6 items-center gap-1 rounded-md border border-line px-2 text-[11px] text-slate-400 transition hover:border-accent/50 hover:text-accent disabled:opacity-50"
-                    :disabled="!picker.currentImage?.localPath || topazGeneratingPrompt"
+                    :disabled="!activeImage?.localPath || topazGeneratingPrompt"
                     @click="generateTopazPrompt"
                   >
                     <Sparkles class="h-3 w-3" />
@@ -942,7 +1230,7 @@ onMounted(async () => {
             <button class="button h-8 px-3 text-sm" @click="closeTopazModal">Cancel</button>
             <button
               class="flex h-8 items-center gap-1.5 rounded-md border border-amber-500/60 bg-amber-500/15 px-3 text-sm text-amber-300 transition hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="!picker.currentImage?.localPath"
+              :disabled="!activeImage?.localPath"
               @click="submitTopazUpscale"
             >
               <Zap class="h-3.5 w-3.5" />
