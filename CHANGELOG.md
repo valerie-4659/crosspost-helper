@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.126 - 2026-06-16
+
+- fix: AI Persona handling
+
+
 ## v0.2.125 - 2026-06-13
 
 - Release v0.2.125
