@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.127 - 2026-06-19
+
+- feat: better context mode
+
+
 ## v0.2.126 - 2026-06-16
 
 - fix: AI Persona handling
