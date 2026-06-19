@@ -762,7 +762,7 @@ function imageMime(p) {
 // storylineId: null | string — if set, fetches previous story_entries for context
 // decisions: null | [{emoji, label}] — 1-4 reader-vote options appended after story text
 // aiInstructions: "" | string — character names, specific image details injected as a strict rule
-async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "", storylineId = null, decisions = null, qtEventName = "", qtTagger = "", customMaxChars = null, aiInstructions = "") {
+async function generateAiPost(imagePaths, network, hint = "", postType = "engagement", perspective = "", ocName = "", storylineId = null, decisions = null, qtEventName = "", qtTagger = "", customMaxChars = null, aiInstructions = "", hintMode = "context") {
   const db = await getDatabase();
   // Read AI config from DB
   const rows = db.exec("SELECT key, value FROM ai_config");
@@ -841,11 +841,13 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
     : `Generate up to ${nc.tagCount} relevant tags.`;
   const tagNote = nc.tagHasHash ? "Include the # symbol in each tag." : "Do NOT include # symbol in tags.";
 
-  // Context/hint = mood & theme FRAMEWORK (not verbatim copy).
-  // Always use English in the prompt regardless of what language the hint was written in.
+  // Context/hint = mood & theme FRAMEWORK (not verbatim copy) in "context" mode.
+  // In "refine" mode the hint is the user's rough draft — the AI polishes it.
   // For QT posts the hint becomes the tagline (Line 5) — don't add it as a separate rule.
   const hintLine = (hint?.trim() && postType !== "qt")
-    ? `- THEME / MOOD — Use this as a creative framework and inspiration: "${hint.trim()}". Capture its spirit and energy. Do NOT copy it word-for-word. Always write the final post in English.`
+    ? hintMode === "refine"
+      ? `- ROUGH DESCRIPTION TO REFINE — The user has written the following rough draft. Use it as your creative starting point and raw material. Retain the user's core ideas and details, but restructure, elevate and polish the writing to match the post type, persona, network and character limit. Do NOT copy it verbatim. Always write the final post in English: "${hint.trim()}"`
+      : `- THEME / MOOD — Use this as a creative framework and inspiration: "${hint.trim()}". Capture its spirit and energy. Do NOT copy it word-for-word. Always write the final post in English.`
     : "";
 
   // AI instructions = author directives: story angle, character names, style notes.
@@ -2305,8 +2307,8 @@ app.whenReady().then(() => {
   }
 
   // ── AI post generation ─────────────────────────────────────────────────────
-  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions) => {
-    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions);
+  ipcMain.handle("ai:generate-post", async (_event, imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions, hintMode) => {
+    return generateAiPost(imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions, hintMode);
   });
 
   // ── AI video prompt generation ─────────────────────────────────────────────

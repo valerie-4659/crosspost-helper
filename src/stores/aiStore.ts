@@ -165,6 +165,7 @@ export const useAiStore = defineStore("ai", () => {
     qtTagger?: string,
     customMaxChars?: number | null,
     aiInstructions?: string,
+    hintMode?: string,
   ) {
     generating.value = true;
     generateError.value = "";
@@ -182,6 +183,7 @@ export const useAiStore = defineStore("ai", () => {
         qtTagger ?? "",
         customMaxChars ?? null,
         aiInstructions ?? "",
+        hintMode ?? "context",
       );
       generatedPost.value = { ...result, network };
       // Sync editable fields so all consumers (AiPostPanel, PickerPage, …) start from the fresh result.

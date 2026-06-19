@@ -65,8 +65,8 @@ contextBridge.exposeInMainWorld("desktop", {
   ai: {
     // Generate a post for the given network. imagePaths = absolute local paths.
     // Returns { title?, description, tags[] } or throws on error.
-    generatePost: (imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions) =>
-      ipcRenderer.invoke("ai:generate-post", imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions),
+    generatePost: (imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions, hintMode) =>
+      ipcRenderer.invoke("ai:generate-post", imagePaths, network, hint, postType, perspective, ocName, storylineId, decisions, qtEventName, qtTagger, customMaxChars, aiInstructions, hintMode),
     // Generate a video prompt for the given video model. Returns plain text string.
     generateVideoPrompt: (imagePaths, videoModel, instructions, includeCameraMoves) =>
       ipcRenderer.invoke("ai:generate-video-prompt", imagePaths, videoModel, instructions, includeCameraMoves),

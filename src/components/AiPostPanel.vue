@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref } from "vue";
-import { BookOpen, Check, ChevronDown, Copy, Plus, Send, Sparkles, Trash2, X } from "lucide-vue-next";
+import { BookOpen, Check, ChevronDown, Copy, Maximize2, Plus, Send, Sparkles, Trash2, X } from "lucide-vue-next";
 import { useAiStore } from "@/stores/aiStore";
 import type { StoryDecision } from "@/types/aiSettings";
 
@@ -52,8 +52,10 @@ const emit = defineEmits<{
 const ai = useAiStore();
 
 // ── Controls ──────────────────────────────────────────────────────────────────
-const hint           = ref("");
-const aiInstructions = ref("");
+const hint            = ref("");
+const hintMode        = ref<"context" | "refine">("context");
+const hintModalOpen   = ref(false);
+const aiInstructions  = ref("");
 const postType    = ref<"engagement" | "qt" | "morning" | "goodnight" | "story">("engagement");
 /** "" = no perspective instruction, "i" = first-person, "oc" = OC name */
 const perspective = ref<"" | "i" | "oc">("");
@@ -209,6 +211,7 @@ async function generate() {
     postType.value === "qt" ? qtTagger.value.trim() || undefined : undefined,
     customMaxChars.value,
     aiInstructions.value.trim() || undefined,
+    hintMode.value,
   );
   if (ai.generatedPost) {
     // Append decisions block to description if decisions are configured
@@ -430,14 +433,40 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Hint / Context textarea -->
+    <!-- Hint / Context or Description textarea -->
     <div>
-      <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Context <span class="normal-case text-slate-600">(optional — sets the mood/theme, not copied verbatim)</span></p>
+      <div class="mb-1 flex items-center gap-1.5">
+        <p class="min-w-0 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+          {{ hintMode === 'context' ? 'Context' : 'Description' }}
+          <span class="normal-case font-normal text-slate-600">
+            {{ hintMode === 'context' ? '(optional — mood/theme, not copied verbatim)' : '(rough draft — AI will refine &amp; polish this)' }}
+          </span>
+        </p>
+        <div class="ml-auto flex shrink-0 items-center gap-1">
+          <button
+            class="rounded border px-1.5 py-0.5 text-[10px] font-medium transition"
+            :class="hintMode === 'context' ? 'border-accent/30 bg-accent/15 text-accent' : 'border-line bg-panel text-slate-500 hover:text-slate-300'"
+            @click="hintMode = 'context'"
+          >Context</button>
+          <button
+            class="rounded border px-1.5 py-0.5 text-[10px] font-medium transition"
+            :class="hintMode === 'refine' ? 'border-amber-500/30 bg-amber-500/15 text-amber-400' : 'border-line bg-panel text-slate-500 hover:text-slate-300'"
+            @click="hintMode = 'refine'"
+          >Refine</button>
+          <button
+            class="ml-0.5 rounded p-0.5 text-slate-500 transition hover:text-slate-300"
+            title="Open in large editor"
+            @click="hintModalOpen = true"
+          ><Maximize2 class="h-3.5 w-3.5" /></button>
+        </div>
+      </div>
       <textarea
         v-model="hint"
-        rows="2"
+        rows="3"
         class="w-full resize-none rounded-lg border border-line bg-panelSoft px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
-        placeholder="e.g. Foxy Friday, romantic beach scene, spicy office encounter…"
+        :placeholder="hintMode === 'context'
+          ? 'e.g. Foxy Friday, romantic beach scene, spicy office encounter…'
+          : 'Write a rough description here… the AI will refine and polish it.'"
       />
     </div>
 
@@ -682,4 +711,57 @@ onMounted(async () => {
       </div>
     </div>
   </div>
+
+  <!-- ── Context / Description expand modal ─────────────────────────────────── -->
+  <Teleport to="body">
+    <div
+      v-if="hintModalOpen"
+      class="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      @click.self="hintModalOpen = false"
+      @keydown.esc.stop="hintModalOpen = false"
+    >
+      <div class="flex w-full max-w-2xl flex-col gap-3 rounded-xl border border-line bg-panel p-5 shadow-2xl">
+        <!-- Header -->
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <p class="text-sm font-semibold text-slate-100">
+              {{ hintMode === 'context' ? '📍 Context' : '✏️ Description' }}
+            </p>
+            <button
+              class="rounded border px-1.5 py-0.5 text-[10px] font-medium transition"
+              :class="hintMode === 'context' ? 'border-accent/30 bg-accent/15 text-accent' : 'border-line bg-panel text-slate-500 hover:text-slate-300'"
+              @click="hintMode = 'context'"
+            >Context</button>
+            <button
+              class="rounded border px-1.5 py-0.5 text-[10px] font-medium transition"
+              :class="hintMode === 'refine' ? 'border-amber-500/30 bg-amber-500/15 text-amber-400' : 'border-line bg-panel text-slate-500 hover:text-slate-300'"
+              @click="hintMode = 'refine'"
+            >Refine</button>
+          </div>
+          <button class="button h-7 w-7 p-0" @click="hintModalOpen = false">
+            <X class="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <!-- Subtitle -->
+        <p class="text-xs text-slate-500">
+          <template v-if="hintMode === 'context'">Sets the mood and theme — used as creative inspiration, not copied verbatim into the post.</template>
+          <template v-else>Write a rough draft. The AI will refine and polish it according to your persona, post type and network rules.</template>
+        </p>
+        <!-- Large textarea -->
+        <textarea
+          v-model="hint"
+          rows="12"
+          class="w-full resize-y rounded-lg border border-line bg-panelSoft px-4 py-3 text-sm leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+          :placeholder="hintMode === 'context'
+            ? 'e.g. Foxy Friday, romantic beach scene, spicy office encounter…'
+            : 'Write your rough description here… The AI will polish and refine it to match your persona and post type.'"
+          autofocus
+        />
+        <!-- Footer -->
+        <div class="flex justify-end">
+          <button class="button-primary px-5 py-2 text-sm" @click="hintModalOpen = false">Done</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>

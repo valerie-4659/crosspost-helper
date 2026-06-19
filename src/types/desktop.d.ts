@@ -166,6 +166,7 @@ declare global {
           qtTagger?: string,
           customMaxChars?: number | null,
           aiInstructions?: string,
+          hintMode?: string,
         ): Promise<{ title: string; description: string; tags: string[] }>;
         /** Generate a video generation prompt for the given model from one or more image paths. Returns plain text. */
         generateVideoPrompt(
