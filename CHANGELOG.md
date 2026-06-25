@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.129 - 2026-06-25
+
+- feat: CivitAI direct post via MCP API (no browser extension needed)
+
+
+## v0.2.128 - 2026-06-25
+
+- feat: CivitAI direct post via MCP API (no browser extension needed)
+
+
 ## v0.2.127 - 2026-06-19
 
 - feat: better context mode

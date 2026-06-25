@@ -6,6 +6,20 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.129",
+    date: "2026-06-25",
+    items: [
+      "feat: CivitAI direct post via MCP API (no browser extension needed)",
+    ],
+  },
+  {
+    version: "0.2.128",
+    date: "2026-06-25",
+    items: [
+      "feat: CivitAI direct post via MCP API (no browser extension needed)",
+    ],
+  },
+  {
     version: "0.2.127",
     date: "2026-06-19",
     items: [
