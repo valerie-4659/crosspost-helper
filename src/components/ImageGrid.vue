@@ -30,10 +30,16 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div v-if="images.length" class="grid grid-cols-3 gap-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+  <!--
+    CSS columns masonry — images keep their natural aspect ratio.
+    column-count grows with available width; break-inside-avoid on each card
+    prevents a card from being split across two columns.
+  -->
+  <div v-if="images.length" class="columns-2 gap-3 sm:columns-3 lg:columns-4 xl:columns-5 2xl:columns-6">
     <ImageCard
       v-for="image in images"
       :key="image.id"
+      class="mb-3 break-inside-avoid"
       :image="image"
       :targets="targets"
       :active-target-id="activeTargetId"

@@ -1890,16 +1890,17 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
-  // wavespeed:downloadImage — fetch a generated image URL and save it to
-  // ~/Pictures/WavespeedAI/, then reveal the file in Finder / Explorer.
-  ipcMain.handle("wavespeed:downloadImage", async (_event, resultUrl, suggestedFilename, reveal = true) => {
+  // wavespeed:downloadImage — fetch a generated image URL and save it locally,
+  // then optionally reveal the file in Finder / Explorer.
+  // Pass destDir to override the default ~/Pictures/WavespeedAI/ folder.
+  ipcMain.handle("wavespeed:downloadImage", async (_event, resultUrl, suggestedFilename, reveal = true, destDir = null) => {
     const res = await fetch(resultUrl);
     if (!res.ok) throw new Error(`Download failed: HTTP ${res.status} ${res.statusText}`);
     const buffer = Buffer.from(await res.arrayBuffer());
 
-    // Destination folder: ~/Pictures/WavespeedAI/
-    const destDir = path.join(app.getPath("pictures"), "WavespeedAI");
-    fs.mkdirSync(destDir, { recursive: true });
+    // Destination folder: caller-supplied or ~/Pictures/WavespeedAI/
+    const targetDir = destDir || path.join(app.getPath("pictures"), "WavespeedAI");
+    fs.mkdirSync(targetDir, { recursive: true });
 
     // Derive file extension from the URL path then from the Content-Type header
     const urlExt = (resultUrl.split("?")[0] ?? "").match(/\.(png|jpe?g|webp)$/i)?.[1]?.toLowerCase();
@@ -1908,13 +1909,23 @@ app.whenReady().then(() => {
     const ext = urlExt ?? ctExt ?? "png";
 
     const filename = suggestedFilename || `wavespeed_${Date.now()}.${ext}`;
-    const destPath = path.join(destDir, filename);
+    const destPath = path.join(targetDir, filename);
     fs.writeFileSync(destPath, buffer);
 
-    // Reveal the saved file in Finder / Explorer (skip when reveal=false, e.g. silent downloads for AI post generation)
+    // Reveal the saved file in Finder / Explorer (skip when reveal=false)
     if (reveal) shell.showItemInFolder(destPath);
 
-    return { path: destPath, folder: destDir };
+    return { path: destPath, folder: targetDir };
+  });
+
+  // files:copyFile — copy a local file to a destination path.
+  // Creates the destination directory if it does not exist.
+  ipcMain.handle("files:copyFile", async (_event, srcPath, destPath) => {
+    if (!fs.existsSync(srcPath)) throw new Error(`Source file not found: ${srcPath}`);
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.copyFileSync(srcPath, destPath);
+    shell.showItemInFolder(destPath);
+    return { path: destPath };
   });
 
   // ── Shared Topaz upscale logic ────────────────────────────────────────────
@@ -2319,6 +2330,107 @@ app.whenReady().then(() => {
   // ── AI image recreation prompt (SFW, model-specific) ──────────────────────
   ipcMain.handle("ai:generate-image-prompt", async (_event, imagePaths, imageModel, instructions) => {
     return generateImagePrompt(imagePaths, imageModel, instructions);
+  });
+
+  // ── CivitAI direct post via MCP API ────────────────────────────────────────
+  // Uploads every image, creates a post and optionally publishes it.
+  // Returns { ok, postUrl, postId } or throws with a user-readable message.
+  ipcMain.handle("civitai:post", async (_event, { imagePaths, title, description, tags, publish }) => {
+    const db = await getDatabase();
+    const cfgRows = db.exec("SELECT value FROM ai_config WHERE key = 'civitai_api_key'");
+    const apiKey = cfgRows[0]?.values?.[0]?.[0] ?? "";
+    if (!apiKey) throw new Error("No CivitAI API key configured. Add it in Settings → CivitAI.");
+
+    const MCP_URL = "https://mcp.civitai.com/mcp";
+    const mcpHeaders = {
+      "Content-Type": "application/json",
+      "Accept": "application/json, text/event-stream",
+      "Authorization": `Bearer ${apiKey}`,
+    };
+
+    async function mcpCall(toolName, args) {
+      const body = JSON.stringify({
+        jsonrpc: "2.0",
+        id: Date.now(),
+        method: "tools/call",
+        params: { name: toolName, arguments: args },
+      });
+      const res = await fetch(MCP_URL, { method: "POST", headers: mcpHeaders, body });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`CivitAI MCP HTTP ${res.status}: ${errText.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      if (data.error) throw new Error(`CivitAI MCP error: ${data.error.message ?? JSON.stringify(data.error)}`);
+      return data.result;
+    }
+
+    function extractJson(text) {
+      // The MCP result text contains JSON embedded after a human-readable line.
+      // Try to find the last {...} block which is the structured result.
+      const matches = [...text.matchAll(/\{[\s\S]*?\}/g)];
+      for (let i = matches.length - 1; i >= 0; i--) {
+        try { return JSON.parse(matches[i][0]); } catch {}
+      }
+      // Fallback: try the whole text
+      try { return JSON.parse(text); } catch {}
+      return null;
+    }
+
+    // ── 1. Upload images ──────────────────────────────────────────────────────
+    const imageEntries = [];
+    for (const imgPath of imagePaths) {
+      if (!fs.existsSync(imgPath)) throw new Error(`Image file not found: ${imgPath}`);
+      const bytes = fs.readFileSync(imgPath);
+      const b64   = bytes.toString("base64");
+      const mime  = imageMime(imgPath);
+
+      const uploadResult = await mcpCall("upload_image", { data: b64, contentType: mime });
+      const uploadText = uploadResult?.content?.[0]?.text ?? "";
+
+      // Extract UUID — try JSON first, then regex
+      let uuid;
+      const parsed = extractJson(uploadText);
+      if (parsed) uuid = parsed.uuid ?? parsed.id;
+      if (!uuid) {
+        const m = uploadText.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+        if (m) uuid = m[0];
+      }
+      if (!uuid) throw new Error(`Could not extract image UUID from upload response. Response: ${uploadText.slice(0, 300)}`);
+
+      // Optional dimensions
+      let width, height;
+      try {
+        const img = nativeImage.createFromPath(imgPath);
+        if (!img.isEmpty()) ({ width, height } = img.getSize());
+      } catch {}
+
+      imageEntries.push({ uuid, ...(width ? { width, height } : {}) });
+    }
+
+    // ── 2. Create post ────────────────────────────────────────────────────────
+    const postArgs = {
+      images: imageEntries,
+      publish: publish !== false,
+    };
+    if (title)        postArgs.title  = title;
+    if (description)  postArgs.detail = description;
+    if (tags?.length) postArgs.tags   = tags;
+
+    const postResult = await mcpCall("create_post", postArgs);
+    const postText = postResult?.content?.[0]?.text ?? "";
+
+    // Extract post ID
+    let postId;
+    const postParsed = extractJson(postText);
+    if (postParsed) postId = postParsed.id ?? postParsed.postId;
+    if (!postId) {
+      const m = postText.match(/\/posts\/(\d+)/) ?? postText.match(/post[^\d]*?(\d+)/i);
+      if (m) postId = parseInt(m[1]);
+    }
+
+    const postUrl = postId ? `https://civitai.com/posts/${postId}` : "https://civitai.com/posts";
+    return { ok: true, postUrl, postId: postId ?? null };
   });
 
   // ── Get image pixel dimensions ────────────────────────────────────────────

@@ -135,6 +135,34 @@ const CHAR_PRESETS = computed(() =>
 const copied      = ref(false);
 const queueError  = ref("");
 
+// ── CivitAI direct post ───────────────────────────────────────────────────────
+const civitaiPosting  = ref(false);
+const civitaiPostDone = ref(false);
+
+async function postToCivitai() {
+  if (civitaiPosting.value || !props.imagePaths.length || !ai.generatedPost) return;
+  queueError.value = "";
+  civitaiPosting.value = true;
+  try {
+    const tags = ai.editedTags.split(/\s+/).filter(Boolean);
+    const result = await window.desktop.civitai.post({
+      imagePaths: props.imagePaths,
+      title:       ai.editedTitle       || undefined,
+      description: ai.editedDescription || undefined,
+      tags:        tags.length ? tags   : undefined,
+      publish:     true,
+    });
+    civitaiPostDone.value = true;
+    setTimeout(() => (civitaiPostDone.value = false), 4000);
+    if (result.postUrl) window.desktop.opener.openUrl(result.postUrl);
+    emit("mark");
+  } catch (err) {
+    queueError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    civitaiPosting.value = false;
+  }
+}
+
 type SendMode = "full" | "no_tags" | "images_only";
 const LS_SEND_MODE = "crosspost_send_mode";
 const sendMode    = ref<SendMode>((localStorage.getItem(LS_SEND_MODE) as SendMode) ?? "full");
@@ -670,6 +698,19 @@ onMounted(async () => {
           </div>
         </div>
 
+        <!-- Direct post to CivitAI (no browser extension needed) -->
+        <button
+          v-if="network === 'civitai' && imagePaths.length > 0"
+          class="button-primary w-full py-2 text-sm font-medium"
+          :class="civitaiPostDone ? 'border-mint/60 bg-mint/10 text-mint' : ''"
+          :disabled="civitaiPosting"
+          @click="postToCivitai"
+        >
+          <Check v-if="civitaiPostDone" class="h-4 w-4" />
+          <Send v-else-if="!civitaiPosting" class="h-4 w-4" />
+          {{ civitaiPostDone ? 'Posted to CivitAI!' : civitaiPosting ? 'Uploading & posting…' : 'Post to CivitAI directly' }}
+        </button>
+
         <!-- Secondary row: Copy + Discard -->
         <div class="flex items-center gap-2">
           <button
@@ -686,10 +727,10 @@ onMounted(async () => {
         </div>
 
         <!-- Bottom convenience row (saves scrolling back to top) -->
-        <div v-if="imageIds?.length || networkName" class="flex items-center gap-2 border-t border-line pt-2.5">
+        <div v-if="imageIds?.length || networkName" class="flex flex-col gap-2 border-t border-line pt-2.5">
           <button
             v-if="imageIds?.length"
-            class="button h-7 flex-1 gap-1.5 px-2.5 text-xs"
+            class="button w-full gap-1.5 px-2.5 text-xs"
             :class="sendDone ? 'border-mint/60 bg-mint/10 text-mint' : ''"
             title="Send images + content to the Chrome extension"
             @click="sendToExtension"
@@ -699,7 +740,7 @@ onMounted(async () => {
             {{ sendDone ? 'Queued!' : 'Send to Plugin' }}
           </button>
           <button
-            class="button h-7 flex-1 gap-1.5 px-2.5 text-xs"
+            class="button w-full gap-1.5 px-2.5 text-xs"
             :title="`Mark as posted on ${networkName || network}`"
             @click="emit('mark')"
           >

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import type { AppPage } from "@/components/SidebarNavigation.vue";
-import { Check, Clapperboard, Copy, FolderOpen, X } from "lucide-vue-next";
+import { Check, Clapperboard, Copy, ExternalLink, FolderOpen, X } from "lucide-vue-next";
 import { VIDEO_MODELS, type VideoModelValue } from "@/composables/useVideoModels";
 
 const props = defineProps<{
@@ -30,6 +30,14 @@ const wsSubmitting        = ref(false);
 const wsSubmitted         = ref(false);
 const wsError             = ref("");
 
+// ── Live job tracking ──────────────────────────────────────────────────────
+/** Local DB id of the most recently submitted job (null if none / reset). */
+const wsTrackedLocalId  = ref<string | null>(null);
+const wsTrackedStatus   = ref<"created" | "processing" | "completed" | "failed" | "">("");
+const wsTrackedVideoUrl = ref<string | null>(null);
+const wsTrackedJobError = ref<string | null>(null);
+const wsCopiedUrl       = ref(false);
+
 // Reset resolution/duration to valid defaults when model changes
 watch(selectedModel, () => {
   const m = modelCfg.value;
@@ -45,7 +53,22 @@ onMounted(async () => {
     "SELECT value FROM ai_config WHERE key = 'wavespeed_api_key'",
   );
   wavespeedAvailable.value = Boolean(rows[0]?.value);
+
+  // Subscribe to background-poller updates and apply them to the tracked job.
+  window.desktop.wavespeed.onJobUpdated((data) => {
+    if (!wsTrackedLocalId.value || data.id !== wsTrackedLocalId.value) return;
+    if (data.status)                   wsTrackedStatus.value   = data.status as typeof wsTrackedStatus.value;
+    if (data.video_url !== undefined)   wsTrackedVideoUrl.value = data.video_url ?? null;
+    if (data.error_msg !== undefined)   wsTrackedJobError.value = data.error_msg ?? null;
+  });
 });
+
+onUnmounted(() => {
+  window.desktop.wavespeed.offJobUpdated();
+});
+
+// Reset tracked job whenever the source image changes (new pick / alternative).
+watch(() => props.imagePaths, () => { resetWavespeed(); }, { deep: true });
 
 async function generate() {
   if (!props.imagePaths.length) return;
@@ -97,7 +120,7 @@ async function submitToWavespeed() {
   wsSubmitted.value  = false;
   wsError.value      = "";
   try {
-    await window.desktop.wavespeed.submit({
+    const result = await window.desktop.wavespeed.submit({
       imagePath,
       prompt:             generatedPrompt.value,
       videoModel:         selectedModel.value,
@@ -107,7 +130,11 @@ async function submitToWavespeed() {
       generateAudio:      wsGenerateAudio.value,
       movementAmplitude:  wsMovementAmplitude.value,
     });
-    wsSubmitted.value = true;
+    wsSubmitted.value       = true;
+    wsTrackedLocalId.value  = result.localId ?? null;
+    wsTrackedStatus.value   = (result.status as typeof wsTrackedStatus.value) || "created";
+    wsTrackedVideoUrl.value = result.outputs?.[0] ?? null;
+    wsTrackedJobError.value = result.error ?? null;
   } catch (err) {
     wsError.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -116,9 +143,21 @@ async function submitToWavespeed() {
 }
 
 function resetWavespeed() {
-  wsSubmitted.value  = false;
-  wsError.value      = "";
-  wsSubmitting.value = false;
+  wsSubmitted.value       = false;
+  wsError.value           = "";
+  wsSubmitting.value      = false;
+  wsTrackedLocalId.value  = null;
+  wsTrackedStatus.value   = "";
+  wsTrackedVideoUrl.value = null;
+  wsTrackedJobError.value = null;
+  wsCopiedUrl.value       = false;
+}
+
+async function copyVideoUrl() {
+  if (!wsTrackedVideoUrl.value) return;
+  await navigator.clipboard.writeText(wsTrackedVideoUrl.value).catch(() => {});
+  wsCopiedUrl.value = true;
+  setTimeout(() => (wsCopiedUrl.value = false), 2000);
 }
 </script>
 
@@ -309,18 +348,80 @@ function resetWavespeed() {
         Uploading &amp; submitting…
       </button>
 
-      <!-- Success: job queued -->
+      <!-- Success: live job status -->
       <div v-if="wsSubmitted" class="space-y-2">
-        <div class="flex items-center gap-2 rounded-lg border border-mint/30 bg-mint/10 px-3 py-2">
-          <span class="h-2 w-2 rounded-full bg-mint" />
-          <span class="text-xs text-mint font-medium">Job queued — rendering in background</span>
+
+        <!-- Status pill -->
+        <div
+          class="flex items-center gap-2 rounded-lg border px-3 py-2"
+          :class="{
+            'border-gold/30 bg-gold/10':          wsTrackedStatus === 'created',
+            'border-violet-500/30 bg-violet-500/10': wsTrackedStatus === 'processing',
+            'border-mint/30 bg-mint/10':          wsTrackedStatus === 'completed',
+            'border-rose/30 bg-rose/10':          wsTrackedStatus === 'failed',
+            'border-line bg-panel':               !wsTrackedStatus,
+          }"
+        >
+          <span
+            class="h-2 w-2 shrink-0 rounded-full"
+            :class="{
+              'bg-gold animate-pulse':       wsTrackedStatus === 'created',
+              'bg-violet-400 animate-pulse': wsTrackedStatus === 'processing',
+              'bg-mint':                     wsTrackedStatus === 'completed',
+              'bg-rose':                     wsTrackedStatus === 'failed',
+            }"
+          />
+          <span
+            class="flex-1 text-xs font-medium"
+            :class="{
+              'text-gold':      wsTrackedStatus === 'created',
+              'text-violet-300': wsTrackedStatus === 'processing',
+              'text-mint':      wsTrackedStatus === 'completed',
+              'text-rose':      wsTrackedStatus === 'failed',
+              'text-slate-400': !wsTrackedStatus,
+            }"
+          >
+            {{
+              wsTrackedStatus === 'created'    ? 'Queued — waiting to render…' :
+              wsTrackedStatus === 'processing' ? 'Rendering…' :
+              wsTrackedStatus === 'completed'  ? 'Done! Video is ready.' :
+              wsTrackedStatus === 'failed'     ? 'Job failed' :
+              'Job submitted'
+            }}
+          </span>
         </div>
+
+        <!-- Failed error detail -->
+        <p v-if="wsTrackedStatus === 'failed' && wsTrackedJobError" class="text-[11px] text-rose px-1">
+          {{ wsTrackedJobError }}
+        </p>
+
+        <!-- Video URL actions when completed -->
+        <div v-if="wsTrackedVideoUrl" class="flex gap-1.5">
+          <button
+            class="button h-7 flex-1 gap-1.5 px-2 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
+            @click="window.desktop.opener.openUrl(wsTrackedVideoUrl!)"
+          >
+            <ExternalLink class="h-3 w-3" /> Open Video
+          </button>
+          <button
+            class="button h-7 gap-1.5 px-2.5 text-xs"
+            :class="wsCopiedUrl ? 'border-mint/60 bg-mint/10 text-mint' : ''"
+            @click="copyVideoUrl"
+          >
+            <Check v-if="wsCopiedUrl" class="h-3 w-3" />
+            <Copy v-else class="h-3 w-3" />
+            {{ wsCopiedUrl ? 'Copied!' : 'Copy URL' }}
+          </button>
+        </div>
+
+        <!-- Bottom actions -->
         <div class="flex gap-2">
           <button
             class="button h-7 flex-1 gap-1.5 px-2 text-xs border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20"
             @click="setPage?.('video-queue')"
           >
-            <Clapperboard class="h-3 w-3" /> Open Video Queue
+            <Clapperboard class="h-3 w-3" /> Video Queue
           </button>
           <button class="button h-7 gap-1 px-2.5 text-xs" @click="resetWavespeed">
             <X class="h-3 w-3" />New

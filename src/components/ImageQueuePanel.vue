@@ -638,102 +638,138 @@ onUnmounted(() => {
       <div
         v-for="job in jobs"
         :key="job.id"
-        class="flex items-start gap-3 rounded-lg border border-line bg-panelSoft p-2.5"
+        class="rounded-lg border border-line bg-ink/40 p-3"
       >
-        <!-- Thumbnail (source image) -->
-        <img
-          v-if="job.image_path"
-          :src="thumbSrc(job.image_path)"
-          class="h-12 w-12 shrink-0 rounded object-cover border border-line"
-          draggable="false"
-        />
-
-        <!-- Info -->
-        <div class="min-w-0 flex-1 space-y-1">
-          <!-- Status row -->
-          <div class="flex items-center gap-1.5">
-            <span class="h-2 w-2 shrink-0 rounded-full" :class="STATUS_DOT[job.status] ?? 'bg-slate-500'" />
-            <span class="text-xs font-medium text-slate-200">{{ STATUS_LABEL[job.status] ?? job.status }}</span>
-            <span class="ml-auto text-[10px] text-slate-600 shrink-0">{{ relativeTime(job.created_at) }}</span>
-          </div>
-          <!-- Model + size -->
-          <p class="text-[10px] text-slate-500 truncate">
-            {{ job.model }} · {{ job.size }}
-          </p>
-          <!-- Prompt snippet -->
-          <p class="text-[11px] text-slate-400 line-clamp-2 leading-snug">{{ job.prompt }}</p>
-          <!-- Error -->
-          <p v-if="job.error_msg" class="text-[11px] text-rose">{{ job.error_msg }}</p>
-        </div>
-
-        <!-- Actions -->
-        <div class="flex shrink-0 flex-col gap-1">
+        <div class="flex items-start gap-3">
+          <!-- Thumbnail: result preview when done, source while pending, placeholder while queued -->
           <button
             v-if="job.result_url"
-            class="button h-6 gap-1 px-2 text-[10px] border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
+            class="group relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-line transition hover:border-mint/50"
             title="Open generated image"
             @click="openImage(job.result_url!)"
           >
-            <ExternalLink class="h-3 w-3" />Image
+            <img
+              v-if="job.image_path"
+              :src="thumbSrc(job.image_path)"
+              class="h-full w-full object-cover"
+              draggable="false"
+            />
+            <div v-else class="flex h-full w-full items-center justify-center bg-panel">
+              <Image class="h-5 w-5 text-slate-600" />
+            </div>
+            <div class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition group-hover:opacity-100">
+              <ExternalLink class="h-4 w-4 text-white" />
+            </div>
           </button>
-          <!-- Download result -->
-          <button
-            v-if="job.result_url"
-            class="button h-6 w-6 p-0"
-            title="Download generated image to ~/Pictures/WavespeedAI/"
-            @click="downloadResult(job.result_url!)"
+          <!-- Placeholder while generating -->
+          <div
+            v-else-if="job.status === 'processing'"
+            class="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-violet-500/30 bg-violet-500/5"
           >
-            <Download class="h-3 w-3" />
-          </button>
-          <!-- Upscale with Topaz -->
-          <button
-            v-if="job.result_url"
-            class="button h-6 w-6 p-0 border-amber-500/40 text-amber-300 hover:bg-amber-500/20"
-            title="Upscale with Topaz Labs"
-            @click="openTopazFromJob(job)"
+            <Image class="h-5 w-5 animate-pulse text-violet-400" />
+          </div>
+          <!-- Queued placeholder -->
+          <div
+            v-else-if="job.status === 'created'"
+            class="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-gold/30 bg-gold/5"
           >
-            <Zap class="h-3 w-3" />
-          </button>
-          <!-- Generate AI Post -->
-          <button
-            v-if="job.result_url"
-            class="button h-6 w-6 p-0 border-accent/40 text-accent hover:bg-accent/20"
-            title="Generate AI post text"
-            @click="openPostForImageJob(job)"
+            <Image class="h-5 w-5 animate-pulse text-gold" />
+          </div>
+          <!-- Failed placeholder -->
+          <div
+            v-else-if="job.image_path"
+            class="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-line"
           >
-            <Sparkles class="h-3 w-3" />
-          </button>
-          <!-- Make Video from result -->
+            <img :src="thumbSrc(job.image_path)" class="h-full w-full object-cover" draggable="false" />
+          </div>
+
+          <!-- Info column -->
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
+            <!-- Status + model badge + time -->
+            <div class="flex items-center gap-2">
+              <span class="inline-block h-2 w-2 shrink-0 rounded-full" :class="STATUS_DOT[job.status] ?? 'bg-slate-500'" />
+              <span class="text-xs font-medium text-white">{{ STATUS_LABEL[job.status] ?? job.status }}</span>
+              <span class="rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-300">{{ job.model }}</span>
+              <span class="ml-auto shrink-0 text-[10px] text-slate-600">{{ relativeTime(job.created_at) }}</span>
+            </div>
+            <!-- Source filename + size -->
+            <p class="truncate text-[11px] text-slate-500" :title="job.image_path">
+              {{ job.image_path ? job.image_path.split('/').pop() : '—' }} · {{ job.size }}
+            </p>
+            <!-- Prompt snippet -->
+            <p class="line-clamp-2 text-[11px] leading-snug text-slate-400">{{ job.prompt }}</p>
+            <!-- Result URL available -->
+            <p v-if="job.result_url && job.status === 'completed'" class="truncate text-[11px] text-mint">
+              ✓ Image ready
+            </p>
+            <!-- Error -->
+            <p v-if="job.error_msg" class="text-[11px] text-rose">{{ job.error_msg }}</p>
+
+            <!-- Action row (completed jobs) -->
+            <div v-if="job.result_url" class="mt-1 flex flex-wrap items-center gap-1.5">
+              <button
+                class="flex h-6 items-center gap-1 rounded border border-mint/40 bg-mint/10 px-2 text-[11px] text-mint transition hover:bg-mint/20"
+                title="Open generated image"
+                @click="openImage(job.result_url!)"
+              >
+                <ExternalLink class="h-3 w-3" />Image
+              </button>
+              <button
+                class="flex h-6 items-center gap-1 rounded border border-line px-2 text-[11px] text-slate-300 transition hover:border-slate-400"
+                title="Download to ~/Pictures/WavespeedAI/"
+                @click="downloadResult(job.result_url!)"
+              >
+                <Download class="h-3 w-3" />
+              </button>
+              <button
+                class="flex h-6 items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 text-[11px] text-amber-300 transition hover:bg-amber-500/20"
+                title="Upscale with Topaz Labs"
+                @click="openTopazFromJob(job)"
+              >
+                <Zap class="h-3 w-3" />
+              </button>
+              <button
+                class="flex h-6 items-center gap-1 rounded border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent transition hover:bg-accent/20"
+                title="Generate AI post text"
+                @click="openPostForImageJob(job)"
+              >
+                <Sparkles class="h-3 w-3" />
+              </button>
+              <button
+                class="flex h-6 items-center gap-1 rounded border border-violet-500/40 bg-violet-500/10 px-2 text-[11px] text-violet-300 transition hover:bg-violet-500/20"
+                title="Generate video from this image"
+                @click="openMakeVideo(job)"
+              >
+                <Film class="h-3 w-3" />
+              </button>
+            </div>
+            <!-- Secondary actions (always visible) -->
+            <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
+              <button
+                class="flex h-6 items-center gap-1 rounded border border-line px-2 text-[11px] text-slate-400 transition hover:border-slate-400"
+                title="Edit prompt &amp; re-submit"
+                @click="openRerun(job)"
+              >
+                <RotateCcw class="h-3 w-3" />
+              </button>
+              <button
+                v-if="job.image_path"
+                class="flex h-6 items-center gap-1 rounded border border-line px-2 text-[11px] text-slate-400 transition hover:border-slate-400"
+                title="Reveal source image in Finder"
+                @click="revealImage(job.image_path)"
+              >
+                <FolderOpen class="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Delete button top-right -->
           <button
-            v-if="job.result_url"
-            class="button h-6 w-6 p-0 border-violet-500/40 text-violet-300 hover:bg-violet-500/20"
-            title="Generate video from this image"
-            @click="openMakeVideo(job)"
-          >
-            <Film class="h-3 w-3" />
-          </button>
-          <!-- Re-run -->
-          <button
-            class="button h-6 w-6 p-0"
-            title="Edit prompt &amp; re-submit"
-            @click="openRerun(job)"
-          >
-            <RotateCcw class="h-3 w-3" />
-          </button>
-          <button
-            v-if="job.image_path"
-            class="button h-6 w-6 p-0"
-            title="Reveal source image in Finder"
-            @click="revealImage(job.image_path)"
-          >
-            <FolderOpen class="h-3 w-3" />
-          </button>
-          <button
-            class="button h-6 w-6 p-0 hover:border-rose/60 hover:text-rose"
+            class="button h-7 w-7 shrink-0 p-0 hover:border-rose/50 hover:text-rose"
             title="Remove from list"
             @click="deleteJob(job.id)"
           >
-            <Trash2 class="h-3 w-3" />
+            <Trash2 class="h-3.5 w-3.5" />
           </button>
         </div>
       </div>

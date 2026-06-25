@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import type { AppPage } from "@/components/SidebarNavigation.vue";
 import { Check, Copy, FolderOpen, Image, X } from "lucide-vue-next";
 
@@ -94,6 +94,24 @@ const wsSubmitting       = ref(false);
 const wsSubmitted        = ref(false);
 const wsError            = ref("");
 
+// ── Live job tracking ──────────────────────────────────────────────────────
+const wsTrackedLocalId   = ref<string | null>(null);
+const wsTrackedStatus    = ref<"created" | "processing" | "completed" | "failed" | "">("");
+const wsTrackedResultUrl = ref<string | null>(null);
+const wsTrackedJobError  = ref<string | null>(null);
+const wsCopiedUrl        = ref(false);
+const wsDownloading      = ref(false);
+const wsDownloadedPath   = ref<string | null>(null);
+
+// ── Path helpers (no Node.js available in renderer) ───────────────────────
+function pathDirname(p: string)       { return p.replace(/[\\/][^\\/]+$/, ""); }
+function pathBasenameNoExt(p: string) { return p.replace(/.*[\\/]/, "").replace(/\.[^.]+$/, ""); }
+function sanitizeForFilename(s: string){ return s.replace(/[^a-z0-9_-]/gi, "_").toLowerCase(); }
+function dateStamp(): string {
+  const d = new Date(), z = (n: number) => String(n).padStart(2, "0");
+  return `${z(d.getDate())}${z(d.getMonth() + 1)}${d.getFullYear()}${z(d.getHours())}${z(d.getMinutes())}`;
+}
+
 const setPage = inject<(page: AppPage) => void>("setPage");
 
 // Capabilities of the currently selected model
@@ -148,9 +166,20 @@ onMounted(async () => {
   );
   wavespeedAvailable.value = Boolean(rows[0]?.value);
   await detectAspectFromImage();
+
+  window.desktop.wavespeed.onImageJobUpdated((data) => {
+    if (!wsTrackedLocalId.value || data.id !== wsTrackedLocalId.value) return;
+    if (data.status)                    wsTrackedStatus.value    = data.status as typeof wsTrackedStatus.value;
+    if (data.result_url !== undefined)  wsTrackedResultUrl.value = data.result_url ?? null;
+    if (data.error_msg !== undefined)   wsTrackedJobError.value  = data.error_msg ?? null;
+  });
 });
 
-watch(() => props.imagePaths[0], detectAspectFromImage);
+onUnmounted(() => {
+  window.desktop.wavespeed.offImageJobUpdated();
+});
+
+watch(() => props.imagePaths[0], () => { detectAspectFromImage(); resetWavespeed(); });
 
 // ── Prompt generation ─────────────────────────────────────────────────────────
 async function generate() {
@@ -192,23 +221,23 @@ async function submitToWavespeed() {
   wsSubmitted.value  = false;
   wsError.value      = "";
   try {
-    await window.desktop.wavespeed.submitImage({
-      // Only pass the imagePath when the user opted in to use the reference image.
-      // An empty imagePath tells the backend to do txt2img (no images field in body).
+    const result = await window.desktop.wavespeed.submitImage({
       imagePath:    useRefImage.value ? (imagePath ?? "") : "",
       prompt:       generatedPrompt.value,
       imageModel:   selectedModel.value,
-      // Aspect-mode models (GPT, Nano Banana): aspect_ratio + resolution
       aspectRatio:  selectedAspect.value,
       resolution:   selectedResolution.value,
-      // WH-mode models (Seedream, Qwen, WAN, FLUX, Z-Image): size string
       size:         computeSize(),
       useRefImage:  useRefImage.value,
       quality:      selectedQuality.value,
       outputFormat: selectedFormat.value,
       strength:     zStrength.value,
     });
-    wsSubmitted.value = true;
+    wsSubmitted.value        = true;
+    wsTrackedLocalId.value   = result.localId ?? null;
+    wsTrackedStatus.value    = (result.status as typeof wsTrackedStatus.value) || "created";
+    wsTrackedResultUrl.value = result.outputs?.[0] ?? null;
+    wsTrackedJobError.value  = result.error ?? null;
   } catch (err) {
     wsError.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -217,9 +246,43 @@ async function submitToWavespeed() {
 }
 
 function resetWavespeed() {
-  wsSubmitted.value  = false;
-  wsError.value      = "";
-  wsSubmitting.value = false;
+  wsSubmitted.value        = false;
+  wsError.value            = "";
+  wsSubmitting.value       = false;
+  wsTrackedLocalId.value   = null;
+  wsTrackedStatus.value    = "";
+  wsTrackedResultUrl.value = null;
+  wsTrackedJobError.value  = null;
+  wsCopiedUrl.value        = false;
+  wsDownloading.value      = false;
+  wsDownloadedPath.value   = null;
+}
+
+async function downloadToSourceFolder() {
+  const sourcePath = props.imagePaths[0];
+  if (!wsTrackedResultUrl.value || !sourcePath) return;
+  wsDownloading.value = true;
+  wsTrackedJobError.value = null;
+  try {
+    const destDir  = pathDirname(sourcePath);
+    const baseName = pathBasenameNoExt(sourcePath);
+    const model    = sanitizeForFilename(selectedModel.value);
+    const ext      = selectedFormat.value || "png";
+    const filename = `${baseName}_rec_${model}_${dateStamp()}.${ext}`;
+    const result   = await window.desktop.wavespeed.downloadImage(wsTrackedResultUrl.value, filename, true, destDir);
+    wsDownloadedPath.value = result.path;
+  } catch (err) {
+    wsTrackedJobError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    wsDownloading.value = false;
+  }
+}
+
+async function copyResultUrl() {
+  if (!wsTrackedResultUrl.value) return;
+  await navigator.clipboard.writeText(wsTrackedResultUrl.value).catch(() => {});
+  wsCopiedUrl.value = true;
+  setTimeout(() => (wsCopiedUrl.value = false), 2000);
 }
 </script>
 
@@ -405,14 +468,91 @@ function resetWavespeed() {
       <button v-else-if="wsSubmitting" class="w-full rounded-lg bg-sky-600/50 py-2 text-xs font-semibold text-white/60 flex items-center justify-center gap-2" disabled>
         <Image class="h-3.5 w-3.5 animate-pulse" />Uploading &amp; submitting…
       </button>
+      <!-- Success: live job status -->
       <div v-if="wsSubmitted" class="space-y-2">
-        <div class="flex items-center gap-2 rounded-lg border border-mint/30 bg-mint/10 px-3 py-2">
-          <span class="h-2 w-2 rounded-full bg-mint" />
-          <span class="text-xs text-mint font-medium">Job queued — generating in background</span>
+        <!-- Status pill -->
+        <div
+          class="flex items-center gap-2 rounded-lg border px-3 py-2"
+          :class="{
+            'border-gold/30 bg-gold/10':          wsTrackedStatus === 'created',
+            'border-violet-500/30 bg-violet-500/10': wsTrackedStatus === 'processing',
+            'border-mint/30 bg-mint/10':          wsTrackedStatus === 'completed',
+            'border-rose/30 bg-rose/10':          wsTrackedStatus === 'failed',
+            'border-line bg-panel':               !wsTrackedStatus,
+          }"
+        >
+          <span
+            class="h-2 w-2 shrink-0 rounded-full"
+            :class="{
+              'bg-gold animate-pulse':       wsTrackedStatus === 'created',
+              'bg-violet-400 animate-pulse': wsTrackedStatus === 'processing',
+              'bg-mint':                     wsTrackedStatus === 'completed',
+              'bg-rose':                     wsTrackedStatus === 'failed',
+            }"
+          />
+          <span
+            class="flex-1 text-xs font-medium"
+            :class="{
+              'text-gold':       wsTrackedStatus === 'created',
+              'text-violet-300': wsTrackedStatus === 'processing',
+              'text-mint':       wsTrackedStatus === 'completed',
+              'text-rose':       wsTrackedStatus === 'failed',
+              'text-slate-400':  !wsTrackedStatus,
+            }"
+          >
+            {{
+              wsTrackedStatus === 'created'    ? 'Queued — waiting to generate…' :
+              wsTrackedStatus === 'processing' ? 'Generating…' :
+              wsTrackedStatus === 'completed'  ? 'Done! Image is ready.' :
+              wsTrackedStatus === 'failed'     ? 'Job failed' :
+              'Job submitted'
+            }}
+          </span>
         </div>
+
+        <!-- Failed error detail -->
+        <p v-if="wsTrackedStatus === 'failed' && wsTrackedJobError" class="text-[11px] text-rose px-1">
+          {{ wsTrackedJobError }}
+        </p>
+
+        <!-- Result URL actions when completed -->
+        <div v-if="wsTrackedResultUrl" class="flex gap-1.5">
+          <!-- Save to source folder -->
+          <button
+            v-if="!wsDownloadedPath"
+            class="button h-7 flex-1 gap-1.5 px-2 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20 disabled:opacity-50"
+            :disabled="wsDownloading"
+            @click="downloadToSourceFolder"
+          >
+            <FolderOpen class="h-3 w-3" :class="wsDownloading ? 'animate-pulse' : ''" />
+            {{ wsDownloading ? 'Saving…' : 'Save to source folder' }}
+          </button>
+          <!-- After save: reveal -->
+          <button
+            v-else
+            class="button h-7 flex-1 gap-1.5 px-2 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
+            @click="window.desktop.opener.revealItemInDir(wsDownloadedPath!)"
+          >
+            <FolderOpen class="h-3 w-3" /> Reveal in Finder
+          </button>
+          <button
+            class="button h-7 gap-1.5 px-2.5 text-xs"
+            :class="wsCopiedUrl ? 'border-mint/60 bg-mint/10 text-mint' : ''"
+            @click="copyResultUrl"
+          >
+            <Check v-if="wsCopiedUrl" class="h-3 w-3" />
+            <Copy v-else class="h-3 w-3" />
+            {{ wsCopiedUrl ? 'Copied!' : 'Copy URL' }}
+          </button>
+        </div>
+
+        <!-- Bottom actions -->
         <div class="flex gap-2">
-          <button class="button h-7 flex-1 gap-1.5 px-2 text-xs border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20" @click="setPage?.('image-queue')">
-            <Image class="h-3 w-3" /> Open Image Queue
+          <button
+            class="button h-7 flex-1 gap-1.5 px-2 text-xs border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20"
+            @click="setPage?.('image-queue')"
+          >
+            <Image class="h-3 w-3" /> Image Queue
           </button>
           <button class="button h-7 gap-1 px-2.5 text-xs" @click="resetWavespeed">
             <X class="h-3 w-3" />New

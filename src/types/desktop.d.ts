@@ -223,9 +223,9 @@ declare global {
         onImageJobUpdated(cb: (data: Partial<WavespeedImageJobRecord>) => void): void;
         offImageJobUpdated(): void;
         getImageDimensions(imagePath: string): Promise<{ width: number; height: number } | null>;
-        /** Download a generated image URL to ~/Pictures/WavespeedAI/.
-         *  Set reveal=false to skip the Finder/Explorer reveal (e.g. silent pre-download for AI post generation). */
-        downloadImage(resultUrl: string, suggestedFilename?: string, reveal?: boolean): Promise<{ path: string; folder: string }>;
+        /** Download a generated image URL. Pass destDir to override ~/Pictures/WavespeedAI/.
+         *  Set reveal=false to skip the Finder/Explorer reveal. */
+        downloadImage(resultUrl: string, suggestedFilename?: string, reveal?: boolean, destDir?: string): Promise<{ path: string; folder: string }>;
       };
       topaz: {
         /**
@@ -247,6 +247,23 @@ declare global {
         onJobUpdated(cb: (data: Partial<TopazJobRecord>) => void): void;
         /** Remove all Topaz job-update listeners. */
         offJobUpdated(): void;
+      };
+      civitai: {
+        /** Upload images and create a CivitAI post via the MCP API (no browser extension needed).
+         *  imagePaths: absolute local file paths.
+         *  publish=true publishes immediately (default true).
+         *  Returns { ok, postUrl, postId } or throws a user-readable error. */
+        post(params: {
+          imagePaths: string[];
+          title?: string;
+          description?: string;
+          tags?: string[];
+          publish?: boolean;
+        }): Promise<{ ok: boolean; postUrl: string; postId: number | null }>;
+      };
+      files: {
+        /** Copy a local file to destPath (creates parent dirs). Reveals result in Finder/Explorer. */
+        copyFile(srcPath: string, destPath: string): Promise<{ path: string }>;
       };
       scan: {
         /**

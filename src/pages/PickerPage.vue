@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Clipboard, Copy, FolderOpen, Image, Images, Layers, Maximize2, Send, SkipForward, Shuffle, Sparkles, X, Zap } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import VideoPromptPanel from "@/components/VideoPromptPanel.vue";
@@ -281,47 +281,112 @@ async function markWithAlternative() {
 }
 
 // ── AI panel ──────────────────────────────────────────────────────────────────
-const showAiPanel    = ref(false);
-const showVideoPanel = ref(false);
-const showImagePanel = ref(false);
+// Picker-specific panel-state persistence (separate from Lib mode).
+const LS_PICKER_PANELS = "crosspost_picker_panels";
+const LS_PICKER_TOPAZ  = "crosspost_picker_topaz";
+function _loadPickerPanels() {
+  try { return JSON.parse(localStorage.getItem(LS_PICKER_PANELS) ?? "null") ?? {}; } catch { return {}; }
+}
+function _loadPickerTopaz() {
+  try { return JSON.parse(localStorage.getItem(LS_PICKER_TOPAZ) ?? "null") ?? {}; } catch { return {}; }
+}
+const _savedPickerPanels = _loadPickerPanels();
+const _savedPickerTopaz  = _loadPickerTopaz();
+
+const showAiPanel    = ref<boolean>(_savedPickerPanels.showAiPanel    ?? false);
+const showVideoPanel = ref<boolean>(_savedPickerPanels.showVideoPanel ?? false);
+const showImagePanel = ref<boolean>(_savedPickerPanels.showImagePanel ?? false);
+
+watch([showAiPanel, showVideoPanel, showImagePanel], () => {
+  localStorage.setItem(LS_PICKER_PANELS, JSON.stringify({
+    showAiPanel:    showAiPanel.value,
+    showVideoPanel: showVideoPanel.value,
+    showImagePanel: showImagePanel.value,
+  }));
+});
 
 // ── Topaz Upscale Modal (fire-and-forget) ─────────────────────────────────
 type TopazUIModel = "standard" | "realism" | "wonder3";
 
 const showTopazModal        = ref(false);
-const topazUIModel          = ref<TopazUIModel>("standard");
-const topazStdCreativity    = ref<"subtle"|"low"|"medium"|"high"|"max">("medium");
-const topazRlmCreativity    = ref<"low"|"medium"|"high"|"max">("medium");
-const topazW3Enhancement    = ref<"low"|"medium"|"high">("medium");
-const topazScale            = ref<1|2|4|6|8>(2);
-const topazOutputs          = ref<1|2|4>(1);
-const topazPreserveFaces    = ref(false);
+const topazUIModel          = ref<TopazUIModel>((_savedPickerTopaz.topazUIModel        as TopazUIModel) ?? "standard");
+const topazStdCreativity    = ref<"subtle"|"low"|"medium"|"high"|"max">(_savedPickerTopaz.topazStdCreativity ?? "medium");
+const topazRlmCreativity    = ref<"low"|"medium"|"high"|"max">(_savedPickerTopaz.topazRlmCreativity           ?? "medium");
+const topazW3Enhancement    = ref<"low"|"medium"|"high">(_savedPickerTopaz.topazW3Enhancement                 ?? "medium");
+const topazScale            = ref<1|2|4|6|8>(_savedPickerTopaz.topazScale              ?? 2);
+const topazOutputs          = ref<1|2|4>(_savedPickerTopaz.topazOutputs                ?? 1);
+const topazPreserveFaces    = ref<boolean>(_savedPickerTopaz.topazPreserveFaces         ?? false);
 const topazPrompt           = ref("");
-const topazFormat           = ref<"jpeg"|"png">("jpeg");
+const topazFormat           = ref<"jpeg"|"png">(_savedPickerTopaz.topazFormat           ?? "jpeg");
 const topazSubmitError      = ref("");
 const topazGeneratingPrompt = ref(false);
+
+/** Jobs submitted in the current modal session, tracked live via topaz:jobUpdated. */
+interface TopazTrackedJob { localId: string; status: "processing"|"completed"|"failed"; result_path: string|null; error_msg: string|null; saving?: boolean; saved_path?: string|null; }
+const topazTrackedJobs = ref<TopazTrackedJob[]>([]);
+
+// ── Path helpers (no Node.js in renderer) ────────────────────────────────
+function pathDirname(p: string)       { return p.replace(/[\\/][^\\/]+$/, ""); }
+function pathBasenameNoExt(p: string) { return p.replace(/.*[\\/]/, "").replace(/\.[^.]+$/, ""); }
+function sanitizeForFilename(s: string){ return s.replace(/[^a-z0-9_-]/gi, "_").toLowerCase(); }
+function dateStamp(): string {
+  const d = new Date(), z = (n: number) => String(n).padStart(2, "0");
+  return `${z(d.getDate())}${z(d.getMonth() + 1)}${d.getFullYear()}${z(d.getHours())}${z(d.getMinutes())}`;
+}
+
+async function copyTopazResultToSource(job: TopazTrackedJob, idx: number) {
+  const sourcePath = activeImage.value?.localPath;
+  if (!job.result_path || !sourcePath) return;
+  job.saving = true;
+  try {
+    const destDir  = pathDirname(sourcePath);
+    const baseName = pathBasenameNoExt(sourcePath);
+    const model    = sanitizeForFilename(topazUIModel.value);
+    const ext      = topazFormat.value;
+    const filename = `${baseName}_rec_${model}_${dateStamp()}.${ext}`;
+    const destPath = `${destDir}/${filename}`;
+    const result   = await window.desktop.files.copyFile(job.result_path, destPath);
+    job.saved_path = result.path;
+  } catch (e: unknown) {
+    job.error_msg = e instanceof Error ? e.message : String(e);
+  } finally {
+    job.saving = false;
+  }
+}
+
+// Persist Topaz settings whenever they change (prompt is image-specific — not saved).
+watch(
+  [topazUIModel, topazStdCreativity, topazRlmCreativity, topazW3Enhancement, topazScale, topazOutputs, topazPreserveFaces, topazFormat],
+  () => {
+    localStorage.setItem(LS_PICKER_TOPAZ, JSON.stringify({
+      topazUIModel:       topazUIModel.value,
+      topazStdCreativity: topazStdCreativity.value,
+      topazRlmCreativity: topazRlmCreativity.value,
+      topazW3Enhancement: topazW3Enhancement.value,
+      topazScale:         topazScale.value,
+      topazOutputs:       topazOutputs.value,
+      topazPreserveFaces: topazPreserveFaces.value,
+      topazFormat:        topazFormat.value,
+    }));
+  },
+);
 
 const TOPAZ_API_MODEL = computed(() => ({
   standard: "Standard V2", realism: "Bloom Realism", wonder3: "Wonder 3",
 }[topazUIModel.value] as string));
 
 function openTopazModal() {
-  topazUIModel.value          = "standard";
-  topazStdCreativity.value    = "medium";
-  topazRlmCreativity.value    = "medium";
-  topazW3Enhancement.value    = "medium";
-  topazScale.value            = 2;
-  topazOutputs.value          = 1;
-  topazPreserveFaces.value    = false;
+  // Only clear transient state — persisted settings are restored from localStorage.
   topazPrompt.value           = "";
-  topazFormat.value           = "jpeg";
   topazSubmitError.value      = "";
   topazGeneratingPrompt.value = false;
+  topazTrackedJobs.value      = [];
   showTopazModal.value        = true;
 }
 
 function closeTopazModal() {
-  showTopazModal.value = false;
+  showTopazModal.value   = false;
+  topazTrackedJobs.value = [];
 }
 
 async function generateTopazPrompt() {
@@ -352,10 +417,11 @@ async function submitTopazUpscale() {
   const localPath = activeImage.value?.localPath;
   if (!localPath) return;
   topazSubmitError.value = "";
+  topazTrackedJobs.value = [];
   const numOutputs = topazUIModel.value === "wonder3" ? 1 : topazOutputs.value;
   try {
     for (let i = 0; i < numOutputs; i++) {
-      await window.desktop.topaz.submitJob({
+      const result = await window.desktop.topaz.submitJob({
         imagePath:     localPath,
         model:         TOPAZ_API_MODEL.value,
         outputFormat:  topazFormat.value,
@@ -367,8 +433,9 @@ async function submitTopazUpscale() {
         preserveFaces: topazUIModel.value !== "wonder3" ? topazPreserveFaces.value : false,
         prompt:        topazUIModel.value !== "wonder3" ? topazPrompt.value : undefined,
       });
+      topazTrackedJobs.value.push({ localId: result.localId, status: "processing", result_path: null, error_msg: null });
     }
-    showTopazModal.value = false;
+    // Modal stays open — live status is shown inside it.
   } catch (e: unknown) {
     topazSubmitError.value = e instanceof Error ? e.message : String(e);
   }
@@ -385,6 +452,18 @@ function currentImagePaths(): string[] {
 
 onMounted(async () => {
   if (!imageStore.folders.length) await imageStore.loadFolders();
+
+  window.desktop.topaz.onJobUpdated((data) => {
+    const job = topazTrackedJobs.value.find((j) => j.localId === data.id);
+    if (!job) return;
+    if (data.status)                   job.status      = data.status as TopazTrackedJob["status"];
+    if (data.result_path !== undefined) job.result_path = data.result_path ?? null;
+    if (data.error_msg !== undefined)   job.error_msg   = data.error_msg ?? null;
+  });
+});
+
+onUnmounted(() => {
+  window.desktop.topaz.offJobUpdated();
 });
 </script>
 
@@ -1223,19 +1302,85 @@ onMounted(async () => {
             <div v-if="topazSubmitError" class="rounded-md border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">
               {{ topazSubmitError }}
             </div>
+
+            <!-- ── Live job status (after submit) ──────────────────────── -->
+            <div v-if="topazTrackedJobs.length > 0" class="space-y-2 border-t border-line pt-3">
+              <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                {{ topazTrackedJobs.length === 1 ? 'Job status' : topazTrackedJobs.length + ' jobs' }}
+              </p>
+              <div v-for="(job, idx) in topazTrackedJobs" :key="job.localId" class="space-y-1.5">
+                <div
+                  class="flex items-center gap-2 rounded-lg border px-3 py-2"
+                  :class="{
+                    'border-amber-500/30 bg-amber-500/10': job.status === 'processing',
+                    'border-mint/30 bg-mint/10':           job.status === 'completed',
+                    'border-rose/30 bg-rose/10':           job.status === 'failed',
+                  }"
+                >
+                  <span
+                    class="h-2 w-2 shrink-0 rounded-full"
+                    :class="{
+                      'bg-amber-400 animate-pulse': job.status === 'processing',
+                      'bg-mint':                    job.status === 'completed',
+                      'bg-rose':                    job.status === 'failed',
+                    }"
+                  />
+                  <span
+                    class="flex-1 text-xs font-medium"
+                    :class="{
+                      'text-amber-300': job.status === 'processing',
+                      'text-mint':      job.status === 'completed',
+                      'text-rose':      job.status === 'failed',
+                    }"
+                  >
+                    <template v-if="topazTrackedJobs.length > 1">#{{ idx + 1 }} — </template>
+                    {{ job.status === 'processing' ? 'Upscaling…' : job.status === 'completed' ? 'Done!' : 'Failed' }}
+                  </span>
+                </div>
+                <template v-if="job.status === 'completed' && job.result_path">
+                  <!-- Save to source folder -->
+                  <button
+                    v-if="!job.saved_path"
+                    class="button h-7 w-full gap-1.5 px-2.5 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20 disabled:opacity-50"
+                    :disabled="job.saving"
+                    @click="copyTopazResultToSource(job, idx)"
+                  >
+                    <FolderOpen class="h-3 w-3" :class="job.saving ? 'animate-pulse' : ''" />
+                    {{ job.saving ? 'Saving…' : 'Save to source folder' }}
+                  </button>
+                  <!-- After save: reveal -->
+                  <button
+                    v-else
+                    class="button h-7 w-full gap-1.5 px-2.5 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
+                    @click="window.desktop.opener.revealItemInDir(job.saved_path!)"
+                  >
+                    <FolderOpen class="h-3 w-3" /> Reveal in Finder
+                  </button>
+                </template>
+                <p v-if="job.status === 'failed' && job.error_msg" class="text-[11px] text-rose px-1">{{ job.error_msg }}</p>
+              </div>
+            </div>
           </div>
 
           <!-- Footer -->
           <div class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
-            <button class="button h-8 px-3 text-sm" @click="closeTopazModal">Cancel</button>
-            <button
-              class="flex h-8 items-center gap-1.5 rounded-md border border-amber-500/60 bg-amber-500/15 px-3 text-sm text-amber-300 transition hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="!activeImage?.localPath"
-              @click="submitTopazUpscale"
-            >
-              <Zap class="h-3.5 w-3.5" />
-              Queue {{ topazOutputs > 1 ? topazOutputs + '×' : '' }} Upscale Job{{ topazOutputs > 1 ? 's' : '' }}
-            </button>
+            <template v-if="topazTrackedJobs.length > 0">
+              <button class="button h-8 px-3 text-sm" @click="topazTrackedJobs = []; topazSubmitError = ''">
+                New Job
+              </button>
+              <button class="button h-8 px-3 text-sm" @click="closeTopazModal">Close</button>
+            </template>
+            <template v-else>
+              <button class="button h-8 px-3 text-sm" @click="closeTopazModal">Cancel</button>
+              <button
+                class="flex h-8 items-center gap-1.5 rounded-md border border-amber-500/60 bg-amber-500/15 px-3 text-sm text-amber-300 transition hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="!activeImage?.localPath"
+                @click="submitTopazUpscale"
+              >
+                <Zap class="h-3.5 w-3.5" />
+                Queue {{ topazOutputs > 1 ? topazOutputs + '×' : '' }} Upscale Job{{ topazOutputs > 1 ? 's' : '' }}
+              </button>
+            </template>
           </div>
         </div>
       </div>

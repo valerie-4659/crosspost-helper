@@ -98,9 +98,9 @@ contextBridge.exposeInMainWorld("desktop", {
     offImageJobUpdated: () => ipcRenderer.removeAllListeners("wavespeed:imageJobUpdated"),
     /** Get pixel dimensions {width, height} of a local image. */
     getImageDimensions: (imagePath) => ipcRenderer.invoke("wavespeed:getImageDimensions", imagePath),
-    /** Download a generated image URL to ~/Pictures/WavespeedAI/.
-     *  Pass reveal=false to skip the Finder/Explorer reveal (e.g. silent AI post prep). */
-    downloadImage: (resultUrl, suggestedFilename, reveal = true) => ipcRenderer.invoke("wavespeed:downloadImage", resultUrl, suggestedFilename, reveal),
+    /** Download a generated image URL. Pass destDir to override ~/Pictures/WavespeedAI/.
+     *  Pass reveal=false to skip the Finder/Explorer reveal. */
+    downloadImage: (resultUrl, suggestedFilename, reveal = true, destDir) => ipcRenderer.invoke("wavespeed:downloadImage", resultUrl, suggestedFilename, reveal, destDir),
   },
   topaz: {
     /** Upload a local image to the Topaz Labs API, upscale it with the chosen model,
@@ -118,6 +118,17 @@ contextBridge.exposeInMainWorld("desktop", {
     onJobUpdated: (cb) => ipcRenderer.on("topaz:jobUpdated", (_e, data) => cb(data)),
     /** Remove all Topaz job-update listeners. */
     offJobUpdated: () => ipcRenderer.removeAllListeners("topaz:jobUpdated"),
+  },
+  civitai: {
+    /** Upload images and create a CivitAI post via the MCP API.
+     *  imagePaths: absolute local paths; title/description/tags from AI generator.
+     *  publish=true publishes immediately (default true).
+     *  Returns { ok, postUrl, postId } or throws. */
+    post: (params) => ipcRenderer.invoke("civitai:post", params),
+  },
+  files: {
+    /** Copy a local file to destPath (creates parent dirs). Reveals result in Finder/Explorer. */
+    copyFile: (srcPath, destPath) => ipcRenderer.invoke("files:copyFile", srcPath, destPath),
   },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),
