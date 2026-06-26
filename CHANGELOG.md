@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.131 - 2026-06-26
+
+- feat: Bluesky direct post via AT Protocol + Library prev/next folder nav
+
+
 ## v0.2.130 - 2026-06-26
 
 - fix: Windows drag & drop + button order in AI Post panel

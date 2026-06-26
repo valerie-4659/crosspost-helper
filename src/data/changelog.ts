@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.131",
+    date: "2026-06-26",
+    items: [
+      "feat: Bluesky direct post via AT Protocol + Library prev/next folder nav",
+    ],
+  },
+  {
     version: "0.2.130",
     date: "2026-06-26",
     items: [
