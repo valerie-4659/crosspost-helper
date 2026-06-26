@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.132 - 2026-06-26
+
+- Release v0.2.132
+
+
 ## v0.2.131 - 2026-06-26
 
 - feat: Bluesky direct post via AT Protocol + Library prev/next folder nav
