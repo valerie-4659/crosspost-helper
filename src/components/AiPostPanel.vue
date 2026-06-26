@@ -488,8 +488,10 @@ watch(
               v-model="ocInput"
               class="min-w-[80px] flex-1 bg-transparent text-xs text-slate-200 placeholder:text-slate-600 outline-none"
               placeholder="Name + Enter…"
+              autocomplete="off"
               @keydown="onOcKeydown"
               @focus="ocDropdownOpen = true"
+              @input="ocDropdownOpen = true"
               @blur="onOcBlur"
             />
           </div>
