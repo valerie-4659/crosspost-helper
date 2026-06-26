@@ -261,6 +261,17 @@ declare global {
           publish?: boolean;
         }): Promise<{ ok: boolean; postUrl: string; postId: number | null }>;
       };
+      bluesky: {
+        /** Upload images and create a Bluesky post via the AT Protocol (no browser extension needed).
+         *  imagePaths: absolute local file paths (max 4, auto-compressed to ≤975 KB).
+         *  text: post body (≤300 graphemes); tags: hashtag strings with or without leading #.
+         *  Returns { ok, postUrl } or throws a user-readable error. */
+        post(params: {
+          imagePaths: string[];
+          text: string;
+          tags?: string[];
+        }): Promise<{ ok: boolean; postUrl: string }>;
+      };
       files: {
         /** Copy a local file to destPath (creates parent dirs). Reveals result in Finder/Explorer. */
         copyFile(srcPath: string, destPath: string): Promise<{ path: string }>;

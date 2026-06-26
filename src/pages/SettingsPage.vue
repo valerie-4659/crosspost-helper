@@ -73,6 +73,39 @@ async function saveCivitaiSettings() {
   setTimeout(() => (civitaiSaved.value = false), 2500);
 }
 
+// ── Bluesky Settings ──────────────────────────────────────────────────────
+const blueskyIdentifier  = ref("");
+const blueskyAppPassword = ref("");
+const showBskyPass       = ref(false);
+const bskySaved          = ref(false);
+
+async function loadBlueskySettings() {
+  const rows = await window.desktop.db.select<Array<{ key: string; value: string }>>(
+    "SELECT key, value FROM ai_config WHERE key IN ('bluesky_identifier','bluesky_app_password')",
+  );
+  for (const r of rows) {
+    if (r.key === "bluesky_identifier")   blueskyIdentifier.value  = r.value;
+    if (r.key === "bluesky_app_password") blueskyAppPassword.value = r.value;
+  }
+}
+
+function openBlueskyAppPasswords() {
+  window.desktop.opener.openUrl("https://bsky.app/settings/app-passwords");
+}
+
+async function saveBlueskySettings() {
+  await window.desktop.db.execute(
+    "INSERT INTO ai_config (key, value) VALUES ('bluesky_identifier', ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+    [blueskyIdentifier.value, blueskyIdentifier.value],
+  );
+  await window.desktop.db.execute(
+    "INSERT INTO ai_config (key, value) VALUES ('bluesky_app_password', ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+    [blueskyAppPassword.value, blueskyAppPassword.value],
+  );
+  bskySaved.value = true;
+  setTimeout(() => (bskySaved.value = false), 2500);
+}
+
 // ── Topaz Labs Settings ───────────────────────────────────────────────────
 const topazApiKey      = ref("");
 const showTopazKey     = ref(false);
@@ -244,6 +277,7 @@ onMounted(async () => {
   await loadWavespeedKey();
   await loadTopazSettings();
   await loadCivitaiKey();
+  await loadBlueskySettings();
 });
 </script>
 
@@ -365,6 +399,46 @@ onMounted(async () => {
       </div>
       <button class="button-primary mt-3 h-8 px-4 text-sm" @click="saveCivitaiSettings">
         {{ civitaiSaved ? '✓ Saved' : 'Save CivitAI Settings' }}
+      </button>
+    </section>
+
+    <!-- ── Bluesky ──────────────────────────────────────────────────────────── -->
+    <section class="surface rounded-lg p-4">
+      <h2 class="text-base font-semibold text-white">Bluesky — Direct Post</h2>
+      <p class="mt-1 text-sm text-slate-400">
+        Enables the "Post to Bluesky" button in the AI Post panel — posts images directly without the browser extension.
+        Create an App Password at
+        <button class="text-accent underline" @click="openBlueskyAppPasswords">bsky.app/settings/app-passwords</button>
+        (never use your main account password).
+      </p>
+      <div class="mt-4 grid grid-cols-2 gap-3">
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-slate-400">Handle or Email</label>
+          <input
+            v-model="blueskyIdentifier"
+            type="text"
+            class="field font-mono text-xs"
+            placeholder="you.bsky.social"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-slate-400">App Password</label>
+          <div class="flex gap-2">
+            <input
+              v-model="blueskyAppPassword"
+              :type="showBskyPass ? 'text' : 'password'"
+              class="field flex-1 font-mono text-xs"
+              placeholder="xxxx-xxxx-xxxx-xxxx"
+            />
+            <button class="button px-2" :title="showBskyPass ? 'Hide' : 'Show'" @click="showBskyPass = !showBskyPass">
+              <EyeOff v-if="showBskyPass" class="h-4 w-4" />
+              <Eye v-else class="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+      <button class="button-primary mt-3 h-8 px-4 text-sm" @click="saveBlueskySettings">
+        {{ bskySaved ? '✓ Saved' : 'Save Bluesky Settings' }}
       </button>
     </section>
 

@@ -139,6 +139,10 @@ const queueError  = ref("");
 const civitaiPosting  = ref(false);
 const civitaiPostDone = ref(false);
 
+// ── Bluesky direct post ───────────────────────────────────────────────────────
+const blueskyPosting  = ref(false);
+const blueskyPostDone = ref(false);
+
 async function postToCivitai() {
   if (civitaiPosting.value || !props.imagePaths.length || !ai.generatedPost) return;
   queueError.value = "";
@@ -160,6 +164,28 @@ async function postToCivitai() {
     queueError.value = err instanceof Error ? err.message : String(err);
   } finally {
     civitaiPosting.value = false;
+  }
+}
+
+async function postToBluesky() {
+  if (blueskyPosting.value || !props.imagePaths.length) return;
+  queueError.value = "";
+  blueskyPosting.value = true;
+  try {
+    const tags = ai.editedTags.split(/\s+/).filter(Boolean);
+    const result = await window.desktop.bluesky.post({
+      imagePaths: props.imagePaths,
+      text:       ai.editedDescription || "",
+      tags:       tags.length ? tags : undefined,
+    });
+    blueskyPostDone.value = true;
+    setTimeout(() => (blueskyPostDone.value = false), 4000);
+    if (result.postUrl) window.desktop.opener.openUrl(result.postUrl);
+    emit("mark");
+  } catch (err) {
+    queueError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    blueskyPosting.value = false;
   }
 }
 
@@ -733,6 +759,19 @@ watch(
           <Check v-if="civitaiPostDone" class="h-4 w-4" />
           <Send v-else-if="!civitaiPosting" class="h-4 w-4" />
           {{ civitaiPostDone ? 'Posted to CivitAI!' : civitaiPosting ? 'Uploading & posting…' : 'Post to CivitAI directly' }}
+        </button>
+
+        <!-- Direct post to Bluesky via AT Protocol (no browser extension needed) -->
+        <button
+          v-if="network === 'bluesky' && imagePaths.length > 0"
+          class="button-primary w-full py-2 text-sm font-medium"
+          :class="blueskyPostDone ? 'border-mint/60 bg-mint/10 text-mint' : ''"
+          :disabled="blueskyPosting"
+          @click="postToBluesky"
+        >
+          <Check v-if="blueskyPostDone" class="h-4 w-4" />
+          <Send v-else-if="!blueskyPosting" class="h-4 w-4" />
+          {{ blueskyPostDone ? 'Posted to Bluesky!' : blueskyPosting ? 'Uploading & posting…' : 'Post to Bluesky directly' }}
         </button>
 
         <!-- Secondary row: Copy + Discard -->

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { Archive, Check, ChevronDown, ChevronRight, Clapperboard, Download, Eye, EyeOff, Folder, FolderOpen, FolderX, Image, RefreshCcw, RotateCcw, Send, Sparkles, Trash2, Upload, X, Zap } from "lucide-vue-next";
+import { Archive, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Download, Eye, EyeOff, Folder, FolderOpen, FolderX, Image, RefreshCcw, RotateCcw, Send, Sparkles, Trash2, Upload, X, Zap } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import VideoPromptPanel from "@/components/VideoPromptPanel.vue";
 import ImageGeneratePanel from "@/components/ImageGeneratePanel.vue";
@@ -541,6 +541,41 @@ const breadcrumbs = computed(() => {
   return crumbs;
 });
 
+/**
+ * Sibling folders of the current browsePath — all direct children of the parent
+ * directory, sorted alphabetically. Used for the prev/next folder buttons.
+ * Empty when we're at the root level (no parent to enumerate).
+ */
+const siblingFolders = computed<string[]>(() => {
+  const current = browsePath.value;
+  const root    = rootDir.value;
+  if (!current || current === root) return [];
+
+  // Parent is everything up to the last slash segment.
+  const parent = current.slice(0, current.lastIndexOf("/"));
+  if (!parent) return [];
+
+  const seen = new Set<string>();
+  for (const f of imageStore.folders) {
+    if (!f.folderPath.startsWith(parent + "/")) continue;
+    if (f.isExcluded && !imageStore.showExcludedFolders) continue;
+    const remainder = f.folderPath.slice(parent.length + 1);
+    const segment   = remainder.split("/")[0];
+    seen.add(parent + "/" + segment);
+  }
+  return [...seen].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+});
+
+const prevFolder = computed<string | null>(() => {
+  const idx = siblingFolders.value.indexOf(browsePath.value);
+  return idx > 0 ? siblingFolders.value[idx - 1] : null;
+});
+
+const nextFolder = computed<string | null>(() => {
+  const idx = siblingFolders.value.indexOf(browsePath.value);
+  return idx !== -1 && idx < siblingFolders.value.length - 1 ? siblingFolders.value[idx + 1] : null;
+});
+
 /** Flat sorted list of all folders for the quick-jump dropdown. */
 const sortedFolders = computed(() =>
   imageStore.folders
@@ -992,6 +1027,29 @@ async function fillSlot(slotId: string) {
           <ChevronRight v-if="i < breadcrumbs.length - 1" class="h-3.5 w-3.5 shrink-0 text-slate-600" />
         </template>
       </nav>
+
+      <!-- Prev / Next sibling folder buttons -->
+      <div v-if="siblingFolders.length > 1" class="ml-auto flex shrink-0 items-center gap-1">
+        <button
+          class="button h-6 w-6 p-0"
+          :disabled="!prevFolder"
+          :title="prevFolder ? '← ' + prevFolder.split('/').pop() : 'No previous folder'"
+          @click="prevFolder && navigateTo(prevFolder)"
+        >
+          <ChevronLeft class="h-3.5 w-3.5" />
+        </button>
+        <span class="text-[11px] text-slate-500 tabular-nums">
+          {{ siblingFolders.indexOf(browsePath) + 1 }} / {{ siblingFolders.length }}
+        </span>
+        <button
+          class="button h-6 w-6 p-0"
+          :disabled="!nextFolder"
+          :title="nextFolder ? '→ ' + nextFolder.split('/').pop() : 'No next folder'"
+          @click="nextFolder && navigateTo(nextFolder)"
+        >
+          <ChevronRight class="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
 
     <!-- ── Sticky action toolbar (only when viewing images) ──────── -->

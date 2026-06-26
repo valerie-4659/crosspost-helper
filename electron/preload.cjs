@@ -132,6 +132,13 @@ contextBridge.exposeInMainWorld("desktop", {
      *  Returns { ok, postUrl, postId } or throws. */
     post: (params) => ipcRenderer.invoke("civitai:post", params),
   },
+  bluesky: {
+    /** Upload images and create a Bluesky post via the AT Protocol.
+     *  imagePaths: absolute local paths (max 4, compressed to ≤975 KB).
+     *  text: post body (≤300 graphemes); tags: hashtag strings (with or without #).
+     *  Returns { ok, postUrl } or throws. */
+    post: (params) => ipcRenderer.invoke("bluesky:post", params),
+  },
   files: {
     /** Copy a local file to destPath (creates parent dirs). Reveals result in Finder/Explorer. */
     copyFile: (srcPath, destPath) => ipcRenderer.invoke("files:copyFile", srcPath, destPath),

@@ -2437,6 +2437,160 @@ app.whenReady().then(() => {
     return { ok: true, postUrl, postId: postId ?? null };
   });
 
+  // ── Bluesky direct post via AT Protocol ────────────────────────────────────
+  // Authenticates with identifier + app-password, uploads images as blobs,
+  // then creates a feed post record with image embed and hashtag facets.
+  // Returns { ok, postUrl } or throws with a user-readable message.
+  ipcMain.handle("bluesky:post", async (_event, { imagePaths, text, tags }) => {
+    const db = await getDatabase();
+    const cfgRows = db.exec("SELECT key, value FROM ai_config WHERE key IN ('bluesky_identifier','bluesky_app_password')");
+    const cfg = {};
+    if (cfgRows.length && cfgRows[0].values) {
+      for (const [k, v] of cfgRows[0].values) cfg[k] = v;
+    }
+    const identifier = cfg["bluesky_identifier"] || "";
+    const appPassword = cfg["bluesky_app_password"] || "";
+    if (!identifier || !appPassword) {
+      throw new Error("Bluesky credentials not configured. Add them in Settings → Bluesky.");
+    }
+
+    const PDS = "https://bsky.social";
+
+    // ── 1. Authenticate ──────────────────────────────────────────────────────
+    const authRes = await fetch(`${PDS}/xrpc/com.atproto.server.createSession`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password: appPassword }),
+    });
+    if (!authRes.ok) {
+      const err = await authRes.json().catch(() => ({}));
+      throw new Error(`Bluesky auth failed: ${err.message || authRes.status}`);
+    }
+    const { accessJwt, did } = await authRes.json();
+
+    // ── 2. Upload images as blobs (max 4, max ~975 KB each after compression) ─
+    const blobRefs = [];
+    for (const imgPath of (imagePaths || []).slice(0, 4)) {
+      if (!fs.existsSync(imgPath)) continue;
+
+      let imageBytes;
+      try {
+        // Resize to max 2048px then compress — Bluesky hard limit is 1 000 000 bytes.
+        const thumb = await nativeImage.createThumbnailFromPath(imgPath, { width: 2048, height: 2048 });
+        if (!thumb.isEmpty()) {
+          for (const q of [90, 80, 70, 55]) {
+            const buf = thumb.toJPEG(q);
+            if (buf.length <= 975_000) { imageBytes = buf; break; }
+          }
+          if (!imageBytes) imageBytes = thumb.toJPEG(45);
+        }
+      } catch { /* fall through to raw */ }
+      if (!imageBytes) imageBytes = fs.readFileSync(imgPath);
+
+      if (imageBytes.length > 975_000) {
+        throw new Error(`Image still too large for Bluesky after compression (${Math.round(imageBytes.length / 1024)} KB). Please use a smaller image.`);
+      }
+
+      // Get native dimensions for the aspectRatio hint (optional but improves layout).
+      let width, height;
+      try {
+        const img = nativeImage.createFromPath(imgPath);
+        if (!img.isEmpty()) ({ width, height } = img.getSize());
+      } catch { /* ignore */ }
+
+      const upRes = await fetch(`${PDS}/xrpc/com.atproto.repo.uploadBlob`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${accessJwt}`, "Content-Type": "image/jpeg" },
+        body: imageBytes,
+      });
+      if (!upRes.ok) {
+        const err = await upRes.json().catch(() => ({}));
+        throw new Error(`Bluesky image upload failed: ${err.message || upRes.status}`);
+      }
+      const { blob } = await upRes.json();
+      blobRefs.push({ blob, width, height });
+    }
+
+    // ── 3. Build post text (≤300 graphemes) with hashtags appended ───────────
+    const hashTags = (tags || [])
+      .map(t => t.trim())
+      .filter(Boolean)
+      .map(t => (t.startsWith("#") ? t : `#${t}`));
+
+    let postText = (text || "").trim();
+    const tagsLine = hashTags.join(" ");
+    if (tagsLine) {
+      const combined = postText + "\n" + tagsLine;
+      postText = [...combined].slice(0, 300).join(""); // grapheme-safe slice
+    } else {
+      postText = [...postText].slice(0, 300).join("");
+    }
+
+    // ── 4. Build hashtag facets (byte-offset based, required for clickable tags)
+    const facets = [];
+    const textBuf = Buffer.from(postText, "utf8");
+    for (const tag of hashTags) {
+      const tagBuf = Buffer.from(tag, "utf8");
+      let offset = 0;
+      while (offset < textBuf.length) {
+        const idx = textBuf.indexOf(tagBuf, offset);
+        if (idx === -1) break;
+        // Only match when preceded by whitespace or at start.
+        const prev = idx > 0 ? textBuf[idx - 1] : 32;
+        if (prev === 32 || prev === 10) {
+          facets.push({
+            index: { byteStart: idx, byteEnd: idx + tagBuf.length },
+            features: [{ $type: "app.bsky.richtext.facet#tag", tag: tag.slice(1) }],
+          });
+        }
+        offset = idx + tagBuf.length;
+      }
+    }
+
+    // ── 5. Build post record ──────────────────────────────────────────────────
+    const record = {
+      $type: "app.bsky.feed.post",
+      text: postText,
+      createdAt: new Date().toISOString(),
+      langs: ["en"],
+    };
+    if (facets.length) record.facets = facets;
+    if (blobRefs.length) {
+      record.embed = {
+        $type: "app.bsky.embed.images",
+        images: blobRefs.map(({ blob, width, height }) => ({
+          alt: "",
+          image: blob,
+          ...(width && height ? { aspectRatio: { width, height } } : {}),
+        })),
+      };
+    }
+
+    // ── 6. Create record (= publish post) ────────────────────────────────────
+    const postRes = await fetch(`${PDS}/xrpc/com.atproto.repo.createRecord`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessJwt}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ repo: did, collection: "app.bsky.feed.post", record }),
+    });
+    if (!postRes.ok) {
+      const err = await postRes.json().catch(() => ({}));
+      throw new Error(`Bluesky createRecord failed: ${err.message || postRes.status}`);
+    }
+    const { uri } = await postRes.json();
+
+    // AT URI: at://did:plc:.../app.bsky.feed.post/{rkey}  → web URL
+    let postUrl = "https://bsky.app";
+    try {
+      const rkey = uri.split("/").pop();
+      postUrl = `https://bsky.app/profile/${did}/post/${rkey}`;
+    } catch { /* use fallback */ }
+
+    return { ok: true, postUrl };
+  });
+
   // ── Get image pixel dimensions ────────────────────────────────────────────
   ipcMain.handle("wavespeed:getImageDimensions", async (_event, imagePath) => {
     try {
