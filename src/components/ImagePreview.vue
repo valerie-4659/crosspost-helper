@@ -25,9 +25,12 @@ function handleDragStart(event: DragEvent) {
   // Cancel HTML5 drag to avoid the dual-drag freeze on macOS.
   event.preventDefault();
 
-  const iconPath = props.image?.thumbnailUrl?.startsWith("localfile://")
-    ? decodeURIComponent(props.image.thumbnailUrl.slice("localfile://".length))
-    : undefined;
+  let iconPath: string | undefined;
+  if (props.image?.thumbnailUrl?.startsWith("localfile://")) {
+    let p = decodeURIComponent(props.image.thumbnailUrl.slice("localfile://".length));
+    if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1);
+    iconPath = p;
+  }
 
   window.desktop.core.startDrag([localPath], iconPath);
 }

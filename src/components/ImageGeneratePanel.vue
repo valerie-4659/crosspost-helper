@@ -179,7 +179,13 @@ onUnmounted(() => {
   window.desktop.wavespeed.offImageJobUpdated();
 });
 
-watch(() => props.imagePaths[0], () => { detectAspectFromImage(); resetWavespeed(); });
+watch(() => props.imagePaths[0], () => {
+  generatedPrompt.value = "";
+  generateError.value   = "";
+  instructions.value    = "";
+  detectAspectFromImage();
+  resetWavespeed();
+});
 
 // ── Prompt generation ─────────────────────────────────────────────────────────
 async function generate() {
@@ -216,7 +222,7 @@ function revealSourceImage() {
 // ── Wavespeed submission ──────────────────────────────────────────────────────
 async function submitToWavespeed() {
   const imagePath = props.imagePaths[0];
-  if (!generatedPrompt.value) return;
+  if (!imagePath && !generatedPrompt.value) return;
   wsSubmitting.value = true;
   wsSubmitted.value  = false;
   wsError.value      = "";
@@ -278,6 +284,10 @@ async function downloadToSourceFolder() {
   }
 }
 
+function revealDownloadedPath() {
+  if (wsDownloadedPath.value) window.desktop.opener.revealItemInDir(wsDownloadedPath.value);
+}
+
 async function copyResultUrl() {
   if (!wsTrackedResultUrl.value) return;
   await navigator.clipboard.writeText(wsTrackedResultUrl.value).catch(() => {});
@@ -289,24 +299,14 @@ async function copyResultUrl() {
 <template>
   <div class="space-y-3">
 
-    <!-- Model selector -->
+    <!-- Model selector (compact select) -->
     <div>
       <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Image Model</p>
-      <div class="flex flex-wrap gap-1.5">
-        <button
-          v-for="m in IMAGE_MODELS" :key="m.value"
-          class="relative rounded-lg border px-2.5 py-1 text-[11px] font-medium transition flex items-center gap-1"
-          :class="selectedModel === m.value
-            ? 'border-sky-400/60 bg-sky-400/15 text-sky-300'
-            : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200'"
-          @click="selectedModel = m.value"
-        >
-          {{ m.label }}
-          <span v-if="m.badge" class="text-[9px] font-bold leading-none px-1 py-0.5 rounded"
-            :class="m.badge === 'NEW' ? 'bg-violet-500/30 text-violet-300' : 'bg-orange-500/30 text-orange-300'"
-          >{{ m.badge }}</span>
-        </button>
-      </div>
+      <select v-model="selectedModel" class="field w-full text-xs py-1.5">
+        <option v-for="m in IMAGE_MODELS" :key="m.value" :value="m.value">
+          {{ m.label }}{{ m.badge ? ` [${m.badge}]` : '' }}
+        </option>
+      </select>
     </div>
 
     <!-- Reference image checkbox -->
@@ -426,17 +426,18 @@ async function copyResultUrl() {
       {{ generateError }}
     </div>
 
-    <!-- Prompt result -->
-    <div v-if="generatedPrompt" class="space-y-2 rounded-xl border border-sky-500/20 bg-panel p-4">
+    <!-- Prompt — always visible; AI generation optional -->
+    <div class="space-y-2 rounded-xl border border-sky-500/20 bg-panel p-4">
       <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-        Recreation prompt <span class="normal-case font-normal text-slate-600">— edit before sending</span>
+        Recreation prompt <span class="normal-case font-normal text-slate-600">— edit or type manually, AI analysis optional</span>
       </p>
       <textarea
         v-model="generatedPrompt"
-        rows="7"
-        class="w-full resize-y rounded-md border border-line bg-panelSoft px-2.5 py-2 text-xs leading-relaxed text-slate-200 focus:border-sky-400/60 focus:outline-none transition"
+        rows="6"
+        class="w-full resize-y rounded-md border border-line bg-panelSoft px-2.5 py-2 text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-sky-400/60 focus:outline-none transition"
+        placeholder="Type your recreation prompt here, or click Analyse above to generate one with AI…"
       />
-      <div class="flex items-center gap-2 border-t border-line pt-2.5">
+      <div v-if="generatedPrompt" class="flex items-center gap-2 border-t border-line pt-2.5">
         <button
           class="button h-7 flex-1 gap-1.5 px-2.5 text-xs"
           :class="copied ? 'border-mint/60 bg-mint/10 text-mint' : ''"
@@ -446,13 +447,13 @@ async function copyResultUrl() {
           {{ copied ? 'Copied!' : 'Copy' }}
         </button>
         <button class="button h-7 gap-1 px-2.5 text-xs ml-auto" @click="generatedPrompt = ''; generateError = ''; resetWavespeed()">
-          <X class="h-3 w-3" />Discard
+          <X class="h-3 w-3" />Clear
         </button>
       </div>
     </div>
 
     <!-- ── Send to Wavespeed ── -->
-    <div v-if="generatedPrompt && wavespeedAvailable" class="space-y-2.5 rounded-xl border border-sky-500/20 bg-panel p-4">
+    <div v-if="wavespeedAvailable" class="space-y-2.5 rounded-xl border border-sky-500/20 bg-panel p-4">
       <p class="text-[10px] font-semibold uppercase tracking-wide text-sky-400/70">
         Recreate via Wavespeed
         <span v-if="modelCaps.sizeMode === 'aspect'" class="normal-case font-normal text-slate-600"> — {{ selectedAspect }} · {{ selectedResolution.toUpperCase() }}</span>
@@ -531,7 +532,7 @@ async function copyResultUrl() {
           <button
             v-else
             class="button h-7 flex-1 gap-1.5 px-2 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
-            @click="window.desktop.opener.revealItemInDir(wsDownloadedPath!)"
+            @click="revealDownloadedPath"
           >
             <FolderOpen class="h-3 w-3" /> Reveal in Finder
           </button>
@@ -562,7 +563,7 @@ async function copyResultUrl() {
       <p v-if="wsError" class="text-xs text-rose">{{ wsError }}</p>
     </div>
 
-    <p v-else-if="generatedPrompt && !wavespeedAvailable" class="text-center text-[11px] text-slate-600">
+    <p v-if="!wavespeedAvailable" class="text-center text-[11px] text-slate-600">
       Add a Wavespeed API key in <strong class="text-slate-500">Settings → Wavespeed AI</strong> to recreate directly.
     </p>
   </div>

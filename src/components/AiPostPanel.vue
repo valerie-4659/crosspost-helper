@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref, watch } from "vue";
 import { BookOpen, Check, ChevronDown, Copy, Maximize2, Plus, Send, Sparkles, Trash2, X } from "lucide-vue-next";
 import { useAiStore } from "@/stores/aiStore";
 import type { StoryDecision } from "@/types/aiSettings";
@@ -350,6 +350,30 @@ onMounted(async () => {
   if (!ai.storylinesLoaded)  await ai.loadStorylines();
   if (!ai.configLoaded)      await ai.loadConfig();
 });
+
+// ── Reset inputs when the image changes ──────────────────────────────────────
+// Tracks the joined path string so we only reset on a real image change,
+// not on incidental re-renders with the same paths.
+watch(
+  () => props.imagePaths.join("|"),
+  (newKey, oldKey) => {
+    if (!oldKey || newKey === oldKey) return; // skip initial mount / no-op
+    hint.value             = "";
+    hintMode.value         = "context";
+    aiInstructions.value   = "";
+    postType.value         = "engagement";
+    perspective.value      = "";
+    selectedOcNames.value  = [];
+    qtEventName.value      = "";
+    qtTagger.value         = "";
+    customMaxChars.value   = 180;
+    selectedStorylineId.value = null;
+    decisions.value        = [];
+    useDecisions.value     = false;
+    queueError.value       = "";
+    ai.clearGeneratedPost();
+  },
+);
 </script>
 
 <template>
@@ -740,6 +764,7 @@ onMounted(async () => {
             {{ sendDone ? 'Queued!' : 'Send to Plugin' }}
           </button>
           <button
+            v-if="networkName"
             class="button w-full gap-1.5 px-2.5 text-xs"
             :title="`Mark as posted on ${networkName || network}`"
             @click="emit('mark')"

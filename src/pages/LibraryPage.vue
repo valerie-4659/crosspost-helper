@@ -127,6 +127,10 @@ async function copyTopazResultToSource(job: TopazTrackedJob, idx: number) {
   }
 }
 
+function revealJobPath(p: string) {
+  window.desktop.opener.revealItemInDir(p);
+}
+
 // Persist Topaz settings whenever they change (prompt is image-specific — not saved).
 watch(
   [topazUIModel, topazStdCreativity, topazRlmCreativity, topazW3Enhancement, topazScale, topazOutputs, topazPreserveFaces, topazFormat],
@@ -1858,7 +1862,7 @@ async function fillSlot(slotId: string) {
                   <button
                     v-else
                     class="button h-7 w-full gap-1.5 px-2.5 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
-                    @click="window.desktop.opener.revealItemInDir(job.saved_path!)"
+                    @click="revealJobPath(job.saved_path!)"
                   >
                     <FolderOpen class="h-3 w-3" /> Reveal in Finder
                   </button>

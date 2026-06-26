@@ -67,8 +67,13 @@ onUnmounted(() => {
   window.desktop.wavespeed.offJobUpdated();
 });
 
-// Reset tracked job whenever the source image changes (new pick / alternative).
-watch(() => props.imagePaths, () => { resetWavespeed(); }, { deep: true });
+// Reset all transient state whenever the source image changes.
+watch(() => props.imagePaths, () => {
+  generatedPrompt.value = "";
+  generateError.value   = "";
+  instructions.value    = "";
+  resetWavespeed();
+}, { deep: true });
 
 async function generate() {
   if (!props.imagePaths.length) return;
@@ -115,7 +120,7 @@ const setPage = inject<(page: AppPage) => void>("setPage");
 
 async function submitToWavespeed() {
   const imagePath = props.imagePaths[0];
-  if (!imagePath || !generatedPrompt.value) return;
+  if (!imagePath) return;
   wsSubmitting.value = true;
   wsSubmitted.value  = false;
   wsError.value      = "";
@@ -159,40 +164,28 @@ async function copyVideoUrl() {
   wsCopiedUrl.value = true;
   setTimeout(() => (wsCopiedUrl.value = false), 2000);
 }
+
+function openTrackedVideoUrl() {
+  if (wsTrackedVideoUrl.value) window.desktop.opener.openUrl(wsTrackedVideoUrl.value);
+}
 </script>
 
 <template>
   <div class="space-y-3">
-    <!-- Model selector -->
+    <!-- Model selector (compact select) -->
     <div>
       <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Target model</p>
-      <div class="flex flex-wrap gap-1.5">
-        <button
-          v-for="m in VIDEO_MODELS"
-          :key="m.value"
-          class="rounded-lg border px-2.5 py-1 text-[11px] font-medium transition"
-          :class="[
-            selectedModel === m.value
-              ? m.nsfw
-                ? 'border-rose/50 bg-rose/15 text-rose'
-                : 'border-accent bg-accent/15 text-accent'
-              : 'border-line bg-panel text-slate-400 hover:border-slate-500 hover:text-slate-200',
-          ]"
-          @click="selectedModel = m.value as VideoModelValue"
-        >
-          {{ m.label }}
-          <span v-if="m.nsfw" class="ml-1 text-[10px] opacity-70">🔞</span>
-        </button>
-      </div>
+      <select v-model="selectedModel" class="field w-full text-xs py-1.5">
+        <option v-for="m in VIDEO_MODELS" :key="m.value" :value="m.value">
+          {{ m.label }}{{ m.nsfw ? ' 🔞' : '' }}
+        </option>
+      </select>
       <!-- Content policy note -->
       <p v-if="modelCfg.nsfw" class="mt-1 text-[11px] text-rose/70">
         Explicit content allowed — prompt will include uncensored descriptions.
       </p>
       <p v-else-if="modelCfg.strictChinese" class="mt-1 text-[11px] text-amber-500/70">
         Chinese-operated model — prompts are strictly family-safe, no suggestive language.
-      </p>
-      <p v-else class="mt-1 text-[11px] text-slate-600">
-        Content-safe — explicit terms replaced with tasteful alternatives.
       </p>
     </div>
 
@@ -236,22 +229,23 @@ async function copyVideoUrl() {
       </button>
     </div>
 
-    <!-- Error -->
+    <!-- Generate error -->
     <div v-if="generateError" class="rounded-lg border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">
       {{ generateError }}
     </div>
 
-    <!-- Result -->
-    <div v-if="generatedPrompt" class="space-y-2 rounded-xl border border-accent/20 bg-panel p-4">
+    <!-- Prompt textarea — always editable; AI generation populates it, manual input also works -->
+    <div class="space-y-2 rounded-xl border border-accent/20 bg-panel p-4">
       <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-        Generated prompt <span class="normal-case font-normal text-slate-600">— edit before copying</span>
+        Prompt <span class="normal-case font-normal text-slate-600">— edit or type manually, AI generation optional</span>
       </p>
       <textarea
         v-model="generatedPrompt"
-        rows="8"
-        class="w-full resize-y rounded-md border border-line bg-panelSoft px-2.5 py-2 text-xs leading-relaxed text-slate-200 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+        rows="6"
+        class="w-full resize-y rounded-md border border-line bg-panelSoft px-2.5 py-2 text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+        placeholder="Type your video prompt here, or click Generate above to create one with AI…"
       />
-      <div class="flex items-center gap-2 border-t border-line pt-2.5">
+      <div v-if="generatedPrompt" class="flex items-center gap-2 border-t border-line pt-2.5">
         <button
           class="button h-7 flex-1 gap-1.5 px-2.5 text-xs"
           :class="copied ? 'border-mint/60 bg-mint/10 text-mint' : ''"
@@ -261,14 +255,14 @@ async function copyVideoUrl() {
           {{ copied ? 'Copied!' : 'Copy prompt' }}
         </button>
         <button class="button h-7 gap-1 px-2.5 text-xs ml-auto" @click="generatedPrompt = ''; generateError = ''; resetWavespeed()">
-          <X class="h-3 w-3" />Discard
+          <X class="h-3 w-3" />Clear
         </button>
       </div>
     </div>
 
     <!-- ── Send to Wavespeed ─────────────────────────────────────────────── -->
     <div
-      v-if="generatedPrompt && wavespeedAvailable"
+      v-if="wavespeedAvailable"
       class="space-y-2.5 rounded-xl border border-violet-500/20 bg-panel p-4"
     >
       <p class="text-[10px] font-semibold uppercase tracking-wide text-violet-400/70">
@@ -400,7 +394,7 @@ async function copyVideoUrl() {
         <div v-if="wsTrackedVideoUrl" class="flex gap-1.5">
           <button
             class="button h-7 flex-1 gap-1.5 px-2 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
-            @click="window.desktop.opener.openUrl(wsTrackedVideoUrl!)"
+            @click="openTrackedVideoUrl"
           >
             <ExternalLink class="h-3 w-3" /> Open Video
           </button>
@@ -435,7 +429,7 @@ async function copyVideoUrl() {
 
     <!-- Wavespeed not configured hint -->
     <p
-      v-else-if="generatedPrompt && !wavespeedAvailable"
+      v-if="!wavespeedAvailable"
       class="text-center text-[11px] text-slate-600"
     >
       Add a Wavespeed API key in <strong class="text-slate-500">Settings → Wavespeed AI</strong> to send directly.

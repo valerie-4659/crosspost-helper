@@ -296,19 +296,19 @@ const _savedPickerTopaz  = _loadPickerTopaz();
 const showAiPanel    = ref<boolean>(_savedPickerPanels.showAiPanel    ?? false);
 const showVideoPanel = ref<boolean>(_savedPickerPanels.showVideoPanel ?? false);
 const showImagePanel = ref<boolean>(_savedPickerPanels.showImagePanel ?? false);
+const showTopazPanel = ref<boolean>(_savedPickerPanels.showTopazPanel ?? false);
 
-watch([showAiPanel, showVideoPanel, showImagePanel], () => {
+watch([showAiPanel, showVideoPanel, showImagePanel, showTopazPanel], () => {
   localStorage.setItem(LS_PICKER_PANELS, JSON.stringify({
     showAiPanel:    showAiPanel.value,
     showVideoPanel: showVideoPanel.value,
     showImagePanel: showImagePanel.value,
+    showTopazPanel: showTopazPanel.value,
   }));
 });
 
-// ── Topaz Upscale Modal (fire-and-forget) ─────────────────────────────────
+// ── Topaz Upscale Panel (inline, like Video/Recreate) ─────────────────────
 type TopazUIModel = "standard" | "realism" | "wonder3";
-
-const showTopazModal        = ref(false);
 const topazUIModel          = ref<TopazUIModel>((_savedPickerTopaz.topazUIModel        as TopazUIModel) ?? "standard");
 const topazStdCreativity    = ref<"subtle"|"low"|"medium"|"high"|"max">(_savedPickerTopaz.topazStdCreativity ?? "medium");
 const topazRlmCreativity    = ref<"low"|"medium"|"high"|"max">(_savedPickerTopaz.topazRlmCreativity           ?? "medium");
@@ -354,6 +354,10 @@ async function copyTopazResultToSource(job: TopazTrackedJob, idx: number) {
   }
 }
 
+function revealJobPath(p: string) {
+  window.desktop.opener.revealItemInDir(p);
+}
+
 // Persist Topaz settings whenever they change (prompt is image-specific — not saved).
 watch(
   [topazUIModel, topazStdCreativity, topazRlmCreativity, topazW3Enhancement, topazScale, topazOutputs, topazPreserveFaces, topazFormat],
@@ -375,18 +379,24 @@ const TOPAZ_API_MODEL = computed(() => ({
   standard: "Standard V2", realism: "Bloom Realism", wonder3: "Wonder 3",
 }[topazUIModel.value] as string));
 
-function openTopazModal() {
-  // Only clear transient state — persisted settings are restored from localStorage.
+// Reset Topaz transient state when the active image changes.
+// Persisted settings (model, scale, format, …) are intentionally kept.
+watch(() => activeImage.value?.id, (newId, oldId) => {
+  if (!oldId || newId === oldId) return;
   topazPrompt.value           = "";
   topazSubmitError.value      = "";
   topazGeneratingPrompt.value = false;
   topazTrackedJobs.value      = [];
-  showTopazModal.value        = true;
-}
+});
 
-function closeTopazModal() {
-  showTopazModal.value   = false;
-  topazTrackedJobs.value = [];
+function toggleTopazPanel() {
+  showTopazPanel.value = !showTopazPanel.value;
+  if (showTopazPanel.value) {
+    // Close other panels — content is preserved (v-show keeps them mounted).
+    showAiPanel.value    = false;
+    showVideoPanel.value = false;
+    showImagePanel.value = false;
+  }
 }
 
 async function generateTopazPrompt() {
@@ -435,7 +445,6 @@ async function submitTopazUpscale() {
       });
       topazTrackedJobs.value.push({ localId: result.localId, status: "processing", result_path: null, error_msg: null });
     }
-    // Modal stays open — live status is shown inside it.
   } catch (e: unknown) {
     topazSubmitError.value = e instanceof Error ? e.message : String(e);
   }
@@ -652,10 +661,10 @@ onUnmounted(() => {
       </div>
 
       <!-- AI panel (multi-pick) -->
-      <div v-if="showAiPanel" class="shrink-0 rounded-xl border border-accent/30 bg-panel p-4">
+      <div v-show="showAiPanel" class="shrink-0 rounded-xl border border-accent/30 bg-panel p-4">
         <div class="mb-2 flex items-center justify-between">
           <p class="text-sm font-semibold text-white">AI Post Generator</p>
-          <button class="button h-6 w-6 p-0 text-xs" @click="showAiPanel = false; ai.clearGeneratedPost()"><X class="h-3 w-3" /></button>
+          <button class="button h-6 w-6 p-0 text-xs" @click="showAiPanel = false"><X class="h-3 w-3" /></button>
         </div>
         <AiPostPanel
           :image-paths="currentImagePaths()"
@@ -873,7 +882,7 @@ onUnmounted(() => {
             AI Post Generator
           </button>
 
-          <div v-if="showAiPanel" class="mt-3">
+          <div v-show="showAiPanel" class="mt-3">
             <!-- Platform switcher for AI panel -->
             <div class="mb-2 flex items-center gap-2">
               <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500 shrink-0">Platform</p>
@@ -891,22 +900,30 @@ onUnmounted(() => {
             <AiPostPanel
               :image-paths="currentImagePaths()"
               :network="targets.activeTarget?.type ?? 'x'"
-              :network-name="activeTargetName"
               :disabled="!activeImage"
-              @mark="markWithAlternative"
             />
-            <!-- Bottom send shortcut — avoids scrolling up after generating -->
-            <button
-              v-if="ai.generatedPost"
-              class="mt-2 button w-full gap-1.5 text-xs"
-              :class="sendDone ? 'border-mint/60 bg-mint/10 text-mint' : (EXTENSION_TYPES.has(targets.activeTarget?.type as any) ? 'border-accent/40' : '')"
-              :disabled="!activeImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
-              @click="sendToExtension"
-            >
-              <Check v-if="sendDone" class="h-3 w-3" />
-              <Send v-else class="h-3 w-3" />
-              {{ sendDone ? 'Queued!' : 'Send to Plugin' }}
-            </button>
+            <!-- Send to Plugin first, then Mark — prevents accidental Mark clicks -->
+            <template v-if="ai.generatedPost">
+              <button
+                class="mt-2 button w-full gap-1.5 text-xs"
+                :class="sendDone ? 'border-mint/60 bg-mint/10 text-mint' : (EXTENSION_TYPES.has(targets.activeTarget?.type as any) ? 'border-accent/40' : '')"
+                :disabled="!activeImage || !targets.activeTarget || !EXTENSION_TYPES.has(targets.activeTarget.type)"
+                @click="sendToExtension"
+              >
+                <Check v-if="sendDone" class="h-3 w-3" />
+                <Send v-else class="h-3 w-3" />
+                {{ sendDone ? 'Queued!' : 'Send to Plugin' }}
+              </button>
+              <button
+                class="mt-1 button w-full gap-1.5 text-xs"
+                :disabled="!activeImage || !targets.activeTargetId"
+                :title="`Mark as posted on ${activeTargetName}`"
+                @click="markWithAlternative"
+              >
+                <Check class="h-3 w-3" />
+                Mark on {{ activeTargetName }}
+              </button>
+            </template>
           </div>
         </div>
 
@@ -923,7 +940,7 @@ onUnmounted(() => {
             Video Prompt
           </button>
 
-          <div v-if="showVideoPanel" class="mt-3">
+          <div v-show="showVideoPanel" class="mt-3">
             <VideoPromptPanel
               :image-paths="currentImagePaths()"
               :disabled="!activeImage"
@@ -944,7 +961,7 @@ onUnmounted(() => {
             Recreate Image
           </button>
 
-          <div v-if="showImagePanel" class="mt-3">
+          <div v-show="showImagePanel" class="mt-3">
             <ImageGeneratePanel
               :image-paths="currentImagePaths()"
               :disabled="!activeImage"
@@ -956,14 +973,225 @@ onUnmounted(() => {
         <div class="border-t border-line pt-3">
           <button
             class="button w-full gap-2"
-            :class="showTopazModal ? 'border-amber-500/60 bg-amber-500/10 text-amber-300' : ''"
+            :class="showTopazPanel ? 'border-amber-500/60 bg-amber-500/10 text-amber-300' : ''"
             :disabled="!activeImage || !activeImage.localPath"
             title="Upscale this image with Topaz Labs AI"
-            @click="openTopazModal"
+            @click="toggleTopazPanel"
           >
             <Zap class="h-4 w-4" />
             Upscale with Topaz
           </button>
+
+          <!-- Inline Topaz panel -->
+          <div v-show="showTopazPanel" class="mt-3 space-y-3">
+
+            <!-- 1. Model -->
+            <div class="flex flex-col gap-1.5">
+              <label class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Model</label>
+              <div class="grid grid-cols-3 gap-1.5">
+                <button
+                  v-for="m in ([{v:'standard',l:'Standard'},{v:'realism',l:'Realism'},{v:'wonder3',l:'Wonder 3'}] as const)"
+                  :key="m.v"
+                  class="rounded-lg border py-1.5 text-xs font-medium transition"
+                  :class="topazUIModel === m.v ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500 hover:text-white'"
+                  @click="topazUIModel = m.v"
+                >{{ m.l }}</button>
+              </div>
+              <p class="text-[11px] text-slate-500">
+                <template v-if="topazUIModel === 'standard'">Precision upscaling with adjustable strength. Best for clean photo enlargement.</template>
+                <template v-else-if="topazUIModel === 'realism'">AI-enhanced upscaling that restores natural texture and realism in GenAI images.</template>
+                <template v-else>Generative upscaling with multi-level enhancement. Great for heavily degraded images.</template>
+              </p>
+            </div>
+
+            <!-- 2. Creativity / Enhancement -->
+            <div class="flex flex-col gap-1.5">
+              <label class="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                {{ topazUIModel === 'wonder3' ? 'Enhancement' : 'Creativity' }}
+              </label>
+              <div v-if="topazUIModel === 'standard'" class="flex flex-wrap gap-1.5">
+                <button
+                  v-for="c in ([{v:'subtle',l:'Subtle'},{v:'low',l:'Low'},{v:'medium',l:'Medium'},{v:'high',l:'High'},{v:'max',l:'Max'}] as const)"
+                  :key="c.v"
+                  class="rounded-md border px-2.5 py-1 text-xs transition"
+                  :class="topazStdCreativity === c.v ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
+                  @click="topazStdCreativity = c.v"
+                >{{ c.l }}</button>
+              </div>
+              <div v-else-if="topazUIModel === 'realism'" class="flex flex-wrap gap-1.5">
+                <button
+                  v-for="c in ([{v:'low',l:'Low'},{v:'medium',l:'Medium'},{v:'high',l:'High'},{v:'max',l:'Max'}] as const)"
+                  :key="c.v"
+                  class="rounded-md border px-2.5 py-1 text-xs transition"
+                  :class="topazRlmCreativity === c.v ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
+                  @click="topazRlmCreativity = c.v"
+                >{{ c.l }}</button>
+              </div>
+              <div v-else class="flex gap-1.5">
+                <button
+                  v-for="e in ([{v:'low',l:'Low'},{v:'medium',l:'Medium'},{v:'high',l:'High'}] as const)"
+                  :key="e.v"
+                  class="rounded-md border px-2.5 py-1 text-xs transition"
+                  :class="topazW3Enhancement === e.v ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
+                  @click="topazW3Enhancement = e.v"
+                >{{ e.l }}</button>
+              </div>
+            </div>
+
+            <!-- 3. Scale -->
+            <div class="flex flex-col gap-1.5">
+              <label class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Scale</label>
+              <div class="flex gap-1.5">
+                <button
+                  v-for="s in ([1,2,4,6,8] as const)"
+                  :key="s"
+                  class="flex-1 rounded-md border py-1 text-xs font-semibold transition"
+                  :class="topazScale === s ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
+                  @click="topazScale = s"
+                >{{ s }}×</button>
+              </div>
+              <p class="text-[11px] text-slate-500">Output = source × scale. Max scale depends on your account plan.</p>
+            </div>
+
+            <!-- 4. Outputs (Standard / Realism only) -->
+            <div v-if="topazUIModel !== 'wonder3'" class="flex flex-col gap-1.5">
+              <label class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Outputs</label>
+              <div class="flex gap-1.5">
+                <button
+                  v-for="n in ([1,2,4] as const)"
+                  :key="n"
+                  class="w-12 rounded-md border py-1 text-xs font-semibold transition"
+                  :class="topazOutputs === n ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
+                  @click="topazOutputs = n"
+                >{{ n }}</button>
+              </div>
+              <p class="text-[11px] text-slate-500">Submits {{ topazOutputs }} variation{{ topazOutputs > 1 ? 's' : '' }} as separate queue job{{ topazOutputs > 1 ? 's' : '' }}.</p>
+            </div>
+
+            <!-- 5. Preserve Faces + Prompt (Standard / Realism) -->
+            <template v-if="topazUIModel !== 'wonder3'">
+              <label class="flex cursor-pointer items-center gap-2 select-none">
+                <input v-model="topazPreserveFaces" type="checkbox" class="h-3.5 w-3.5 accent-amber-400" aria-label="Preserve Faces" />
+                <span class="text-xs text-slate-300">Preserve Faces <span class="text-slate-500">(face recovery model)</span></span>
+              </label>
+
+              <div class="flex flex-col gap-1.5">
+                <div class="flex items-center justify-between">
+                  <label class="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                    Image Description <span class="normal-case font-normal text-slate-600">(optional)</span>
+                  </label>
+                  <button
+                    class="flex h-6 items-center gap-1 rounded-md border border-line px-2 text-[11px] text-slate-400 transition hover:border-accent/50 hover:text-accent disabled:opacity-50"
+                    :disabled="!activeImage?.localPath || topazGeneratingPrompt"
+                    @click="generateTopazPrompt"
+                  >
+                    <Sparkles class="h-3 w-3" />
+                    {{ topazGeneratingPrompt ? 'Generating…' : 'AI Generate' }}
+                  </button>
+                </div>
+                <textarea
+                  v-model="topazPrompt"
+                  rows="2"
+                  class="field resize-none text-xs"
+                  placeholder="Describe the image to guide the AI model…"
+                />
+                <p class="text-[11px] text-slate-500">Helps generative models produce more targeted results.</p>
+              </div>
+            </template>
+
+            <!-- 6. Output format -->
+            <div class="flex flex-col gap-1.5">
+              <label class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Output format</label>
+              <div class="flex gap-2">
+                <label
+                  v-for="fmt in (['jpeg', 'png'] as const)"
+                  :key="fmt"
+                  class="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border py-1.5 text-xs transition"
+                  :class="topazFormat === fmt ? 'border-amber-500/60 bg-amber-500/10 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
+                >
+                  <input v-model="topazFormat" type="radio" :value="fmt" class="sr-only" :aria-label="`Output format ${fmt}`" />
+                  {{ fmt.toUpperCase() }}
+                </label>
+              </div>
+            </div>
+
+            <!-- Error -->
+            <div v-if="topazSubmitError" class="rounded-md border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">
+              {{ topazSubmitError }}
+            </div>
+
+            <!-- Submit / job status -->
+            <template v-if="topazTrackedJobs.length === 0">
+              <button
+                class="w-full flex items-center justify-center gap-1.5 rounded-lg border border-amber-500/60 bg-amber-500/15 py-2 text-xs font-semibold text-amber-300 transition hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="!activeImage?.localPath"
+                @click="submitTopazUpscale"
+              >
+                <Zap class="h-3.5 w-3.5" />
+                Queue {{ topazOutputs > 1 && topazUIModel !== 'wonder3' ? topazOutputs + '× ' : '' }}Upscale Job{{ topazOutputs > 1 && topazUIModel !== 'wonder3' ? 's' : '' }}
+              </button>
+            </template>
+
+            <!-- Live job status (after submit) -->
+            <div v-if="topazTrackedJobs.length > 0" class="space-y-2 border-t border-line pt-3">
+              <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                {{ topazTrackedJobs.length === 1 ? 'Job status' : topazTrackedJobs.length + ' jobs' }}
+              </p>
+              <div v-for="(job, idx) in topazTrackedJobs" :key="job.localId" class="space-y-1.5">
+                <div
+                  class="flex items-center gap-2 rounded-lg border px-3 py-2"
+                  :class="{
+                    'border-amber-500/30 bg-amber-500/10': job.status === 'processing',
+                    'border-mint/30 bg-mint/10':           job.status === 'completed',
+                    'border-rose/30 bg-rose/10':           job.status === 'failed',
+                  }"
+                >
+                  <span
+                    class="h-2 w-2 shrink-0 rounded-full"
+                    :class="{
+                      'bg-amber-400 animate-pulse': job.status === 'processing',
+                      'bg-mint':                    job.status === 'completed',
+                      'bg-rose':                    job.status === 'failed',
+                    }"
+                  />
+                  <span
+                    class="flex-1 text-xs font-medium"
+                    :class="{
+                      'text-amber-300': job.status === 'processing',
+                      'text-mint':      job.status === 'completed',
+                      'text-rose':      job.status === 'failed',
+                    }"
+                  >
+                    <template v-if="topazTrackedJobs.length > 1">#{{ idx + 1 }} — </template>
+                    {{ job.status === 'processing' ? 'Upscaling…' : job.status === 'completed' ? 'Done!' : 'Failed' }}
+                  </span>
+                </div>
+                <template v-if="job.status === 'completed' && job.result_path">
+                  <button
+                    v-if="!job.saved_path"
+                    class="button h-7 w-full gap-1.5 px-2.5 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20 disabled:opacity-50"
+                    :disabled="job.saving"
+                    @click="copyTopazResultToSource(job, idx)"
+                  >
+                    <FolderOpen class="h-3 w-3" :class="job.saving ? 'animate-pulse' : ''" />
+                    {{ job.saving ? 'Saving…' : 'Save to source folder' }}
+                  </button>
+                  <button
+                    v-else
+                    class="button h-7 w-full gap-1.5 px-2.5 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
+                    @click="revealJobPath(job.saved_path!)"
+                  >
+                    <FolderOpen class="h-3 w-3" /> Reveal in Finder
+                  </button>
+                </template>
+                <p v-if="job.status === 'failed' && job.error_msg" class="text-[11px] text-rose px-1">{{ job.error_msg }}</p>
+              </div>
+              <button class="button h-7 w-full text-xs" @click="topazTrackedJobs = []; topazSubmitError = ''">
+                New Job
+              </button>
+            </div>
+
+          </div><!-- end inline Topaz panel -->
         </div>
 
         <div v-if="picker.error" class="rounded-md border border-gold/40 bg-gold/10 p-3 text-sm text-gold">
@@ -1151,240 +1379,5 @@ onUnmounted(() => {
     </Transition>
   </Teleport>
 
-  <!-- ── Topaz Upscale Modal ──────────────────────────────────────────────── -->
-  <Teleport to="body">
-    <Transition enter-active-class="transition-opacity duration-150" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-100" leave-to-class="opacity-0">
-      <div v-if="showTopazModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" @click.self="closeTopazModal">
-        <div class="surface flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-line shadow-2xl">
-          <!-- Header -->
-          <div class="flex shrink-0 items-center justify-between border-b border-line px-4 py-3">
-            <div class="flex items-center gap-2">
-              <Zap class="h-4 w-4 text-amber-400" />
-              <h3 class="text-sm font-semibold text-white">Upscale with Topaz Labs</h3>
-            </div>
-            <button class="button h-7 w-7 p-0" @click="closeTopazModal"><X class="h-4 w-4" /></button>
-          </div>
-
-          <!-- Scrollable body -->
-          <div class="flex flex-col gap-4 overflow-y-auto p-4">
-            <p class="truncate text-xs text-slate-400">
-              <span class="text-slate-500">Image:</span> {{ activeImage?.filename }}
-            </p>
-
-            <!-- ── 1. Model ────────────────────────────────────────────── -->
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-medium text-slate-400">Model</label>
-              <div class="grid grid-cols-3 gap-2">
-                <button
-                  v-for="m in ([{v:'standard',l:'Standard'},{v:'realism',l:'Realism'},{v:'wonder3',l:'Wonder 3'}] as const)"
-                  :key="m.v"
-                  class="rounded-lg border py-2 text-xs font-medium transition"
-                  :class="topazUIModel === m.v ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500 hover:text-white'"
-                  @click="topazUIModel = m.v"
-                >{{ m.l }}</button>
-              </div>
-              <p class="text-[11px] text-slate-500">
-                <template v-if="topazUIModel === 'standard'">Precision upscaling with adjustable strength. Best for clean photo enlargement.</template>
-                <template v-else-if="topazUIModel === 'realism'">AI-enhanced upscaling that restores natural texture and realism in GenAI images.</template>
-                <template v-else>Generative upscaling with multi-level enhancement. Great for heavily degraded images.</template>
-              </p>
-            </div>
-
-            <!-- ── 2. Creativity / Enhancement ────────────────────────── -->
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-medium text-slate-400">
-                {{ topazUIModel === 'wonder3' ? 'Enhancement Level' : 'Creativity' }}
-              </label>
-              <div v-if="topazUIModel === 'standard'" class="flex flex-wrap gap-1.5">
-                <button
-                  v-for="c in ([{v:'subtle',l:'Subtle'},{v:'low',l:'Low'},{v:'medium',l:'Medium'},{v:'high',l:'High'},{v:'max',l:'Max'}] as const)"
-                  :key="c.v"
-                  class="rounded-md border px-3 py-1 text-xs transition"
-                  :class="topazStdCreativity === c.v ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
-                  @click="topazStdCreativity = c.v"
-                >{{ c.l }}</button>
-              </div>
-              <div v-else-if="topazUIModel === 'realism'" class="flex flex-wrap gap-1.5">
-                <button
-                  v-for="c in ([{v:'low',l:'Low'},{v:'medium',l:'Medium'},{v:'high',l:'High'},{v:'max',l:'Max'}] as const)"
-                  :key="c.v"
-                  class="rounded-md border px-3 py-1 text-xs transition"
-                  :class="topazRlmCreativity === c.v ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
-                  @click="topazRlmCreativity = c.v"
-                >{{ c.l }}</button>
-              </div>
-              <div v-else class="flex gap-1.5">
-                <button
-                  v-for="e in ([{v:'low',l:'Low'},{v:'medium',l:'Medium'},{v:'high',l:'High'}] as const)"
-                  :key="e.v"
-                  class="rounded-md border px-3 py-1 text-xs transition"
-                  :class="topazW3Enhancement === e.v ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
-                  @click="topazW3Enhancement = e.v"
-                >{{ e.l }}</button>
-              </div>
-            </div>
-
-            <!-- ── 3. Scale ────────────────────────────────────────────── -->
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-medium text-slate-400">Scale</label>
-              <div class="flex gap-1.5">
-                <button
-                  v-for="s in ([1,2,4,6,8] as const)"
-                  :key="s"
-                  class="w-12 rounded-md border py-1 text-xs font-semibold transition"
-                  :class="topazScale === s ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
-                  @click="topazScale = s"
-                >{{ s }}×</button>
-              </div>
-              <p class="text-[11px] text-slate-500">Output dimensions = source × scale. Max scale depends on your account plan.</p>
-            </div>
-
-            <!-- ── 4. Outputs (Standard / Realism only) ───────────────── -->
-            <div v-if="topazUIModel !== 'wonder3'" class="flex flex-col gap-1.5">
-              <label class="text-xs font-medium text-slate-400">Outputs</label>
-              <div class="flex gap-1.5">
-                <button
-                  v-for="n in ([1,2,4] as const)"
-                  :key="n"
-                  class="w-12 rounded-md border py-1 text-xs font-semibold transition"
-                  :class="topazOutputs === n ? 'border-amber-500/60 bg-amber-500/15 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
-                  @click="topazOutputs = n"
-                >{{ n }}</button>
-              </div>
-              <p class="text-[11px] text-slate-500">Submits {{ topazOutputs }} variation{{ topazOutputs > 1 ? 's' : '' }} as separate queue job{{ topazOutputs > 1 ? 's' : '' }}.</p>
-            </div>
-
-            <!-- ── 5. Preserve Faces + Prompt (Standard / Realism) ────── -->
-            <template v-if="topazUIModel !== 'wonder3'">
-              <label class="flex cursor-pointer items-center gap-2.5">
-                <input v-model="topazPreserveFaces" type="checkbox" class="h-3.5 w-3.5 accent-amber-400" aria-label="Preserve Faces" />
-                <span class="text-xs text-slate-300">Preserve Faces <span class="text-slate-500">(face recovery model)</span></span>
-              </label>
-
-              <div class="flex flex-col gap-1.5">
-                <div class="flex items-center justify-between">
-                  <label class="text-xs font-medium text-slate-400">Image Description <span class="font-normal text-slate-600">(optional)</span></label>
-                  <button
-                    class="flex h-6 items-center gap-1 rounded-md border border-line px-2 text-[11px] text-slate-400 transition hover:border-accent/50 hover:text-accent disabled:opacity-50"
-                    :disabled="!activeImage?.localPath || topazGeneratingPrompt"
-                    @click="generateTopazPrompt"
-                  >
-                    <Sparkles class="h-3 w-3" />
-                    {{ topazGeneratingPrompt ? 'Generating…' : 'AI Generate' }}
-                  </button>
-                </div>
-                <textarea
-                  v-model="topazPrompt"
-                  rows="2"
-                  class="field resize-none text-xs"
-                  placeholder="Describe the image to guide the AI model…"
-                />
-                <p class="text-[11px] text-slate-500">Helps generative models produce more targeted results.</p>
-              </div>
-            </template>
-
-            <!-- ── 6. Output format ────────────────────────────────────── -->
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-medium text-slate-400">Output format</label>
-              <div class="flex gap-2">
-                <label
-                  v-for="fmt in (['jpeg', 'png'] as const)"
-                  :key="fmt"
-                  class="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border py-1.5 text-xs transition"
-                  :class="topazFormat === fmt ? 'border-amber-500/60 bg-amber-500/10 text-amber-300' : 'border-line text-slate-400 hover:border-slate-500'"
-                >
-                  <input v-model="topazFormat" type="radio" :value="fmt" class="sr-only" :aria-label="`Output format ${fmt}`" />
-                  {{ fmt.toUpperCase() }}
-                </label>
-              </div>
-            </div>
-
-            <div v-if="topazSubmitError" class="rounded-md border border-rose/40 bg-rose/10 px-3 py-2 text-xs text-rose">
-              {{ topazSubmitError }}
-            </div>
-
-            <!-- ── Live job status (after submit) ──────────────────────── -->
-            <div v-if="topazTrackedJobs.length > 0" class="space-y-2 border-t border-line pt-3">
-              <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {{ topazTrackedJobs.length === 1 ? 'Job status' : topazTrackedJobs.length + ' jobs' }}
-              </p>
-              <div v-for="(job, idx) in topazTrackedJobs" :key="job.localId" class="space-y-1.5">
-                <div
-                  class="flex items-center gap-2 rounded-lg border px-3 py-2"
-                  :class="{
-                    'border-amber-500/30 bg-amber-500/10': job.status === 'processing',
-                    'border-mint/30 bg-mint/10':           job.status === 'completed',
-                    'border-rose/30 bg-rose/10':           job.status === 'failed',
-                  }"
-                >
-                  <span
-                    class="h-2 w-2 shrink-0 rounded-full"
-                    :class="{
-                      'bg-amber-400 animate-pulse': job.status === 'processing',
-                      'bg-mint':                    job.status === 'completed',
-                      'bg-rose':                    job.status === 'failed',
-                    }"
-                  />
-                  <span
-                    class="flex-1 text-xs font-medium"
-                    :class="{
-                      'text-amber-300': job.status === 'processing',
-                      'text-mint':      job.status === 'completed',
-                      'text-rose':      job.status === 'failed',
-                    }"
-                  >
-                    <template v-if="topazTrackedJobs.length > 1">#{{ idx + 1 }} — </template>
-                    {{ job.status === 'processing' ? 'Upscaling…' : job.status === 'completed' ? 'Done!' : 'Failed' }}
-                  </span>
-                </div>
-                <template v-if="job.status === 'completed' && job.result_path">
-                  <!-- Save to source folder -->
-                  <button
-                    v-if="!job.saved_path"
-                    class="button h-7 w-full gap-1.5 px-2.5 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20 disabled:opacity-50"
-                    :disabled="job.saving"
-                    @click="copyTopazResultToSource(job, idx)"
-                  >
-                    <FolderOpen class="h-3 w-3" :class="job.saving ? 'animate-pulse' : ''" />
-                    {{ job.saving ? 'Saving…' : 'Save to source folder' }}
-                  </button>
-                  <!-- After save: reveal -->
-                  <button
-                    v-else
-                    class="button h-7 w-full gap-1.5 px-2.5 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
-                    @click="window.desktop.opener.revealItemInDir(job.saved_path!)"
-                  >
-                    <FolderOpen class="h-3 w-3" /> Reveal in Finder
-                  </button>
-                </template>
-                <p v-if="job.status === 'failed' && job.error_msg" class="text-[11px] text-rose px-1">{{ job.error_msg }}</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Footer -->
-          <div class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
-            <template v-if="topazTrackedJobs.length > 0">
-              <button class="button h-8 px-3 text-sm" @click="topazTrackedJobs = []; topazSubmitError = ''">
-                New Job
-              </button>
-              <button class="button h-8 px-3 text-sm" @click="closeTopazModal">Close</button>
-            </template>
-            <template v-else>
-              <button class="button h-8 px-3 text-sm" @click="closeTopazModal">Cancel</button>
-              <button
-                class="flex h-8 items-center gap-1.5 rounded-md border border-amber-500/60 bg-amber-500/15 px-3 text-sm text-amber-300 transition hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-50"
-                :disabled="!activeImage?.localPath"
-                @click="submitTopazUpscale"
-              >
-                <Zap class="h-3.5 w-3.5" />
-                Queue {{ topazOutputs > 1 ? topazOutputs + '×' : '' }} Upscale Job{{ topazOutputs > 1 ? 's' : '' }}
-              </button>
-            </template>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
 
 </template>

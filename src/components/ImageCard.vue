@@ -18,9 +18,13 @@ function handleDragStart(event: DragEvent) {
 
     // Use cached thumbnail as drag icon (loads in <1 ms).
     const firstImg = dragImages.value[0];
-    const iconPath = firstImg.thumbnailUrl?.startsWith("localfile://")
-      ? decodeURIComponent(firstImg.thumbnailUrl.slice("localfile://".length))
-      : undefined;
+    let iconPath: string | undefined;
+    if (firstImg.thumbnailUrl?.startsWith("localfile://")) {
+      let p = decodeURIComponent(firstImg.thumbnailUrl.slice("localfile://".length));
+      // On Windows the URL encodes as /C:/... — strip the leading slash.
+      if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1);
+      iconPath = p;
+    }
     window.desktop.core.startDrag(localPaths, iconPath);
   } else {
     setImagesDragData(event, dragImages.value);

@@ -1556,6 +1556,10 @@ app.whenReady().then(() => {
 
     // startDrag only supports dragging one file at a time on all platforms.
     event.sender.startDrag({ file: paths[0], icon });
+
+    // Must set returnValue so ipcRenderer.sendSync (used on Windows) unblocks.
+    // For async ipcRenderer.send (macOS/Linux) this is silently ignored.
+    event.returnValue = null;
   });
   // ── Wavespeed AI — Image-to-Video submission ─────────────────────────────
   // Maps the app's video model keys to Wavespeed REST API endpoint slugs.
