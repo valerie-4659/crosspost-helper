@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.130",
+    date: "2026-06-26",
+    items: [
+      "fix: Windows drag & drop + button order in AI Post panel",
+    ],
+  },
+  {
     version: "0.2.129",
     date: "2026-06-25",
     items: [

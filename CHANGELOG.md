@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.130 - 2026-06-26
+
+- fix: Windows drag & drop + button order in AI Post panel
+
+
 ## v0.2.129 - 2026-06-25
 
 - feat: CivitAI direct post via MCP API (no browser extension needed)
