@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.133 - 2026-06-26
+
+- fix: autocomplete fix
+
+
 ## v0.2.132 - 2026-06-26
 
 - Release v0.2.132

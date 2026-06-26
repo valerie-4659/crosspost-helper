@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.133",
+    date: "2026-06-26",
+    items: [
+      "fix: autocomplete fix",
+    ],
+  },
+  {
     version: "0.2.132",
     date: "2026-06-26",
     items: [
