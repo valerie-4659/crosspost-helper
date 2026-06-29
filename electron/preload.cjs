@@ -65,8 +65,11 @@ contextBridge.exposeInMainWorld("desktop", {
     clearPostContent: (target) => ipcRenderer.invoke("bridge:clear-post-content", target),
     // Fired by the bridge HTTP server when the Chrome extension calls /clear-queue
     // (i.e. after the user clicks "Mark as Posted" in the extension popup).
-    onQueueCleared: (cb) => ipcRenderer.on("bridge:queue-cleared", (_e, data) => cb(data)),
-    offQueueCleared: () => ipcRenderer.removeAllListeners("bridge:queue-cleared"),
+    onQueueCleared:    (cb) => ipcRenderer.on("bridge:queue-cleared",   (_e, data) => cb(data)),
+    offQueueCleared:   ()   => ipcRenderer.removeAllListeners("bridge:queue-cleared"),
+    // Fired by the bridge HTTP server when the extension calls /mark-all-posted.
+    onImagesPosted:    (cb) => ipcRenderer.on("bridge:images-posted",   (_e, data) => cb(data)),
+    offImagesPosted:   ()   => ipcRenderer.removeAllListeners("bridge:images-posted"),
   },
   ai: {
     // Generate a post for the given network. imagePaths = absolute local paths.

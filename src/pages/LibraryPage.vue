@@ -332,12 +332,17 @@ onMounted(() => {
   // (which triggers POST /clear-queue → bridge:queue-cleared IPC event).
   window.desktop.bridge.onQueueCleared(() => clearCollection());
 
+  // Reload images when the extension marks them as posted so post-state badges
+  // update immediately without a manual Refresh.
+  window.desktop.bridge.onImagesPosted(() => imageStore.load());
+
   // Reload library when a file is auto-indexed after a download (Wavespeed, Topaz).
   window.desktop.library.onFileIndexed(() => imageStore.load());
 });
 
 onUnmounted(() => {
   window.desktop.bridge.offQueueCleared();
+  window.desktop.bridge.offImagesPosted();
   window.desktop.topaz.offJobUpdated();
   window.desktop.library.offFileIndexed();
   if (_msgTimer) clearTimeout(_msgTimer);
