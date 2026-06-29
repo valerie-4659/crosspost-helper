@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.134 - 2026-06-29
+
+- fix: react to bridge:images-posted IPC event so Library updates after extension marks posts
+- feat: merge Image/Video queues, Library UX improvements, Electron dev mode
+
+
 ## v0.2.133 - 2026-06-26
 
 - fix: autocomplete fix

@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.2.134",
+    date: "2026-06-29",
+    items: [
+      "fix: react to bridge:images-posted IPC event so Library updates after extension marks posts",
+      "feat: merge Image/Video queues, Library UX improvements, Electron dev mode",
+    ],
+  },
+  {
     version: "0.2.133",
     date: "2026-06-26",
     items: [
