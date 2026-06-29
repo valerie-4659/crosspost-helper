@@ -18,7 +18,7 @@ let database;
 let databasePath;
 let databaseInitPromise;
 
-const supportedExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+const supportedExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm", ".mov"]);
 
 function appDataPath() {
   const dir = path.join(app.getPath("userData"), "data");
@@ -46,6 +46,88 @@ async function generateThumbnail(localPath) {
     return thumbPath;
   } catch {
     return null;
+  }
+}
+
+const VIDEO_EXTS = new Set([".mp4", ".webm", ".mov"]);
+const MIME_MAP = {
+  ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+  ".webp": "image/webp", ".gif": "image/gif",
+  ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+};
+
+// Index a single downloaded file immediately without a full folder scan.
+// Finds the matching image_source by parent-folder prefix and upserts the row.
+async function indexSingleFile(filePath) {
+  try {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+    const ext = path.extname(filePath).toLowerCase();
+    const isVideo = VIDEO_EXTS.has(ext);
+    const mimeType = MIME_MAP[ext] ?? "application/octet-stream";
+    const normalizedPath = filePath.replaceAll("\\", "/");
+
+    // Find which image_source owns this file (longest matching root_path prefix).
+    const srcRows = db.exec("SELECT id, root_path FROM image_sources WHERE type = 'local_folder'");
+    let sourceId = null;
+    if (srcRows.length && srcRows[0].values) {
+      for (const [id, rootPath] of srcRows[0].values) {
+        const norm = String(rootPath).replaceAll("\\", "/").replace(/\/$/, "");
+        if (normalizedPath.startsWith(norm + "/")) { sourceId = id; break; }
+      }
+    }
+    if (!sourceId) return; // file outside any managed source — skip
+
+    const stat = fs.statSync(filePath);
+    const filename = path.basename(filePath);
+    const folderPath = path.dirname(normalizedPath);
+
+    // Thumbnail for images only — nativeImage cannot decode video.
+    let thumbnailUrl = null;
+    if (!isVideo) {
+      const thumbPath = await generateThumbnail(filePath);
+      if (thumbPath) {
+        const fwd = thumbPath.replaceAll("\\", "/");
+        const p = fwd.startsWith("/") ? fwd : "/" + fwd;
+        thumbnailUrl = "localfile://" + encodeURI(p);
+      }
+    }
+
+    // Upsert: update if already indexed, insert if new.
+    const chkStmt = db.prepare(
+      "SELECT id FROM images WHERE source_id = ? AND source_file_id = ? LIMIT 1"
+    );
+    chkStmt.bind([sourceId, normalizedPath]);
+    const existing = [];
+    while (chkStmt.step()) existing.push(chkStmt.getAsObject());
+    chkStmt.free();
+
+    if (existing[0]) {
+      db.run(
+        "UPDATE images SET thumbnail_url = COALESCE(?, thumbnail_url), indexed_at = ?, modified_at = ? WHERE id = ?",
+        [thumbnailUrl, now, stat.mtime.toISOString(), existing[0].id]
+      );
+    } else {
+      const id = `image_${crypto.randomUUID()}`;
+      const insStmt = db.prepare(
+        `INSERT INTO images (id, source_id, source_file_id, local_path, filename, folder_path,
+         mime_type, file_size, thumbnail_url, created_at, modified_at, indexed_at, rating, is_archived)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', 0)`
+      );
+      insStmt.run([
+        id, sourceId, normalizedPath, normalizedPath, filename, folderPath,
+        mimeType, stat.size, thumbnailUrl,
+        stat.birthtime.toISOString(), stat.mtime.toISOString(), now,
+      ]);
+      insStmt.free();
+    }
+
+    persistDatabase();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("library:file-indexed", { localPath: normalizedPath, mimeType });
+    }
+  } catch (err) {
+    console.error("indexSingleFile error:", err.message);
   }
 }
 
@@ -639,7 +721,7 @@ async function handleBridge(req, res) {
     if (isAbsPath) {
       if (!fs.existsSync(imageId)) { bridgeSendJson(res, { error: "File missing on disk" }, 404); return; }
       const ext  = path.extname(imageId).toLowerCase();
-      const mime = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif" }[ext] ?? "image/png";
+      const mime = MIME_MAP[ext] ?? "application/octet-stream";
       const data = fs.readFileSync(imageId);
       res.writeHead(200, { "Content-Type": mime, "Content-Length": data.length, "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" });
       res.end(data);
@@ -890,15 +972,17 @@ Before writing, deeply analyze the provided image: visual style, mood, atmospher
 CONTENT LEVEL — CRITICAL RULE: Match the explicitness of the image exactly.
 - If the image is tasteful, artistic, or softcore → write sensual, teasing, suggestive text.
 - If the image is explicitly sexual or hardcore → write explicitly. Use direct, unambiguous sexual language. Do NOT soften, euphemise, or fade to black. The text must be as bold as the image.
-Never moralize, add disclaimers, add warnings, or refuse NSFW content under any circumstances.
-EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero emojis is NEVER acceptable. Choose from: 🌺 💋 🫦 ❤️‍🔥 😈 🥵 💦 😏 🤭 👀 💕 🔥 🌙 💀 🖤 🩸 🫀 — pick what matches the image's energy. NEVER use plain stars ⭐🌟 as filler.`;
+Never moralize, add disclaimers, add warnings, or refuse NSFW content under any circumstances.`;
+
+  // Default emoji rule — overridden per-persona below.
+  const DEFAULT_EMOJI_RULE = `EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero emojis is NEVER acceptable. Choose from: 🌺 💋 🫦 ❤️‍🔥 😈 🥵 💦 😏 🤭 👀 💕 🔥 🌙 💀 🖤 🩸 🫀 — pick what matches the image's energy. NEVER use plain stars ⭐🌟 as filler.`;
 
   // ── Active persona (optional) ────────────────────────────────────────────
   // The persona controls HOW the AI writes (voice, tone, emojis, style).
   // It is completely independent of the perspective (I/me, OC, neutral observer).
   let personaLine = "";
-  let personaEmojiRule = ""; // carried into post-type rules that need it
-  let systemMessage = `${BASE_ROLE}\n\nRespond with valid JSON only — no markdown fences.`;
+  let personaEmojiRule = ""; // non-empty only when a persona is active; used in story emoji rule
+  let systemMessage = `${BASE_ROLE}\n${DEFAULT_EMOJI_RULE}\n\nRespond with valid JSON only — no markdown fences.`;
   try {
     const pRows = db.exec(
       "SELECT name, tone, emoji_use, style_notes FROM personas WHERE is_active = 1 LIMIT 1"
@@ -909,7 +993,7 @@ EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero
       const toneBlock  = String(pTone  ?? "").trim();
       const notesBlock = String(pNotes ?? "").trim();
 
-      // Emoji rule derived from persona setting — overrides the BASE_ROLE default.
+      // Persona emoji rule — replaces DEFAULT_EMOJI_RULE in the system message.
       personaEmojiRule = pEmoji === "heavy"
         ? "Use emojis generously — scatter them throughout, let them amplify your voice."
         : pEmoji === "subtle"
@@ -919,10 +1003,10 @@ EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero
       const toneLabel = toneBlock ? ` Tone: ${toneBlock}.` : "";
 
       if (notesBlock) {
-        // Full style notes present — persona voice completely replaces the generic style.
-        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}".${toneLabel} NEVER slip into neutral, generic, or AI-sounding language. Your style notes below are LAW — follow them exactly.\n\n${notesBlock}\n\nEMOJI RULE (from persona settings): ${personaEmojiRule}\n\nRespond with valid JSON only — no markdown fences.`;
+        // Full style notes present — persona voice completely defines writing style.
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}".${toneLabel} NEVER slip into neutral, generic, or AI-sounding language. Your style notes below are LAW — follow them exactly.\n\n${notesBlock}\n\nEMOJI RULE (overrides all defaults): ${personaEmojiRule}\n\nRespond with valid JSON only — no markdown fences.`;
       } else {
-        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You ARE "${pName}".${toneLabel} Write EXCLUSIVELY in ${pName}'s voice and style. NEVER use neutral or generic language.\nEMOJI RULE: ${personaEmojiRule}\nRespond with valid JSON only — no markdown fences.`;
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You ARE "${pName}".${toneLabel} Write EXCLUSIVELY in ${pName}'s voice and style. NEVER use neutral or generic language.\nEMOJI RULE (overrides all defaults): ${personaEmojiRule}\n\nRespond with valid JSON only — no markdown fences.`;
       }
 
       // Short in-character reminder repeated in the user prompt for reinforcement.
@@ -1916,10 +2000,54 @@ app.whenReady().then(() => {
     const destPath = path.join(targetDir, filename);
     fs.writeFileSync(destPath, buffer);
 
+    await indexSingleFile(destPath);
+
     // Reveal the saved file in Finder / Explorer (skip when reveal=false)
     if (reveal) shell.showItemInFolder(destPath);
 
     return { path: destPath, folder: targetDir };
+  });
+
+  // wavespeed:downloadVideo — download a completed video job to the source image's folder,
+  // using a short timestamped filename ({stem}_video_YYMMDDHHMM.mp4), then auto-index.
+  ipcMain.handle("wavespeed:downloadVideo", async (_event, localJobId) => {
+    const db = await getDatabase();
+    const stmt = db.prepare("SELECT video_url, image_path FROM wavespeed_jobs WHERE id = ? LIMIT 1");
+    stmt.bind([localJobId]);
+    const rows = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+
+    if (!rows.length || !rows[0].video_url) throw new Error("Job not found or video not ready yet.");
+    const { video_url, image_path } = rows[0];
+
+    // Destination: same folder as the source image.
+    const destDir = path.dirname(image_path);
+    const sourceStem = path.basename(image_path, path.extname(image_path));
+
+    // Short timestamp: YYMMDDHHMM
+    const now = new Date();
+    const ts = [
+      String(now.getFullYear()).slice(2),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+      String(now.getHours()).padStart(2, "0"),
+      String(now.getMinutes()).padStart(2, "0"),
+    ].join("");
+
+    const urlExt = (video_url.split("?")[0] ?? "").match(/\.(mp4|webm|mov)$/i)?.[1]?.toLowerCase() ?? "mp4";
+    const filename = `${sourceStem}_video_${ts}.${urlExt}`;
+    const destPath = path.join(destDir, filename);
+
+    const res = await fetch(video_url);
+    if (!res.ok) throw new Error(`Download failed: HTTP ${res.status} ${res.statusText}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    fs.mkdirSync(destDir, { recursive: true });
+    fs.writeFileSync(destPath, buffer);
+
+    await indexSingleFile(destPath);
+    shell.showItemInFolder(destPath);
+    return { path: destPath };
   });
 
   // files:copyFile — copy a local file to a destination path.
@@ -2072,6 +2200,7 @@ app.whenReady().then(() => {
     const ext       = outputFormat === "png" ? "png" : "jpg";
     const destPath  = path.join(destDir, `${baseName}_${modelSlug}${scaleTag}_${Date.now()}.${ext}`);
     fs.writeFileSync(destPath, buffer);
+    await indexSingleFile(destPath);
     return { path: destPath, folder: destDir };
   }
 
@@ -2468,47 +2597,92 @@ app.whenReady().then(() => {
     }
     const { accessJwt, did } = await authRes.json();
 
-    // ── 2. Upload images as blobs (max 4, max ~975 KB each after compression) ─
+    // ── 2. Upload media (video via video.bsky.app, images as blobs) ─────────────
     const blobRefs = [];
-    for (const imgPath of (imagePaths || []).slice(0, 4)) {
-      if (!fs.existsSync(imgPath)) continue;
+    const firstPath = (imagePaths || [])[0];
+    const firstExt  = firstPath ? path.extname(firstPath).toLowerCase() : "";
+    const isVideoPost = VIDEO_EXTS.has(firstExt) && firstPath && fs.existsSync(firstPath);
 
-      let imageBytes;
-      try {
-        // Resize to max 2048px then compress — Bluesky hard limit is 1 000 000 bytes.
-        const thumb = await nativeImage.createThumbnailFromPath(imgPath, { width: 2048, height: 2048 });
-        if (!thumb.isEmpty()) {
-          for (const q of [90, 80, 70, 55]) {
-            const buf = thumb.toJPEG(q);
-            if (buf.length <= 975_000) { imageBytes = buf; break; }
-          }
-          if (!imageBytes) imageBytes = thumb.toJPEG(45);
-        }
-      } catch { /* fall through to raw */ }
-      if (!imageBytes) imageBytes = fs.readFileSync(imgPath);
-
-      if (imageBytes.length > 975_000) {
-        throw new Error(`Image still too large for Bluesky after compression (${Math.round(imageBytes.length / 1024)} KB). Please use a smaller image.`);
+    if (isVideoPost) {
+      // ── 2a. Video: upload via video.bsky.app (requires service auth token) ───
+      const exp = Math.floor(Date.now() / 1000) + 600;
+      const svcAuthRes = await fetch(
+        `${PDS}/xrpc/com.atproto.server.getServiceAuth?aud=did:web:video.bsky.app&lxm=app.bsky.video.uploadVideo&exp=${exp}`,
+        { headers: { "Authorization": `Bearer ${accessJwt}` } }
+      );
+      if (!svcAuthRes.ok) {
+        const e = await svcAuthRes.json().catch(() => ({}));
+        throw new Error(`Bluesky service auth failed: ${e.message || svcAuthRes.status}`);
       }
+      const { token: videoToken } = await svcAuthRes.json();
 
-      // Get native dimensions for the aspectRatio hint (optional but improves layout).
-      let width, height;
-      try {
-        const img = nativeImage.createFromPath(imgPath);
-        if (!img.isEmpty()) ({ width, height } = img.getSize());
-      } catch { /* ignore */ }
-
-      const upRes = await fetch(`${PDS}/xrpc/com.atproto.repo.uploadBlob`, {
+      const videoBytes = fs.readFileSync(firstPath);
+      if (videoBytes.length > 50_000_000) throw new Error("Video exceeds Bluesky's 50 MB limit.");
+      const uploadRes = await fetch("https://video.bsky.app/xrpc/app.bsky.video.uploadVideo", {
         method: "POST",
-        headers: { "Authorization": `Bearer ${accessJwt}`, "Content-Type": "image/jpeg" },
-        body: imageBytes,
+        headers: { "Authorization": `Bearer ${videoToken}`, "Content-Type": "video/mp4" },
+        body: videoBytes,
       });
-      if (!upRes.ok) {
-        const err = await upRes.json().catch(() => ({}));
-        throw new Error(`Bluesky image upload failed: ${err.message || upRes.status}`);
+      if (!uploadRes.ok) {
+        const e = await uploadRes.json().catch(() => ({}));
+        throw new Error(`Bluesky video upload failed: ${e.message || uploadRes.status}`);
       }
-      const { blob } = await upRes.json();
-      blobRefs.push({ blob, width, height });
+      const { jobId } = await uploadRes.json();
+
+      // Poll until processed (max ~2 min, 5 s intervals).
+      let videoBlob = null;
+      for (let i = 0; i < 24; i++) {
+        await new Promise((r) => setTimeout(r, 5000));
+        const stRes = await fetch(
+          `https://video.bsky.app/xrpc/app.bsky.video.getJobStatus?jobId=${jobId}`,
+          { headers: { "Authorization": `Bearer ${videoToken}` } }
+        );
+        if (!stRes.ok) continue;
+        const { jobStatus } = await stRes.json();
+        if (jobStatus?.state === "JOB_STATE_COMPLETED") { videoBlob = jobStatus.blob; break; }
+        if (jobStatus?.state === "JOB_STATE_FAILED")
+          throw new Error(`Bluesky video processing failed: ${jobStatus.error ?? "unknown"}`);
+      }
+      if (!videoBlob) throw new Error("Bluesky video processing timed out. Try again later.");
+      blobRefs.push({ blob: videoBlob, isVideo: true });
+
+    } else {
+      // ── 2b. Images: compress + blob upload (max 4, ≤975 KB each) ────────────
+      for (const imgPath of (imagePaths || []).slice(0, 4)) {
+        if (!fs.existsSync(imgPath)) continue;
+
+        let imageBytes;
+        try {
+          const thumb = await nativeImage.createThumbnailFromPath(imgPath, { width: 2048, height: 2048 });
+          if (!thumb.isEmpty()) {
+            for (const q of [90, 80, 70, 55]) {
+              const buf = thumb.toJPEG(q);
+              if (buf.length <= 975_000) { imageBytes = buf; break; }
+            }
+            if (!imageBytes) imageBytes = thumb.toJPEG(45);
+          }
+        } catch { /* fall through to raw */ }
+        if (!imageBytes) imageBytes = fs.readFileSync(imgPath);
+        if (imageBytes.length > 975_000) throw new Error(`Image too large for Bluesky after compression (${Math.round(imageBytes.length / 1024)} KB).`);
+
+        let width, height;
+        try {
+          const img = nativeImage.createFromPath(imgPath);
+          if (!img.isEmpty()) ({ width, height } = img.getSize());
+        } catch { /* ignore */ }
+
+        const upRes = await fetch(`${PDS}/xrpc/com.atproto.repo.uploadBlob`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${accessJwt}`, "Content-Type": "image/jpeg" },
+          body: imageBytes,
+        });
+        if (!upRes.ok) {
+          const err = await upRes.json().catch(() => ({}));
+          throw new Error(`Bluesky image upload failed: ${err.message || upRes.status}`);
+        }
+        const { blob } = await upRes.json();
+        blobRefs.push({ blob, width, height });
+      }
     }
 
     // ── 3. Build post text (≤300 graphemes) with hashtags appended ───────────
@@ -2556,14 +2730,18 @@ app.whenReady().then(() => {
     };
     if (facets.length) record.facets = facets;
     if (blobRefs.length) {
-      record.embed = {
-        $type: "app.bsky.embed.images",
-        images: blobRefs.map(({ blob, width, height }) => ({
-          alt: "",
-          image: blob,
-          ...(width && height ? { aspectRatio: { width, height } } : {}),
-        })),
-      };
+      if (blobRefs[0].isVideo) {
+        record.embed = { $type: "app.bsky.embed.video", video: blobRefs[0].blob };
+      } else {
+        record.embed = {
+          $type: "app.bsky.embed.images",
+          images: blobRefs.map(({ blob, width, height }) => ({
+            alt: "",
+            image: blob,
+            ...(width && height ? { aspectRatio: { width, height } } : {}),
+          })),
+        };
+      }
     }
 
     // ── 6. Create record (= publish post) ────────────────────────────────────
@@ -2731,12 +2909,27 @@ app.whenReady().then(() => {
     const isWinDrive = /^\/[A-Za-z]:\//.test(withSlash);
     const filePath = isWinDrive ? withSlash.slice(1) : withSlash;
     const ext = path.extname(filePath).toLowerCase();
-    const mime = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-                   ".png": "image/png",  ".webp": "image/webp",
-                   ".gif": "image/gif" }[ext] ?? "application/octet-stream";
+    const mime = MIME_MAP[ext] ?? "application/octet-stream";
     try {
+      const stat = await fs.promises.stat(filePath);
+      const totalSize = stat.size;
+      const rangeHeader = request.headers.get("Range");
+      if (rangeHeader) {
+        const [, s, e] = rangeHeader.match(/bytes=(\d*)-(\d*)/) ?? [];
+        const start = parseInt(s || "0");
+        const end = e ? parseInt(e) : totalSize - 1;
+        const chunkSize = end - start + 1;
+        const buf = Buffer.alloc(chunkSize);
+        const fd = await fs.promises.open(filePath, "r");
+        await fd.read(buf, 0, chunkSize, start);
+        await fd.close();
+        return new Response(buf, {
+          status: 206,
+          headers: { "Content-Type": mime, "Content-Range": `bytes ${start}-${end}/${totalSize}`, "Accept-Ranges": "bytes", "Content-Length": String(chunkSize) },
+        });
+      }
       const data = await fs.promises.readFile(filePath);
-      return new Response(data, { status: 200, headers: { "Content-Type": mime } });
+      return new Response(data, { status: 200, headers: { "Content-Type": mime, "Accept-Ranges": "bytes", "Content-Length": String(totalSize) } });
     } catch {
       return new Response(null, { status: 404 });
     }

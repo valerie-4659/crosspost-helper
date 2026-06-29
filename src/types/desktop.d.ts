@@ -226,6 +226,8 @@ declare global {
         /** Download a generated image URL. Pass destDir to override ~/Pictures/WavespeedAI/.
          *  Set reveal=false to skip the Finder/Explorer reveal. */
         downloadImage(resultUrl: string, suggestedFilename?: string, reveal?: boolean, destDir?: string): Promise<{ path: string; folder: string }>;
+        /** Download a completed video job to the source image's folder, auto-index, and reveal. */
+        downloadVideo(localJobId: string): Promise<{ path: string }>;
       };
       topaz: {
         /**
@@ -277,14 +279,13 @@ declare global {
         copyFile(srcPath: string, destPath: string): Promise<{ path: string }>;
       };
       scan: {
-        /**
-         * Subscribe to per-file progress events emitted during a folder scan.
-         * `total` is null during the walk phase (total unknown) and a number
-         * during the thumbnail phase (total files found by the worker).
-         */
         onProgress(cb: (data: { scanned: number; total: number | null; currentFile: string }) => void): void;
-        /** Remove all scan:progress listeners. */
         offProgress(): void;
+      };
+      library: {
+        /** Fires after a file is auto-indexed following a download (Wavespeed, Topaz). */
+        onFileIndexed(cb: (data: { localPath: string; mimeType: string }) => void): void;
+        offFileIndexed(): void;
       };
     };
   }

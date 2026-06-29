@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, watch } from "vue";
-import { BookOpen, Check, ChevronDown, Copy, Maximize2, Plus, Send, Sparkles, Trash2, X } from "lucide-vue-next";
+import { Check, ChevronDown, Copy, Maximize2, Plus, Send, Sparkles, Trash2, X } from "lucide-vue-next";
 import { useAiStore } from "@/stores/aiStore";
 import type { StoryDecision } from "@/types/aiSettings";
 
@@ -144,7 +144,7 @@ const blueskyPosting  = ref(false);
 const blueskyPostDone = ref(false);
 
 async function postToCivitai() {
-  if (civitaiPosting.value || !props.imagePaths.length || !ai.generatedPost) return;
+  if (civitaiPosting.value || !props.imagePaths.length) return;
   queueError.value = "";
   civitaiPosting.value = true;
   try {
@@ -209,7 +209,6 @@ function setSendMode(m: SendMode) {
 const sendModeLabel = computed(() => SEND_MODES.find((m) => m.value === sendMode.value)?.label ?? "Send");
 
 // ── Story mode ────────────────────────────────────────────────────────────────
-const selectedStorylineId = ref<string | null>(null);
 const decisions           = ref<StoryDecision[]>([]);
 const useDecisions        = ref(false);
 
@@ -259,7 +258,7 @@ async function generate() {
     postType.value,
     perspective.value || undefined,
     perspective.value === "oc" ? selectedOcNames.value.join(", ") : "",
-    postType.value === "story" ? selectedStorylineId.value : undefined,
+    undefined,
     postType.value === "story" && activeDecisions.value.length > 0 ? activeDecisions.value : undefined,
     postType.value === "qt" ? qtEventName.value.trim() || undefined : undefined,
     postType.value === "qt" ? qtTagger.value.trim() || undefined : undefined,
@@ -286,7 +285,7 @@ const sendTextOnlyDone = ref(false);
  *  If imagePath prop is set: queues the file path in the bridge + copies text to clipboard.
  *  Fallback (no imagePath): sends only post content to the extension (legacy). */
 async function sendTextOnly() {
-  if (!ai.generatedPost) return;
+  if (!hasContent.value) return;
   queueError.value = "";
   try {
     if (props.imagePath) {
@@ -341,11 +340,6 @@ async function sendToExtension() {
       }
     }
 
-    // Record story entry in active storyline
-    if (postType.value === "story" && selectedStorylineId.value) {
-      await ai.recordStoryEntry(selectedStorylineId.value, ai.editedDescription, ids[0]);
-    }
-
     sendDone.value = true;
     setTimeout(() => (sendDone.value = false), 2500);
     emit("queued", ids.length);
@@ -356,13 +350,15 @@ async function sendToExtension() {
 
 /** Full text ready to copy: uses the user's (possibly edited) values from the store */
 const copyableText = computed(() => {
-  if (!ai.generatedPost) return "";
   const parts: string[] = [];
   if (ai.editedTitle)       parts.push(ai.editedTitle);
   if (ai.editedDescription) parts.push(ai.editedDescription);
   if (ai.editedTags)        parts.push(ai.editedTags);
   return parts.join("\n\n");
 });
+
+/** True when there is something worth sending (manually typed or AI-generated). */
+const hasContent = computed(() => !!(ai.editedDescription || ai.editedTitle || ai.editedTags));
 
 async function copyText() {
   if (!copyableText.value) return;
@@ -372,9 +368,8 @@ async function copyText() {
 }
 
 onMounted(async () => {
-  if (!ai.personasLoaded)    await ai.loadPersonas();
-  if (!ai.storylinesLoaded)  await ai.loadStorylines();
-  if (!ai.configLoaded)      await ai.loadConfig();
+  if (!ai.personasLoaded) await ai.loadPersonas();
+  if (!ai.configLoaded)   await ai.loadConfig();
 });
 
 // ── Reset inputs when the image changes ──────────────────────────────────────
@@ -393,7 +388,6 @@ watch(
     qtEventName.value      = "";
     qtTagger.value         = "";
     customMaxChars.value   = 180;
-    selectedStorylineId.value = null;
     decisions.value        = [];
     useDecisions.value     = false;
     queueError.value       = "";
@@ -563,26 +557,6 @@ watch(
 
     <!-- ── Story mode extras ────────────────────────────────────────────────── -->
     <template v-if="postType === 'story'">
-      <!-- Storyline selector -->
-      <div>
-        <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-          <BookOpen class="inline h-3 w-3 mr-0.5 -mt-0.5" /> Storyline <span class="normal-case text-slate-600">(optional)</span>
-        </p>
-        <div class="flex items-center gap-2">
-          <select
-            v-model="selectedStorylineId"
-            class="flex-1 rounded-lg border border-line bg-panelSoft px-2.5 py-1.5 text-xs text-slate-200 appearance-none focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
-          >
-            <option :value="null">— No storyline</option>
-            <option v-for="sl in ai.storylines" :key="sl.id" :value="sl.id">{{ sl.name }}</option>
-          </select>
-          <button class="button h-7 px-2.5 text-xs shrink-0" @click="setPage?.('settings')">Manage</button>
-        </div>
-        <p v-if="selectedStorylineId" class="mt-1 text-[11px] text-slate-500">
-          📖 Previous entries will be used as narrative context for this episode.
-        </p>
-      </div>
-
       <!-- Decisions (reader vote) -->
       <div>
         <div class="flex items-center justify-between mb-1">
@@ -648,11 +622,11 @@ watch(
       {{ ai.generateError }}
     </div>
 
-    <!-- Result (editable) -->
-    <div v-if="ai.generatedPost" class="space-y-3 rounded-xl border border-accent/20 bg-panel p-4 text-xs">
-      <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Result <span class="normal-case font-normal text-slate-600">— edit before sending</span></p>
+    <!-- Result (always visible — type manually or generate with AI above) -->
+    <div class="space-y-3 rounded-xl border border-accent/20 bg-panel p-4 text-xs">
+      <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Post <span class="normal-case font-normal text-slate-600">— write manually or generate with AI above</span></p>
 
-      <div v-if="ai.generatedPost.title !== undefined">
+      <div v-if="['civitai','deviantart','tumblr'].includes(network)">
         <p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">Title</p>
         <input
           v-model="ai.editedTitle"
@@ -672,14 +646,16 @@ watch(
           v-model="ai.editedDescription"
           rows="5"
           class="w-full resize-y rounded-md border border-line bg-panelSoft px-2.5 py-1.5 text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+          placeholder="Write your caption here, or click Generate above…"
         />
       </div>
-      <div v-if="ai.editedTags">
+      <div>
         <p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">Tags</p>
         <textarea
           v-model="ai.editedTags"
           rows="2"
           class="w-full resize-none rounded-md border border-line bg-panelSoft px-2.5 py-1.5 text-xs text-slate-400 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+          placeholder="tag1 tag2 tag3"
         />
       </div>
 
@@ -776,18 +752,19 @@ watch(
           {{ blueskyPostDone ? 'Posted to Bluesky!' : blueskyPosting ? 'Uploading & posting…' : 'Post to Bluesky directly' }}
         </button>
 
-        <!-- Secondary row: Copy + Discard -->
+        <!-- Secondary row: Copy + Clear -->
         <div class="flex items-center gap-2">
           <button
             class="button h-7 gap-1.5 px-2.5 text-xs"
             :class="copied ? 'border-mint/60 bg-mint/10 text-mint' : ''"
+            :disabled="!hasContent"
             @click="copyText"
           >
             <Check v-if="copied" class="h-3 w-3" /><Copy v-else class="h-3 w-3" />
             {{ copied ? 'Copied!' : 'Copy text' }}
           </button>
-          <button class="button h-7 gap-1 px-2.5 text-xs ml-auto" @click="ai.clearGeneratedPost(); queueError = ''">
-            <X class="h-3 w-3" />Discard
+          <button v-if="hasContent" class="button h-7 gap-1 px-2.5 text-xs ml-auto" @click="ai.clearGeneratedPost(); queueError = ''">
+            <X class="h-3 w-3" />Clear
           </button>
         </div>
 

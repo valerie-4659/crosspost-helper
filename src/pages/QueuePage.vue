@@ -243,9 +243,9 @@ onMounted(async () => {
 
       <!-- Queue list -->
       <nav class="flex flex-1 flex-col gap-1 overflow-y-auto">
-        <button
+        <div
           v-for="q in queueStore.queues" :key="q.id"
-          class="group flex items-start gap-2 rounded-md px-2 py-2 text-left text-xs transition hover:bg-panelSoft"
+          class="group flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left text-xs transition hover:bg-panelSoft"
           :class="queueStore.activeQueueId === q.id ? 'bg-panelSoft border border-accent/40' : 'border border-transparent'"
           @click="queueStore.openQueue(q.id)"
         >
@@ -257,7 +257,7 @@ onMounted(async () => {
             class="shrink-0 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition"
             @click.stop="queueStore.removeQueue(q.id)"
           ><Trash2 class="h-3.5 w-3.5" /></button>
-        </button>
+        </div>
         <p v-if="!queueStore.queues.length" class="text-xs text-slate-500 px-1 pt-2">No queues yet. Create one above.</p>
       </nav>
     </aside>

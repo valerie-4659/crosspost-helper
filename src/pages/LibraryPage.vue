@@ -331,14 +331,32 @@ onMounted(() => {
   // Clear collection+selection when the extension popup clicks "Mark as Posted"
   // (which triggers POST /clear-queue → bridge:queue-cleared IPC event).
   window.desktop.bridge.onQueueCleared(() => clearCollection());
+
+  // Reload library when a file is auto-indexed after a download (Wavespeed, Topaz).
+  window.desktop.library.onFileIndexed(() => imageStore.load());
 });
 
 onUnmounted(() => {
   window.desktop.bridge.offQueueCleared();
   window.desktop.topaz.offJobUpdated();
+  window.desktop.library.offFileIndexed();
+  if (_msgTimer) clearTimeout(_msgTimer);
+  if (_errTimer) clearTimeout(_errTimer);
 });
 watch(() => imageStore.filters, () => imageStore.load(), { deep: true });
 watch(() => imageStore.showExcludedFolders, () => imageStore.load());
+
+// Auto-dismiss banners after 5 s so they don't linger forever.
+let _msgTimer: ReturnType<typeof setTimeout> | null = null;
+let _errTimer: ReturnType<typeof setTimeout> | null = null;
+watch(() => imageStore.message, (msg) => {
+  if (_msgTimer) clearTimeout(_msgTimer);
+  if (msg) _msgTimer = setTimeout(() => { imageStore.message = ""; }, 5000);
+});
+watch(() => imageStore.error, (err) => {
+  if (_errTimer) clearTimeout(_errTimer);
+  if (err) _errTimer = setTimeout(() => { imageStore.error = ""; }, 5000);
+});
 
 // ── Network hide-posted toggle ─────────────────────────────────────────────
 // Persist state on every relevant change
@@ -1066,12 +1084,12 @@ async function fillSlot(slotId: string) {
           <ChevronDown class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
         </div>
         <span class="mx-1 text-xs text-slate-500">|</span>
-        <span class="mr-1 text-xs font-medium text-white">{{ selectedCount }} selected</span>
-        <button class="button h-7 gap-1 px-2 text-xs" title="Add all visible images to the collection" @click="addVisibleToCollection">
-          + Add visible
+        <span class="mr-1 text-xs font-medium text-white">{{ selectedCount }} / {{ imageStore.images.length }} selected</span>
+        <button class="button h-7 gap-1 px-2 text-xs" title="Select all visible images" @click="addVisibleToCollection">
+          Select all
         </button>
-        <button class="button h-7 px-2 text-xs" :disabled="collectionCount === 0" @click="clearCollection">
-          <X class="h-3 w-3" />Clear
+        <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" title="Deselect all" @click="clearCollection">
+          <X class="h-3 w-3" />Deselect
         </button>
         <button class="button h-7 px-2 text-xs" :disabled="selectedCount === 0" @click="imageStore.excludeSelected">
           <Archive class="h-3 w-3" />Exclude

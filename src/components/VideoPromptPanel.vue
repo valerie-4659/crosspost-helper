@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import type { AppPage } from "@/components/SidebarNavigation.vue";
-import { Check, Clapperboard, Copy, ExternalLink, FolderOpen, X } from "lucide-vue-next";
+import { Check, Clapperboard, Copy, Download, ExternalLink, FolderOpen, X } from "lucide-vue-next";
 import { VIDEO_MODELS, type VideoModelValue } from "@/composables/useVideoModels";
 
 const props = defineProps<{
@@ -36,7 +36,10 @@ const wsTrackedLocalId  = ref<string | null>(null);
 const wsTrackedStatus   = ref<"created" | "processing" | "completed" | "failed" | "">("");
 const wsTrackedVideoUrl = ref<string | null>(null);
 const wsTrackedJobError = ref<string | null>(null);
-const wsCopiedUrl       = ref(false);
+const wsCopiedUrl        = ref(false);
+const wsDownloading      = ref(false);
+const wsDownloadError    = ref("");
+const wsDownloadedPath   = ref<string | null>(null);
 
 // Reset resolution/duration to valid defaults when model changes
 watch(selectedModel, () => {
@@ -117,6 +120,7 @@ async function pickEndImage() {
 }
 
 const setPage = inject<(page: AppPage) => void>("setPage");
+const setGenerationQueueTab = inject<(tab: "images" | "videos") => void>("setGenerationQueueTab");
 
 async function submitToWavespeed() {
   const imagePath = props.imagePaths[0];
@@ -156,6 +160,24 @@ function resetWavespeed() {
   wsTrackedVideoUrl.value = null;
   wsTrackedJobError.value = null;
   wsCopiedUrl.value       = false;
+  wsDownloading.value     = false;
+  wsDownloadError.value   = "";
+  wsDownloadedPath.value  = null;
+}
+
+async function downloadVideo() {
+  if (!wsTrackedLocalId.value) return;
+  wsDownloading.value    = true;
+  wsDownloadError.value  = "";
+  wsDownloadedPath.value = null;
+  try {
+    const result = await window.desktop.wavespeed.downloadVideo(wsTrackedLocalId.value);
+    wsDownloadedPath.value = result.path;
+  } catch (err) {
+    wsDownloadError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    wsDownloading.value = false;
+  }
 }
 
 async function copyVideoUrl() {
@@ -390,30 +412,52 @@ function openTrackedVideoUrl() {
           {{ wsTrackedJobError }}
         </p>
 
-        <!-- Video URL actions when completed -->
-        <div v-if="wsTrackedVideoUrl" class="flex gap-1.5">
+        <!-- Video preview when completed -->
+        <div v-if="wsTrackedVideoUrl" class="rounded-lg overflow-hidden bg-black/40">
+          <video
+            :src="wsTrackedVideoUrl"
+            controls
+            muted
+            loop
+            preload="metadata"
+            class="w-full rounded-lg"
+            style="max-height: 260px; object-fit: contain"
+          />
+        </div>
+
+        <!-- Download + URL actions -->
+        <div v-if="wsTrackedVideoUrl" class="flex flex-wrap gap-1.5">
           <button
-            class="button h-7 flex-1 gap-1.5 px-2 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
-            @click="openTrackedVideoUrl"
+            class="button h-7 flex-1 gap-1.5 px-2 text-xs border-mint/40 bg-mint/10 text-mint hover:bg-mint/20 disabled:opacity-50"
+            :disabled="wsDownloading || !!wsDownloadedPath"
+            @click="downloadVideo"
           >
-            <ExternalLink class="h-3 w-3" /> Open Video
+            <Check v-if="wsDownloadedPath" class="h-3 w-3" />
+            <Clapperboard v-else-if="wsDownloading" class="h-3 w-3 animate-pulse" />
+            <Download v-else class="h-3 w-3" />
+            {{ wsDownloadedPath ? 'Downloaded!' : wsDownloading ? 'Downloading…' : 'Download to folder' }}
+          </button>
+          <button class="button h-7 gap-1.5 px-2 text-xs" @click="openTrackedVideoUrl">
+            <ExternalLink class="h-3 w-3" />
           </button>
           <button
-            class="button h-7 gap-1.5 px-2.5 text-xs"
+            class="button h-7 gap-1.5 px-2 text-xs"
             :class="wsCopiedUrl ? 'border-mint/60 bg-mint/10 text-mint' : ''"
             @click="copyVideoUrl"
           >
             <Check v-if="wsCopiedUrl" class="h-3 w-3" />
             <Copy v-else class="h-3 w-3" />
-            {{ wsCopiedUrl ? 'Copied!' : 'Copy URL' }}
+            {{ wsCopiedUrl ? 'Copied!' : 'URL' }}
           </button>
         </div>
+        <p v-if="wsDownloadError" class="text-[11px] text-rose px-0.5">{{ wsDownloadError }}</p>
+        <p v-if="wsDownloadedPath" class="text-[11px] text-mint/60 truncate px-0.5">{{ wsDownloadedPath }}</p>
 
         <!-- Bottom actions -->
         <div class="flex gap-2">
           <button
             class="button h-7 flex-1 gap-1.5 px-2 text-xs border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20"
-            @click="setPage?.('video-queue')"
+            @click="setGenerationQueueTab?.('videos'); setPage?.('generation-queue')"
           >
             <Clapperboard class="h-3 w-3" /> Video Queue
           </button>

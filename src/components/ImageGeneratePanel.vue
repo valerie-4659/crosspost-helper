@@ -113,6 +113,7 @@ function dateStamp(): string {
 }
 
 const setPage = inject<(page: AppPage) => void>("setPage");
+const setGenerationQueueTab = inject<(tab: "images" | "videos") => void>("setGenerationQueueTab");
 
 // Capabilities of the currently selected model
 const modelCaps = computed(() =>
@@ -551,7 +552,7 @@ async function copyResultUrl() {
         <div class="flex gap-2">
           <button
             class="button h-7 flex-1 gap-1.5 px-2 text-xs border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20"
-            @click="setPage?.('image-queue')"
+            @click="setGenerationQueueTab?.('images'); setPage?.('generation-queue')"
           >
             <Image class="h-3 w-3" /> Image Queue
           </button>

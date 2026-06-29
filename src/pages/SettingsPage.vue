@@ -197,18 +197,18 @@ async function addTag() {
 // ── Persona management ───────────────────────────────────────────────────────
 const showPersonaForm = ref(false);
 const editingPersonaId = ref<string | null>(null);
-const personaForm = ref({ name: "", styleNotes: "" });
+const personaForm = ref({ name: "", tone: "", emojiUse: "subtle" as import("@/types/aiSettings").EmojiUse, styleNotes: "" });
 const personaSaved = ref(false);
 
 function openNewPersona() {
   editingPersonaId.value = null;
-  personaForm.value = { name: "", styleNotes: "" };
+  personaForm.value = { name: "", tone: "", emojiUse: "subtle", styleNotes: "" };
   showPersonaForm.value = true;
 }
 
 function openEditPersona(p: import("@/types/aiSettings").Persona) {
   editingPersonaId.value = p.id;
-  personaForm.value = { name: p.name, styleNotes: p.styleNotes };
+  personaForm.value = { name: p.name, tone: p.tone, emojiUse: p.emojiUse, styleNotes: p.styleNotes };
   showPersonaForm.value = true;
 }
 
@@ -220,7 +220,7 @@ function cancelPersonaForm() {
 async function savePersonaForm() {
   if (!personaForm.value.name.trim()) return;
   await ai.savePersona(
-    { ...personaForm.value, tone: "", emojiUse: "subtle", isActive: editingPersonaId.value
+    { ...personaForm.value, isActive: editingPersonaId.value
         ? (ai.personas.find((p) => p.id === editingPersonaId.value)?.isActive ?? false)
         : false },
     editingPersonaId.value ?? undefined,
@@ -576,6 +576,8 @@ onMounted(async () => {
               <span v-if="persona.isActive" class="rounded border border-accent/40 bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">active</span>
             </div>
             <div class="mt-1 flex flex-wrap gap-1">
+              <span v-if="persona.tone" class="rounded bg-accent/10 border border-accent/20 px-1.5 py-0.5 text-[10px] text-accent/70">{{ persona.tone }}</span>
+              <span v-if="persona.emojiUse !== 'subtle'" class="rounded bg-panel border border-line px-1.5 py-0.5 text-[10px] text-slate-500">emoji: {{ persona.emojiUse }}</span>
               <span v-if="persona.styleNotes" class="max-w-xs truncate rounded bg-panel px-1.5 py-0.5 text-[10px] text-slate-500">{{ persona.styleNotes }}</span>
             </div>
           </div>
@@ -602,12 +604,28 @@ onMounted(async () => {
             <input v-model="personaForm.name" aria-label="Persona name" class="field text-sm" placeholder="e.g. Valerie, Hot Mess, Neutral" />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-[11px] uppercase tracking-wide text-slate-500">Behavior Rules</label>
+            <label class="text-[11px] uppercase tracking-wide text-slate-500">Tone <span class="normal-case text-slate-600">(short description for the AI)</span></label>
+            <input v-model="personaForm.tone" aria-label="Persona tone" class="field text-sm" placeholder="e.g. Flirty, teasing, confident" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] uppercase tracking-wide text-slate-500">Emoji Use</label>
+            <div class="flex gap-1">
+              <button
+                v-for="opt in ([['none', 'None'], ['subtle', 'Subtle'], ['heavy', 'Heavy']] as const)"
+                :key="opt[0]"
+                class="flex-1 rounded border px-2 py-1 text-xs font-medium transition"
+                :class="personaForm.emojiUse === opt[0] ? 'border-accent/50 bg-accent/15 text-accent' : 'border-line bg-panel text-slate-400 hover:text-slate-200'"
+                @click="personaForm.emojiUse = opt[0]"
+              >{{ opt[1] }}</button>
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] uppercase tracking-wide text-slate-500">Behavior Rules <span class="normal-case text-slate-600">(vocabulary, phrases, dos &amp; don'ts)</span></label>
             <textarea
               v-model="personaForm.styleNotes"
-              rows="10"
+              rows="8"
               class="field resize-y text-sm leading-relaxed"
-              placeholder="Describe everything: tone, vocabulary, example phrases, dos &amp; don'ts — e.g. 'Flirty and teasing. Uses ❤️‍🔥 and 💋 often. Calls followers sweet slaves. Never says boring. Always ends with a question.'"
+              placeholder="e.g. Calls followers 'sweet slaves'. Never says 'boring'. Always ends with a question. Uses ❤️‍🔥 and 💋 often."
             />
           </div>
         </div>

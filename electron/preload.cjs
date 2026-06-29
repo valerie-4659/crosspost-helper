@@ -107,6 +107,8 @@ contextBridge.exposeInMainWorld("desktop", {
     /** Download a generated image URL. Pass destDir to override ~/Pictures/WavespeedAI/.
      *  Pass reveal=false to skip the Finder/Explorer reveal. */
     downloadImage: (resultUrl, suggestedFilename, reveal = true, destDir) => ipcRenderer.invoke("wavespeed:downloadImage", resultUrl, suggestedFilename, reveal, destDir),
+    /** Download a completed video job to the source image's folder with auto-indexing. */
+    downloadVideo: (localJobId) => ipcRenderer.invoke("wavespeed:downloadVideo", localJobId),
   },
   topaz: {
     /** Upload a local image to the Topaz Labs API, upscale it with the chosen model,
@@ -146,5 +148,10 @@ contextBridge.exposeInMainWorld("desktop", {
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),
     offProgress: () => ipcRenderer.removeAllListeners("scan:progress"),
+  },
+  library: {
+    /** Fires whenever a file was auto-indexed after a download (Wavespeed, Topaz). */
+    onFileIndexed: (cb) => ipcRenderer.on("library:file-indexed", (_e, data) => cb(data)),
+    offFileIndexed: () => ipcRenderer.removeAllListeners("library:file-indexed"),
   },
 });

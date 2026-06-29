@@ -35,11 +35,22 @@ const hasNext = computed(() => currentIndex.value >= 0 && currentIndex.value < (
 function prev() { if (hasPrev.value) emit("navigate", props.images![currentIndex.value - 1]); }
 function next() { if (hasNext.value) emit("navigate", props.images![currentIndex.value + 1]); }
 
+// ── Media type ────────────────────────────────────────────────────────────────
+const isVideo = computed(() => props.image?.mimeType?.startsWith("video/") ?? false);
+
 // ── Image URL ─────────────────────────────────────────────────────────────────
 const imageUrl = computed(() => {
-  if (!props.image) return "";
+  if (!props.image || isVideo.value) return "";
   if (props.image.localPath) return convertFileSrc(props.image.localPath);
   return props.image.thumbnailUrl ?? "";
+});
+
+// Video uses file:// directly — supports range requests (seeking) out of the box.
+const videoUrl = computed(() => {
+  if (!isVideo.value || !props.image?.localPath) return "";
+  const fwd = props.image.localPath.replaceAll("\\", "/");
+  const p = fwd.startsWith("/") ? fwd : "/" + fwd;
+  return "file://" + encodeURI(p);
 });
 
 // ── Selection ─────────────────────────────────────────────────────────────────
@@ -178,8 +189,20 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         <ChevronLeft class="h-6 w-6" />
       </button>
 
+      <!-- Video player -->
+      <video
+        v-if="isVideo && videoUrl"
+        :src="videoUrl"
+        controls
+        loop
+        preload="metadata"
+        class="max-h-full max-w-full object-contain p-4"
+        @click.stop
+      />
+
+      <!-- Image -->
       <img
-        v-if="imageUrl"
+        v-else-if="imageUrl"
         :src="imageUrl"
         :alt="image.filename"
         draggable="true"

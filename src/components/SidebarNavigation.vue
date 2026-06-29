@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Clapperboard, Clock, Image, Images, ListChecks, Moon, Puzzle, Search, Settings, Shuffle, Sun } from "lucide-vue-next";
+import { Clock, Images, ListChecks, Moon, Puzzle, Search, Settings, Shuffle, Sun, Wand2 } from "lucide-vue-next";
 import { useSettingsStore } from "@/stores/settingsStore";
 
-export type AppPage = "picker" | "library" | "queue" | "video-queue" | "image-queue" | "scan" | "history" | "settings" | "extension" | "about";
+export type AppPage = "picker" | "library" | "queue" | "generation-queue" | "scan" | "history" | "settings" | "extension" | "about";
 
 const page = defineModel<AppPage>("page", { required: true });
 const settingsStore = useSettingsStore();
@@ -11,9 +11,8 @@ const version = __APP_VERSION__;
 const items = [
   { id: "picker",      label: "Picker",           icon: Shuffle },
   { id: "library",     label: "Library",           icon: Images },
-  { id: "queue",       label: "Job Queue",         icon: ListChecks },
-  { id: "video-queue", label: "Video Queue",       icon: Clapperboard },
-  { id: "image-queue", label: "Image Queue",       icon: Image },
+  { id: "queue",            label: "Job Queue",        icon: ListChecks },
+  { id: "generation-queue", label: "Generation Queue", icon: Wand2 },
   { id: "history",     label: "History",           icon: Clock },
   { id: "scan",        label: "Scan",              icon: Search },
   { id: "settings",    label: "Settings",          icon: Settings },

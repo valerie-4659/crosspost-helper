@@ -3,8 +3,7 @@ import { onMounted, provide, ref } from "vue";
 import PickerPage from "@/pages/PickerPage.vue";
 import LibraryPage from "@/pages/LibraryPage.vue";
 import QueuePage from "@/pages/QueuePage.vue";
-import VideoQueuePage from "@/pages/VideoQueuePage.vue";
-import ImageQueuePage from "@/pages/ImageQueuePage.vue";
+import GenerationQueuePage from "@/pages/GenerationQueuePage.vue";
 import ScanPage from "@/pages/ScanPage.vue";
 import SettingsPage from "@/pages/SettingsPage.vue";
 import AboutPage from "@/pages/AboutPage.vue";
@@ -17,7 +16,10 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useImageStore } from "@/stores/imageStore";
 
 const currentPage = ref<AppPage>("picker");
+const generationQueueTab = ref<"images" | "videos">("images");
+
 provide("setPage", (page: AppPage) => { currentPage.value = page; });
+provide("setGenerationQueueTab", (tab: "images" | "videos") => { generationQueueTab.value = tab; });
 const targetStore = useTargetStore();
 const sourceStore = useSourceStore();
 const settingsStore = useSettingsStore();
@@ -39,8 +41,7 @@ onMounted(async () => {
       <PickerPage v-if="currentPage === 'picker'" />
       <LibraryPage v-else-if="currentPage === 'library'" />
       <QueuePage v-else-if="currentPage === 'queue'" />
-      <VideoQueuePage v-else-if="currentPage === 'video-queue'" />
-      <ImageQueuePage v-else-if="currentPage === 'image-queue'" />
+      <GenerationQueuePage v-else-if="currentPage === 'generation-queue'" :initial-tab="generationQueueTab" />
       <ScanPage v-else-if="currentPage === 'scan'" />
       <SettingsPage v-else-if="currentPage === 'settings'" />
       <BrowserExtensionPage v-else-if="currentPage === 'extension'" />

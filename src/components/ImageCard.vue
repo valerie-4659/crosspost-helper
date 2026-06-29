@@ -58,7 +58,10 @@ const emit = defineEmits<{
   upscaleImage: [localPath: string];
 }>();
 
+const isVideo = computed(() => props.image.mimeType?.startsWith("video/") ?? false);
+
 const imageUrl = computed(() => {
+  if (isVideo.value) return ""; // videos use separate element
   if (props.image.thumbnailUrl) return props.image.thumbnailUrl;
   if (props.image.localPath) return convertFileSrc(props.image.localPath);
   return "";
@@ -98,8 +101,20 @@ const postedTargets = computed(() => props.targets.filter((t) => props.image.pos
       class="relative overflow-hidden rounded cursor-grab active:cursor-grabbing"
       :class="{ 'min-h-32 animate-pulse': imageUrl && !imageLoaded }"
     >
+      <!-- Video placeholder — show icon + filename, no thumbnail generation needed -->
+      <div
+        v-if="isVideo"
+        class="flex aspect-video w-full flex-col items-center justify-center gap-1.5 bg-violet-950/50"
+        draggable="true"
+        @dragstart.stop="handleDragStart"
+      >
+        <Clapperboard class="h-7 w-7 text-violet-400/70" />
+        <span class="max-w-[90%] truncate text-[10px] text-violet-300/60">{{ image.filename }}</span>
+      </div>
+
+      <!-- Image -->
       <img
-        v-if="imageUrl"
+        v-else-if="imageUrl"
         ref="imgEl"
         :src="imageUrl"
         :alt="image.filename"
