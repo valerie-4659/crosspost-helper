@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.1 - 2026-06-29
+
+- chore: release v0.3.0
+- feat: sequential Wavespeed job queue with drag-and-drop reordering
+
+
 ## v0.2.134 - 2026-06-29
 
 - fix: react to bridge:images-posted IPC event so Library updates after extension marks posts
