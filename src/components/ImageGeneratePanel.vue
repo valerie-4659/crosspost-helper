@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import type { AppPage } from "@/components/SidebarNavigation.vue";
-import { Check, Copy, FolderOpen, Image, X } from "lucide-vue-next";
+import { Check, Copy, FolderOpen, Image, Send, X } from "lucide-vue-next";
+import { usePickerStore } from "@/stores/pickerStore";
+import { getImageByLocalPath } from "@/repositories/imageRepository";
 
 const props = defineProps<{ imagePaths: string[]; disabled?: boolean }>();
 
@@ -113,7 +115,7 @@ function dateStamp(): string {
 }
 
 const setPage = inject<(page: AppPage) => void>("setPage");
-const setGenerationQueueTab = inject<(tab: "images" | "videos") => void>("setGenerationQueueTab");
+const setGenerationQueueTab = inject<(tab: "queue" | "images" | "videos") => void>("setGenerationQueueTab");
 
 // Capabilities of the currently selected model
 const modelCaps = computed(() =>
@@ -161,12 +163,31 @@ async function detectAspectFromImage() {
   } catch { /* ignore */ }
 }
 
+// Restore a running image job for the current image on mount / image change.
+async function restoreRunningJob() {
+  const imagePath = props.imagePaths[0];
+  if (!imagePath) return;
+  const running = await window.desktop.db.select<WavespeedImageJobRecord[]>(
+    "SELECT * FROM wavespeed_image_jobs WHERE image_path = ? AND status IN ('created', 'processing') ORDER BY created_at DESC LIMIT 1",
+    [imagePath],
+  );
+  if (running[0]) {
+    const job = running[0];
+    wsSubmitted.value        = true;
+    wsTrackedLocalId.value   = job.id;
+    wsTrackedStatus.value    = job.status as typeof wsTrackedStatus.value;
+    wsTrackedResultUrl.value = job.result_url ?? null;
+    wsTrackedJobError.value  = job.error_msg ?? null;
+  }
+}
+
 onMounted(async () => {
   const rows = await window.desktop.db.select<Array<{ value: string }>>(
     "SELECT value FROM ai_config WHERE key = 'wavespeed_api_key'",
   );
   wavespeedAvailable.value = Boolean(rows[0]?.value);
   await detectAspectFromImage();
+  await restoreRunningJob();
 
   window.desktop.wavespeed.onImageJobUpdated((data) => {
     if (!wsTrackedLocalId.value || data.id !== wsTrackedLocalId.value) return;
@@ -180,12 +201,13 @@ onUnmounted(() => {
   window.desktop.wavespeed.offImageJobUpdated();
 });
 
-watch(() => props.imagePaths[0], () => {
+watch(() => props.imagePaths[0], async () => {
   generatedPrompt.value = "";
   generateError.value   = "";
   instructions.value    = "";
   detectAspectFromImage();
   resetWavespeed();
+  await restoreRunningJob();
 });
 
 // ── Prompt generation ─────────────────────────────────────────────────────────
@@ -218,6 +240,43 @@ async function copyPrompt() {
 function revealSourceImage() {
   const p = props.imagePaths[0];
   if (p) window.desktop?.opener?.revealItemInDir?.(p);
+}
+
+// ── Add to Queue ──────────────────────────────────────────────────────────────
+const wsQueued   = ref(false);
+const wsQueueErr = ref("");
+
+async function addToQueue() {
+  const imagePath = props.imagePaths[0] ?? "";
+  wsSubmitting.value = true;
+  wsQueued.value     = false;
+  wsQueueErr.value   = "";
+  wsError.value      = "";
+  try {
+    await window.desktop.jobqueue.add({
+      type:       "image",
+      image_path: imagePath,
+      prompt:     generatedPrompt.value,
+      model:      selectedModel.value,
+      params: {
+        imagePath:    useRefImage.value ? imagePath : "",
+        prompt:       generatedPrompt.value,
+        imageModel:   selectedModel.value,
+        aspectRatio:  selectedAspect.value,
+        resolution:   selectedResolution.value,
+        size:         computeSize(),
+        useRefImage:  useRefImage.value,
+        quality:      selectedQuality.value,
+        outputFormat: selectedFormat.value,
+        strength:     zStrength.value,
+      },
+    });
+    wsQueued.value = true;
+  } catch (err) {
+    wsQueueErr.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    wsSubmitting.value = false;
+  }
 }
 
 // ── Wavespeed submission ──────────────────────────────────────────────────────
@@ -263,6 +322,8 @@ function resetWavespeed() {
   wsCopiedUrl.value        = false;
   wsDownloading.value      = false;
   wsDownloadedPath.value   = null;
+  wsQueued.value           = false;
+  wsQueueErr.value         = "";
 }
 
 async function downloadToSourceFolder() {
@@ -294,6 +355,31 @@ async function copyResultUrl() {
   await navigator.clipboard.writeText(wsTrackedResultUrl.value).catch(() => {});
   wsCopiedUrl.value = true;
   setTimeout(() => (wsCopiedUrl.value = false), 2000);
+}
+
+// ── "Post this image" ─────────────────────────────────────────────────────────
+const picker = usePickerStore();
+const wsPostError   = ref("");
+const wsPostSending = ref(false);
+
+async function postDownloaded() {
+  const path = wsDownloadedPath.value;
+  if (!path) return;
+  wsPostSending.value = true;
+  wsPostError.value   = "";
+  try {
+    const image = await getImageByLocalPath(path);
+    if (!image) {
+      wsPostError.value = "File not found in library — wait a moment and try again.";
+      return;
+    }
+    picker.selectImage(image);
+    setPage?.("picker");
+  } catch (err) {
+    wsPostError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    wsPostSending.value = false;
+  }
 }
 </script>
 
@@ -460,16 +546,45 @@ async function copyResultUrl() {
         <span v-if="modelCaps.sizeMode === 'aspect'" class="normal-case font-normal text-slate-600"> — {{ selectedAspect }} · {{ selectedResolution.toUpperCase() }}</span>
         <span v-else class="normal-case font-normal text-slate-600"> — {{ computeSize() }}</span>
       </p>
-      <button
-        v-if="!wsSubmitted && !wsSubmitting"
-        class="w-full rounded-lg bg-sky-600 hover:bg-sky-500 active:bg-sky-700 py-2 text-xs font-semibold text-white transition flex items-center justify-center gap-2"
-        @click="submitToWavespeed"
-      >
-        <Image class="h-3.5 w-3.5" />Submit Recreation Job
-      </button>
+      <!-- Submit buttons: Add to Queue (primary) + direct submit (secondary) -->
+      <div v-if="!wsSubmitted && !wsQueued && !wsSubmitting" class="flex gap-2">
+        <button
+          class="flex-1 rounded-lg bg-sky-600 hover:bg-sky-500 active:bg-sky-700 py-2 text-xs font-semibold text-white transition flex items-center justify-center gap-2"
+          @click="addToQueue"
+        >
+          <Image class="h-3.5 w-3.5" />Add to Queue
+        </button>
+        <button
+          class="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-300 hover:bg-sky-500/20 transition flex items-center gap-1.5"
+          title="Submit directly (bypasses queue)"
+          @click="submitToWavespeed"
+        >
+          <Image class="h-3 w-3" />Direct
+        </button>
+      </div>
       <button v-else-if="wsSubmitting" class="w-full rounded-lg bg-sky-600/50 py-2 text-xs font-semibold text-white/60 flex items-center justify-center gap-2" disabled>
-        <Image class="h-3.5 w-3.5 animate-pulse" />Uploading &amp; submitting…
+        <Image class="h-3.5 w-3.5 animate-pulse" />Adding to queue…
       </button>
+
+      <!-- Queued confirmation -->
+      <div v-if="wsQueued" class="space-y-2">
+        <div class="flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2">
+          <Check class="h-4 w-4 shrink-0 text-sky-400" />
+          <span class="flex-1 text-xs text-sky-300">Added to queue!</span>
+        </div>
+        <div class="flex gap-2">
+          <button
+            class="button h-7 flex-1 gap-1.5 px-2 text-xs border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20"
+            @click="setGenerationQueueTab?.('queue'); setPage?.('generation-queue')"
+          >
+            <Image class="h-3 w-3" /> View Queue
+          </button>
+          <button class="button h-7 gap-1 px-2.5 text-xs" @click="resetWavespeed">
+            <X class="h-3 w-3" />New
+          </button>
+        </div>
+      </div>
+      <p v-if="wsQueueErr" class="text-xs text-rose">{{ wsQueueErr }}</p>
       <!-- Success: live job status -->
       <div v-if="wsSubmitted" class="space-y-2">
         <!-- Status pill -->
@@ -548,13 +663,42 @@ async function copyResultUrl() {
           </button>
         </div>
 
+        <!-- Post this image -->
+        <div v-if="wsDownloadedPath" class="space-y-1">
+          <button
+            class="w-full rounded-lg border border-accent/40 bg-accent/10 py-2 text-xs font-semibold text-accent hover:bg-accent/20 transition flex items-center justify-center gap-2 disabled:opacity-50"
+            :disabled="wsPostSending"
+            @click="postDownloaded"
+          >
+            <Send class="h-3.5 w-3.5" :class="wsPostSending ? 'animate-pulse' : ''" />
+            {{ wsPostSending ? 'Opening Picker…' : 'Post this image' }}
+          </button>
+          <p v-if="wsPostError" class="text-[11px] text-rose px-0.5">{{ wsPostError }}</p>
+        </div>
+
         <!-- Bottom actions -->
         <div class="flex gap-2">
           <button
             class="button h-7 flex-1 gap-1.5 px-2 text-xs border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20"
             @click="setGenerationQueueTab?.('images'); setPage?.('generation-queue')"
           >
-            <Image class="h-3 w-3" /> Image Queue
+            <Image class="h-3 w-3" /> Results
+          </button>
+          <button
+            v-if="!wsQueued"
+            class="button h-7 gap-1.5 px-2 text-xs border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 disabled:opacity-50"
+            :disabled="wsSubmitting"
+            title="Add this job again to the queue"
+            @click="addToQueue"
+          >
+            <Image class="h-3 w-3" />+ Queue
+          </button>
+          <button
+            v-else
+            class="button h-7 gap-1.5 px-2 text-xs border-mint/40 bg-mint/10 text-mint"
+            disabled
+          >
+            <Check class="h-3 w-3" /> Queued!
           </button>
           <button class="button h-7 gap-1 px-2.5 text-xs" @click="resetWavespeed">
             <X class="h-3 w-3" />New

@@ -201,6 +201,23 @@ export async function getImage(id: string): Promise<ImageWithPostState | null> {
   return rows[0] ? mapImageWithState(rows[0]) : null;
 }
 
+export async function getImageByLocalPath(localPath: string): Promise<ImageWithPostState | null> {
+  const db = await getDatabase();
+  const rows = await db.select<ImageListRow[]>(
+    `SELECT images.*, image_sources.name AS source_name, image_sources.type AS source_type,
+      GROUP_CONCAT(post_records.target_id || ':' || post_records.status, '|') AS post_states
+     FROM images
+     JOIN image_sources ON image_sources.id = images.source_id
+     LEFT JOIN post_records ON post_records.image_id = images.id
+     WHERE images.local_path = $1
+     GROUP BY images.id
+     LIMIT 1`,
+    [localPath],
+  );
+
+  return rows[0] ? mapImageWithState(rows[0]) : null;
+}
+
 export async function upsertImage(input: ImageInput): Promise<{ imageId: string; created: boolean }> {
   const db = await getDatabase();
   const timestamp = nowIso();

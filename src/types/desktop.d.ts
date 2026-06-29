@@ -72,6 +72,23 @@ declare global {
     updated_at: string;
   }
 
+  /** A row from the job_queue SQLite table. */
+  interface JobQueueRecord {
+    id: number;
+    type: "video" | "image";
+    position: number;
+    status: "pending" | "running" | "completed" | "failed";
+    params: string;
+    wavespeed_local_id: string | null;
+    result_url: string | null;
+    error_msg: string | null;
+    image_path: string;
+    prompt: string;
+    model: string;
+    created_at: string;
+    updated_at: string;
+  }
+
   /** A row from the wavespeed_image_jobs SQLite table. */
   interface WavespeedImageJobRecord {
     id: string;
@@ -232,6 +249,22 @@ declare global {
         downloadImage(resultUrl: string, suggestedFilename?: string, reveal?: boolean, destDir?: string): Promise<{ path: string; folder: string }>;
         /** Download a completed video job to the source image's folder, auto-index, and reveal. */
         downloadVideo(localJobId: string): Promise<{ path: string }>;
+      };
+      jobqueue: {
+        list(): Promise<JobQueueRecord[]>;
+        add(params: {
+          type: "video" | "image";
+          params: Record<string, unknown>;
+          image_path: string;
+          prompt: string;
+          model: string;
+        }): Promise<{ ok: boolean; id: number }>;
+        delete(id: number): Promise<{ ok: boolean }>;
+        reorder(items: Array<{ id: number; position: number }>): Promise<{ ok: boolean }>;
+        edit(params: { id: number; prompt: string; params: Record<string, unknown> }): Promise<{ ok: boolean }>;
+        prioritize(id: number): Promise<{ ok: boolean }>;
+        onUpdated(cb: (data: Partial<JobQueueRecord> & { action?: string }) => void): void;
+        offUpdated(): void;
       };
       topaz: {
         /**

@@ -234,6 +234,16 @@ export const usePickerStore = defineStore("picker", () => {
     multiPickSlots.value = Array(multiPickCount.value).fill(undefined);
   }
 
+  /** Set the picker to a specific image (e.g. a just-generated video/image). */
+  function selectImage(image: ImageWithPostState) {
+    if (currentImage.value) {
+      history.value = [currentImage.value, ...history.value].slice(0, HISTORY_MAX);
+    }
+    currentImage.value = image;
+    error.value = null;
+    multiPickMode.value = false;
+  }
+
   return {
     currentImage,
     history,
@@ -253,6 +263,7 @@ export const usePickerStore = defineStore("picker", () => {
     openCurrentImage,
     copyPath,
     copyImage,
+    selectImage,
     // Multi-pick
     multiPickMode,
     multiPickSlots,

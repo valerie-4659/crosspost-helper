@@ -16,10 +16,10 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useImageStore } from "@/stores/imageStore";
 
 const currentPage = ref<AppPage>("picker");
-const generationQueueTab = ref<"images" | "videos">("images");
+const generationQueueTab = ref<"queue" | "images" | "videos">("queue");
 
 provide("setPage", (page: AppPage) => { currentPage.value = page; });
-provide("setGenerationQueueTab", (tab: "images" | "videos") => { generationQueueTab.value = tab; });
+provide("setGenerationQueueTab", (tab: "queue" | "images" | "videos") => { generationQueueTab.value = tab; });
 const targetStore = useTargetStore();
 const sourceStore = useSourceStore();
 const settingsStore = useSettingsStore();

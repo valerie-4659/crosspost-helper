@@ -146,6 +146,7 @@ function migrationSql() {
     "010_wavespeed_jobs.sql",
     "011_wavespeed_image_jobs.sql",
     "012_topaz_jobs.sql",
+    "013_job_queue.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
@@ -2295,6 +2296,263 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
+  // ── Job Queue — sequential Wavespeed processing ───────────────────────────
+  // Only one Wavespeed job is submitted at a time. When it completes/fails,
+  // the next pending job in the queue is picked up automatically.
+
+  let jobQueueProcessing = false;
+
+  async function processJobQueue() {
+    if (jobQueueProcessing) return;
+    let db;
+    try { db = await getDatabase(); } catch { return; }
+
+    // Abort if a job is already running (submitted to Wavespeed, awaiting poll)
+    const runningRes = db.exec("SELECT COUNT(*) FROM job_queue WHERE status = 'running'");
+    if ((runningRes[0]?.values?.[0]?.[0] ?? 0) > 0) return;
+
+    // Get next pending job ordered by position, then insertion order
+    const pendingStmt = db.prepare(
+      "SELECT * FROM job_queue WHERE status = 'pending' ORDER BY position ASC, id ASC LIMIT 1"
+    );
+    if (!pendingStmt.step()) { pendingStmt.free(); return; }
+    const job = pendingStmt.getAsObject();
+    pendingStmt.free();
+
+    jobQueueProcessing = true;
+
+    const now = new Date().toISOString();
+    db.run("UPDATE job_queue SET status = 'running', updated_at = ? WHERE id = ?", [now, job.id]);
+    persistDatabase();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("jobqueue:updated", { id: job.id, status: "running" });
+    }
+
+    let params;
+    try { params = JSON.parse(job.params); } catch { params = {}; }
+
+    try {
+      const cfgRows = db.exec("SELECT value FROM ai_config WHERE key = 'wavespeed_api_key'");
+      const apiKey = cfgRows[0]?.values?.[0]?.[0] ?? "";
+      if (!apiKey) throw new Error("No Wavespeed API key configured. Add it in Settings → Wavespeed AI.");
+
+      let localId;
+
+      if (job.type === "video") {
+        const { imagePath, prompt, videoModel, resolution, duration, seed, endImagePath, generateAudio, movementAmplitude } = params;
+
+        let imageDataUri;
+        try {
+          if (!imagePath || !fs.existsSync(imagePath)) throw new Error("Image not found: " + imagePath);
+          const img = await nativeImage.createThumbnailFromPath(imagePath, { width: 1536, height: 1536 });
+          if (!img.isEmpty()) {
+            imageDataUri = "data:image/jpeg;base64," + img.toJPEG(92).toString("base64");
+          } else {
+            const raw = fs.readFileSync(imagePath);
+            imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
+          }
+        } catch {
+          const raw = fs.readFileSync(imagePath);
+          imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
+        }
+
+        let endImageDataUri = null;
+        if (endImagePath && fs.existsSync(endImagePath)) {
+          const rawEnd = fs.readFileSync(endImagePath);
+          endImageDataUri = `data:${imageMime(endImagePath)};base64,` + rawEnd.toString("base64");
+        }
+
+        const endpointSlug = WAVESPEED_VIDEO_ENDPOINT_MAP[videoModel] ?? WAVESPEED_VIDEO_ENDPOINT_MAP["wan_2_2_spicy"];
+        const body = buildVideoBody(videoModel, imageDataUri, prompt, resolution, duration, seed, endImageDataUri, generateAudio, movementAmplitude);
+
+        const res = await fetch(`https://api.wavespeed.ai/api/v3/${endpointSlug}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+          body: JSON.stringify(body),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(`Wavespeed error ${res.status}: ${json.message || JSON.stringify(json)}`);
+        const jobData = json.data;
+
+        localId = `wsjob_${crypto.randomUUID()}`;
+        const stmt = db.prepare(
+          `INSERT INTO wavespeed_jobs (id, job_id, image_path, prompt, model, resolution, duration, status, video_url, error_msg, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        );
+        stmt.run([
+          localId, jobData.id, imagePath || "", prompt || "",
+          videoModel || "wan_2_2_spicy", resolution || "720p", duration || 8,
+          jobData.status || "created", null, null, now, now,
+        ]);
+        stmt.free();
+
+      } else { // image
+        const { imagePath, prompt, imageModel, aspectRatio, resolution, size, useRefImage, quality, outputFormat, strength } = params;
+
+        let imageDataUri;
+        if (imagePath && fs.existsSync(imagePath)) {
+          try {
+            const img = await nativeImage.createThumbnailFromPath(imagePath, { width: 1024, height: 1024 });
+            if (!img.isEmpty()) {
+              imageDataUri = "data:image/jpeg;base64," + img.toJPEG(90).toString("base64");
+            } else {
+              const raw = fs.readFileSync(imagePath);
+              imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
+            }
+          } catch {
+            try {
+              const raw = fs.readFileSync(imagePath);
+              imageDataUri = `data:${imageMime(imagePath)};base64,` + raw.toString("base64");
+            } catch { /* ignore */ }
+          }
+        }
+
+        const endpointSlug = WAVESPEED_IMAGE_ENDPOINT_MAP[imageModel] ?? WAVESPEED_IMAGE_ENDPOINT_MAP["flux_2_klein"];
+        const body = buildImageBody(imageModel, imageDataUri, prompt, aspectRatio, resolution, size, useRefImage, quality, outputFormat, strength);
+
+        const res = await fetch(`https://api.wavespeed.ai/api/v3/${endpointSlug}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+          body: JSON.stringify(body),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(`Wavespeed error ${res.status}: ${json.message || JSON.stringify(json)}`);
+        const jobData = json.data;
+
+        localId = `wsimgjob_${crypto.randomUUID()}`;
+        const stmt = db.prepare(
+          `INSERT INTO wavespeed_image_jobs (id, job_id, image_path, prompt, model, size, status, result_url, error_msg, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        );
+        stmt.run([
+          localId, jobData.id, params.imagePath || "", prompt || "",
+          params.imageModel || "flux_2_klein", size || "1024*1024",
+          jobData.status || "created", null, null, now, now,
+        ]);
+        stmt.free();
+      }
+
+      db.run(
+        "UPDATE job_queue SET wavespeed_local_id = ?, updated_at = ? WHERE id = ?",
+        [localId, new Date().toISOString(), job.id]
+      );
+      persistDatabase();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("jobqueue:updated", { id: job.id, status: "running", wavespeed_local_id: localId });
+      }
+
+    } catch (err) {
+      const errMsg = err.message || String(err);
+      db.run(
+        "UPDATE job_queue SET status = 'failed', error_msg = ?, updated_at = ? WHERE id = ?",
+        [errMsg, new Date().toISOString(), job.id]
+      );
+      persistDatabase();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("jobqueue:updated", { id: job.id, status: "failed", error_msg: errMsg });
+      }
+    } finally {
+      jobQueueProcessing = false;
+    }
+  }
+
+  ipcMain.handle("jobqueue:list", async () => {
+    const db = await getDatabase();
+    const stmt = db.prepare(
+      `SELECT * FROM job_queue
+       ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'failed' THEN 2 ELSE 3 END,
+       position ASC, id ASC`
+    );
+    const rows = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    return rows;
+  });
+
+  ipcMain.handle("jobqueue:add", async (_event, { type, params, image_path, prompt, model }) => {
+    const db = await getDatabase();
+    const posRes = db.exec("SELECT COALESCE(MAX(position), -1) + 1 FROM job_queue WHERE status = 'pending'");
+    const nextPos = Number(posRes[0]?.values?.[0]?.[0] ?? 0);
+    db.run(
+      "INSERT INTO job_queue (type, position, status, params, image_path, prompt, model) VALUES (?, ?, 'pending', ?, ?, ?, ?)",
+      [type, nextPos, JSON.stringify(params), image_path || "", prompt || "", model || ""]
+    );
+    persistDatabase();
+    const lastId = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("jobqueue:updated", { action: "added", id: lastId });
+    }
+    processJobQueue();
+    return { ok: true, id: lastId };
+  });
+
+  ipcMain.handle("jobqueue:delete", async (_event, id) => {
+    const db = await getDatabase();
+    db.run("DELETE FROM job_queue WHERE id = ? AND status IN ('pending', 'failed', 'completed')", [id]);
+    persistDatabase();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("jobqueue:updated", { action: "deleted", id });
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle("jobqueue:reorder", async (_event, items) => {
+    const db = await getDatabase();
+    for (const item of items) {
+      db.run(
+        "UPDATE job_queue SET position = ?, updated_at = datetime('now') WHERE id = ? AND status = 'pending'",
+        [item.position, item.id]
+      );
+    }
+    persistDatabase();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("jobqueue:updated", { action: "reordered" });
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle("jobqueue:edit", async (_event, { id, prompt, params }) => {
+    const db = await getDatabase();
+    db.run(
+      "UPDATE job_queue SET prompt = ?, params = ?, updated_at = datetime('now') WHERE id = ? AND status = 'pending'",
+      [prompt, JSON.stringify(params), id]
+    );
+    persistDatabase();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("jobqueue:updated", { action: "edited", id });
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle("jobqueue:prioritize", async (_event, id) => {
+    const db = await getDatabase();
+    const minRes = db.exec("SELECT COALESCE(MIN(position), 0) - 1 FROM job_queue WHERE status = 'pending' AND id != " + Number(id));
+    const minPos = Number(minRes[0]?.values?.[0]?.[0] ?? -1);
+    db.run(
+      "UPDATE job_queue SET position = ?, updated_at = datetime('now') WHERE id = ? AND status = 'pending'",
+      [minPos, id]
+    );
+    persistDatabase();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("jobqueue:updated", { action: "prioritized", id });
+    }
+    return { ok: true };
+  });
+
+  // On startup: orphaned 'running' jobs (no wavespeed_local_id) couldn't have been submitted.
+  // Reset them to 'pending' so they get retried. Jobs with a wavespeed_local_id are still
+  // being polled by the existing Wavespeed pollers and will complete normally.
+  (async () => {
+    try {
+      const db = await getDatabase();
+      db.run(
+        "UPDATE job_queue SET status = 'pending', updated_at = datetime('now') WHERE status = 'running' AND wavespeed_local_id IS NULL"
+      );
+      persistDatabase();
+      processJobQueue();
+    } catch { /* ignore startup errors */ }
+  })();
+
   // ── Background poller — polls all pending jobs every 12 s ─────────────────
   // Runs in main process so jobs are tracked even when queue panel is closed.
   async function pollPendingWavespeedJobs() {
@@ -2336,6 +2594,24 @@ app.whenReady().then(() => {
             id: job.id, job_id: job.job_id,
             status: data.status, video_url: videoUrl, error_msg: errorMsg, updated_at: now,
           });
+        }
+
+        // Advance job queue when a queued video job finishes
+        if (data.status === "completed" || data.status === "failed") {
+          const qRes = db.exec(`SELECT id FROM job_queue WHERE wavespeed_local_id = '${job.id}' AND status = 'running' LIMIT 1`);
+          if (qRes[0]?.values?.length) {
+            const qId = qRes[0].values[0][0];
+            const qStatus = data.status === "completed" ? "completed" : "failed";
+            db.run(
+              "UPDATE job_queue SET status = ?, result_url = ?, error_msg = ?, updated_at = ? WHERE id = ?",
+              [qStatus, videoUrl, errorMsg, now, qId]
+            );
+            persistDatabase();
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send("jobqueue:updated", { id: qId, status: qStatus, result_url: videoUrl, error_msg: errorMsg });
+            }
+            processJobQueue();
+          }
         }
       } catch (e) {
         console.warn("[wavespeed poller] job", job.job_id, e.message);
@@ -2381,6 +2657,24 @@ app.whenReady().then(() => {
             id: job.id, job_id: job.job_id,
             status: data.status, result_url: resultUrl, error_msg: errorMsg, updated_at: now,
           });
+        }
+
+        // Advance job queue when a queued image job finishes
+        if (data.status === "completed" || data.status === "failed") {
+          const qRes = db.exec(`SELECT id FROM job_queue WHERE wavespeed_local_id = '${job.id}' AND status = 'running' LIMIT 1`);
+          if (qRes[0]?.values?.length) {
+            const qId = qRes[0].values[0][0];
+            const qStatus = data.status === "completed" ? "completed" : "failed";
+            db.run(
+              "UPDATE job_queue SET status = ?, result_url = ?, error_msg = ?, updated_at = ? WHERE id = ?",
+              [qStatus, resultUrl, errorMsg, now, qId]
+            );
+            persistDatabase();
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send("jobqueue:updated", { id: qId, status: qStatus, result_url: resultUrl, error_msg: errorMsg });
+            }
+            processJobQueue();
+          }
         }
       } catch (e) {
         console.warn("[wavespeed image poller] job", job.job_id, e.message);

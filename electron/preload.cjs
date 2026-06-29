@@ -113,6 +113,16 @@ contextBridge.exposeInMainWorld("desktop", {
     /** Download a completed video job to the source image's folder with auto-indexing. */
     downloadVideo: (localJobId) => ipcRenderer.invoke("wavespeed:downloadVideo", localJobId),
   },
+  jobqueue: {
+    list: () => ipcRenderer.invoke("jobqueue:list"),
+    add: (params) => ipcRenderer.invoke("jobqueue:add", params),
+    delete: (id) => ipcRenderer.invoke("jobqueue:delete", id),
+    reorder: (items) => ipcRenderer.invoke("jobqueue:reorder", items),
+    edit: (params) => ipcRenderer.invoke("jobqueue:edit", params),
+    prioritize: (id) => ipcRenderer.invoke("jobqueue:prioritize", id),
+    onUpdated: (cb) => ipcRenderer.on("jobqueue:updated", (_e, data) => cb(data)),
+    offUpdated: () => ipcRenderer.removeAllListeners("jobqueue:updated"),
+  },
   topaz: {
     /** Upload a local image to the Topaz Labs API, upscale it with the chosen model,
      *  download the result to ~/Pictures/TopazAI/ and reveal it in Finder.
