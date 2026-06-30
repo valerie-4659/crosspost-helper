@@ -144,28 +144,112 @@ async function indexSingleFile(filePath) {
   }
 }
 
-function migrationSql() {
+const MIGRATIONS = [
+  "001_initial.sql",
+  "002_collections.sql",
+  "003_ai_config.sql",
+  "004_post_queues.sql",
+  "005_x_tags_v2.sql",
+  "006_personas.sql",
+  "007_storylines.sql",
+  "008_picker_cooldown.sql",
+  "009_folder_previews.sql",
+  "010_wavespeed_jobs.sql",
+  "011_wavespeed_image_jobs.sql",
+  "012_topaz_jobs.sql",
+  "013_job_queue.sql",
+  "014_pick_rounds.sql",
+  "015_stem_id.sql",
+  "016_drop_cooldowns.sql",
+  "017_job_queue_extras.sql",
+  "018_wavespeed_local_path.sql",
+];
+
+function runMigrations(db) {
   const migrationsDir = path.join(__dirname, "..", "src", "database", "migrations");
-  return [
-    "001_initial.sql",
-    "002_collections.sql",
-    "003_ai_config.sql",
-    "004_post_queues.sql",
-    "005_x_tags_v2.sql",
-    "006_personas.sql",
-    "007_storylines.sql",
-    "008_picker_cooldown.sql",
-    "009_folder_previews.sql",
-    "010_wavespeed_jobs.sql",
-    "011_wavespeed_image_jobs.sql",
-    "012_topaz_jobs.sql",
-    "013_job_queue.sql",
-    "014_pick_rounds.sql",
-    "015_stem_id.sql",
-    "016_drop_cooldowns.sql",
-    "017_job_queue_extras.sql",
-    "018_wavespeed_local_path.sql",
-  ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
+
+  // Ensure migration tracking table exists.
+  db.run(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    name TEXT PRIMARY KEY NOT NULL,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+
+  // Collect already-applied migration names.
+  const applied = new Set(
+    db.exec("SELECT name FROM schema_migrations").flatMap((r) => r.values.map((v) => v[0]))
+  );
+
+  // Bootstrap: on existing databases that predate this tracker, detect which
+  // migrations are already baked in by probing for sentinel tables/columns.
+  // Any migration whose schema artifact already exists is marked applied without
+  // re-running it (re-running would fail with "duplicate column / table" errors).
+  // Bootstrap only for existing DBs (images table present but tracker absent).
+  // Fresh DBs have no tables — skip bootstrap and run all migrations in order.
+  const existingTableNames = new Set(
+    db.exec("SELECT name FROM sqlite_master WHERE type='table'")
+      .flatMap((r) => r.values.map((v) => String(v[0])))
+  );
+  if (applied.size === 0 && existingTableNames.has("images")) {
+    const tableNames = existingTableNames;
+    const imagesColumns = new Set(
+      db.exec("PRAGMA table_info(images)").flatMap((r) => r.values.map((v) => String(v[1])))
+    );
+    const jobQueueColumns = tableNames.has("job_queue")
+      ? new Set(
+          db.exec("PRAGMA table_info(job_queue)").flatMap((r) => r.values.map((v) => String(v[1])))
+        )
+      : new Set();
+    const wavespeedColumns = tableNames.has("wavespeed_jobs")
+      ? new Set(
+          db.exec("PRAGMA table_info(wavespeed_jobs)").flatMap((r) => r.values.map((v) => String(v[1])))
+        )
+      : new Set();
+
+    const alreadyPresent = (file) => {
+      switch (file) {
+        case "001_initial.sql":          return tableNames.has("images");
+        case "002_collections.sql":      return tableNames.has("collections");
+        case "003_ai_config.sql":        return tableNames.has("ai_config");
+        case "004_post_queues.sql":      return tableNames.has("post_queues");
+        case "005_x_tags_v2.sql":        return tableNames.has("network_tags");
+        case "006_personas.sql":         return tableNames.has("personas");
+        case "007_storylines.sql":       return tableNames.has("storylines");
+        case "008_picker_cooldown.sql":  return tableNames.has("picker_cooldowns");
+        case "009_folder_previews.sql":  return tableNames.has("folder_preview_images");
+        case "010_wavespeed_jobs.sql":   return tableNames.has("wavespeed_jobs");
+        case "011_wavespeed_image_jobs.sql": return tableNames.has("wavespeed_image_jobs");
+        case "012_topaz_jobs.sql":       return tableNames.has("topaz_jobs");
+        case "013_job_queue.sql":        return tableNames.has("job_queue");
+        case "014_pick_rounds.sql":      return tableNames.has("pick_rounds");
+        case "015_stem_id.sql":          return imagesColumns.has("stem_id");
+        case "016_drop_cooldowns.sql":   return !tableNames.has("picker_cooldowns");
+        case "017_job_queue_extras.sql": return jobQueueColumns.has("ai_instructions");
+        case "018_wavespeed_local_path.sql": return wavespeedColumns.has("local_path");
+        default: return false;
+      }
+    };
+
+    for (const file of MIGRATIONS) {
+      if (alreadyPresent(file)) {
+        db.run("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)", [file]);
+        console.log(`[DB] Bootstrap: marked ${file} as already applied`);
+      }
+    }
+
+    // Refresh the applied set after bootstrap.
+    applied.clear();
+    db.exec("SELECT name FROM schema_migrations")
+      .flatMap((r) => r.values.map((v) => v[0]))
+      .forEach((n) => applied.add(n));
+  }
+
+  for (const file of MIGRATIONS) {
+    if (applied.has(file)) continue;
+    const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+    db.run(sql);
+    db.run("INSERT INTO schema_migrations (name) VALUES (?)", [file]);
+    console.log(`[DB] Applied migration: ${file}`);
+  }
 }
 
 async function getSql() {
@@ -190,7 +274,7 @@ async function getDatabase() {
       } else {
         database = new SQL.Database();
       }
-      database.run(migrationSql());
+      runMigrations(database);
 
       // One-time normalisation: convert Windows backslash paths that were
       // written by pre-v0.2.5 builds.  Forward slashes work on every platform
