@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.4 - 2026-06-30
+
+- refine: video cards in library — thumbnail, controls, AI post source image
+- feat: download button in video queue panel for completed jobs
+
+
 ## v0.3.3 - 2026-06-30
 
 - feat: picker folder selector, video toggle, and video preview

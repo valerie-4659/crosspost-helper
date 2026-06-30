@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.4",
+    date: "2026-06-30",
+    items: [
+      "refine: video cards in library — thumbnail, controls, AI post source image",
+      "feat: download button in video queue panel for completed jobs",
+    ],
+  },
+  {
     version: "0.3.3",
     date: "2026-06-30",
     items: [
