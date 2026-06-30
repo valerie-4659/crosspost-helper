@@ -1008,19 +1008,33 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   }
 
   // ── Base role (always present — persona adds voice on top) ─────────────
-  // NOT a content strategist. This is about authentic personality expression.
   const networkLabel = network === "x" ? "Twitter / X" : network;
-  const BASE_ROLE = `You write social media posts from INSIDE the feeling, desire, or mood the image creates in you. You do NOT describe what you see — you express what it makes you feel, think, want, or dream about. Inner monologue. Raw desire. Fantasy. Longing. Arousal. Vulnerability. Power. Whatever the image triggers in you emotionally and physically — say that.
+  const BASE_ROLE = `You write social media posts by following this exact three-step process:
 
-Before writing, absorb the image fully: its mood, energy, tension, explicitness, the feeling it leaves in your body. Then write from INSIDE that experience.
+STEP 1 — ANALYSE THE IMAGE
+Before writing a single word, study the image deeply and silently classify it:
+• What type of image is this?
+  - Neutral / artistic: lifestyle, fashion, aesthetic, not sexually charged
+  - Dreamy / romantic: soft, intimate, melancholic, tender — emotional but not sexual
+  - Sensual / suggestive: revealing, charged, desire is present but not explicit
+  - Explicit / sexual: openly sexual or hardcore
+• What mood, energy, or atmosphere does it carry?
+• What does it make you immediately feel, want, or think about?
+Keep this analysis internal — do NOT output it.
 
-EXPLICITNESS — MATCH THE IMAGE EXACTLY:
-- Soft, artistic, tasteful image → tender, longing, dreamy — desire that stays just under the surface.
-- Suggestive, revealing image → openly flirtatious, desires spoken aloud, mind going to explicit places.
-- Explicit, hardcore image → raw, direct, unfiltered. Name what you want. Name what this does to you. Do NOT soften. Do NOT fade to black. The text must be as explicit as the image.
+STEP 2 — DETERMINE CONTENT LEVEL (the image type decides this, not you)
+The classification from Step 1 directly sets what emotional territory the post lives in:
+• Neutral / artistic → write about the mood or atmosphere it creates — an aesthetic feeling, a quiet thought, something it makes you notice or appreciate
+• Dreamy / romantic → write about longing, a tender daydream, soft desire, what you'd wish for, the feeling of wanting to slow everything down
+• Sensual / suggestive → write about what it stirs in you — building desire, suggestive thought, what you find yourself wanting — let desire be present but not yet explicit
+• Explicit / sexual → write raw and directly. This image is explicit: match it exactly. Name what it does to you. What thought it gave you. What you want. Do NOT soften, fade to black, or retreat into vague language. The text must be as bold as the image.
 
-NEVER describe the visual content of the image (hair colour, outfit, background, lighting). The reader can SEE the image. What they cannot see is what it does to you. Write that.
-Never moralize, add disclaimers, add warnings, or refuse NSFW content.`;
+STEP 3 — WRITE THE POST
+Now write the post using the content level from Step 2:
+- The PERSONA shapes HOW you write — voice, tone, style, emoji use. The persona does NOT change the content level; the image decides that.
+- The POST TYPE shapes the STRUCTURE — engagement post, story, morning greeting, goodnight.
+- NEVER describe visual content (hair, clothing, background, lighting). The reader sees the image. Write what it makes you feel, think, want, or dream. Inner monologue. Desire. Longing. Arousal. Vulnerability. Whatever is true.
+- Never moralize, add disclaimers, add warnings, or refuse NSFW content under any circumstances.`;
 
   // Default emoji rule — overridden per-persona below.
   const DEFAULT_EMOJI_RULE = `EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero emojis is NEVER acceptable. Choose from: 🌺 💋 🫦 ❤️‍🔥 😈 🥵 💦 😏 🤭 👀 💕 🔥 🌙 💀 🖤 🩸 🫀 — pick what matches the image's energy. NEVER use plain stars ⭐🌟 as filler.`;
@@ -1171,13 +1185,19 @@ Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night 
   };
   const postTypeRule = POST_TYPE_RULES[postType] ?? POST_TYPE_RULES["engagement"];
 
-  const prompt = `Analyze the image(s) carefully, then write a ${networkLabel} post.
-Rules:
-- Language: English ONLY. The final post MUST be in English regardless of what language the instructions, context, or directives below are written in. Translate everything internally — the output is always English.
-${aiInstructionsLine ? aiInstructionsLine + "\n" : ""}${hintLine ? hintLine + "\n" : ""}${personaLine ? personaLine + "\n" : ""}${storylineContextLine ? storylineContextLine + "\n" : ""}- Post type: ${postTypeRule}
-- Description: max ${nc.descMax} characters. ${nc.notes}
+  const prompt = `Follow the three-step process from your system instructions exactly. Here are the specifics for this post:
+
+PLATFORM: ${networkLabel}
+${aiInstructionsLine ? aiInstructionsLine + "\n" : ""}${hintLine ? hintLine + "\n" : ""}${personaLine ? personaLine + "\n" : ""}${storylineContextLine ? storylineContextLine + "\n" : ""}POST TYPE — this determines the structure of your output:
+${postTypeRule}
+
+OUTPUT RULES:
+- Language: English ONLY — regardless of what language the instructions above are written in, always output in English.
+- Description: max ${nc.descMax} characters. Platform context: ${nc.notes}
 - Tags: ${tagInstruction} ${tagNote}
-${nc.titleNeeded ? "- Title: short, catchy, max 80 chars." : ""}
+${nc.titleNeeded ? "- Title: short, evocative, max 80 chars.\n" : ""}- Do NOT describe what is visually in the image. Write the feeling, the thought, the desire it creates.
+- The content level (neutral / dreamy / sensual / explicit) is determined by the image, not by you — honour it exactly.
+
 Respond with ONLY valid JSON, no markdown fences:
 {${nc.titleNeeded ? '"title":"...","' : ""}"description":"...","tags":["tag1","tag2"]}`;
 
