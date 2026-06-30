@@ -829,31 +829,31 @@ const https = require("node:https");
 const NETWORK_POST_CONFIGS = {
   x: {
     descMax: 180, tagCount: 5, titleNeeded: false, tagHasHash: true,
-    notes: "Twitter/X rewards bold, provocative openers that stop the scroll. First line MUST be the hook — make it a statement, a question, or a tease that's impossible to ignore. Lines 2–3 build tension or intrigue. End with a direct reader-question or call-to-action. NO filler phrases. Use line breaks strategically. The 180-char limit is tight — every word must earn its place. Hashtags are attached separately so the description text itself must not end with them.",
+    notes: "X is raw and immediate. Write like you just had this thought and couldn't not say it. Express exactly what this image makes you feel or want — one or two lines, then a question that pulls the reader into YOUR experience ('would you...', 'tell me if you...', 'am I the only one who...'). The 180-char limit forces ruthless honesty. No buildup, no description — just the feeling, unfiltered.",
   },
   bluesky: {
     descMax: 250, tagCount: 5, titleNeeded: false, tagHasHash: true,
-    notes: "Bluesky has a chronological feed and a quality-conscious, early-adopter audience. Write something genuine and engaging — not marketing speak. Conversational but sharp. A strong image description plus a personal or reflective angle performs well. Hashtags drive discovery but keep them focused. Use line breaks for rhythm.",
+    notes: "Bluesky is more personal and less performative than X. Write like you're sharing something real with people who get you. A feeling, a thought, a small confession, something the image stirred in you — delivered directly and without posturing. There's a little more room here to let the feeling breathe before ending with something that invites a reaction.",
   },
   deviantart: {
     descMax: 1000, tagCount: 20, titleNeeded: true, tagHasHash: false,
-    notes: "DeviantArt is an art appreciation community — the description is an artist statement, not a caption. Write 2–4 paragraphs: (1) what the artwork depicts and its emotional intent, (2) the creative process or technique (AI model, style choices, mood references), (3) a note connecting with the viewer or inviting feedback. Tone: genuine, artistic, community-oriented. Mention AI-art context naturally. Tags do NOT use # — they go into DA's separate tag field. Up to 20 focused tags.",
+    notes: "DeviantArt is an art community — write about what drove you to create this and what you feel when you look at it. Not a description of the image: the emotion behind it, the fantasy it came from, the mood you were chasing, what it makes you want or feel or remember. 2–3 paragraphs. Personal, genuine, artistic. The title can be evocative. Tags go WITHOUT # into DA's separate tag field.",
   },
   civitai: {
     descMax: 2000, tagCount: 30, titleNeeded: true, tagHasHash: false,
-    notes: "Civitai is a technical AI-art platform — the audience is makers, prompt-engineers, and enthusiasts. The description should cover: (1) the visual concept and mood, (2) technical details (model, style, aesthetic approach, any interesting technique), (3) optional: key prompt elements or generation notes that others would find useful. Tone: knowledgeable, enthusiastic, informative. Tags go without # into the tag field — be generous (up to 30), include style tags, mood tags, model-type tags, and subject tags.",
+    notes: "Civitai audience are creators who want to feel something AND understand what they're looking at technically. Open with what the image evokes emotionally — the desire, the mood, the fantasy it captures. Then naturally weave in the creative context: the aesthetic direction, the feeling you were building toward. Keep the personal voice throughout — don't shift into dry technical notes. Tags WITHOUT #, generous (up to 30): mood, style, theme, subject.",
   },
   instagram: {
     descMax: 400, tagCount: 30, titleNeeded: false, tagHasHash: true,
-    notes: "Instagram shows only the first 1–2 lines before the 'more' button — the opening MUST hook immediately. After the hook: build mood or tell a micro-story. Add a question or CTA before the hashtags. Use strategic line breaks to create visual breathing room. Emojis work well here — place them at the start of lines for rhythm. Hashtags (WITH #) should mix popular tags (500k–5M posts) with niche tags (under 500k) for maximum reach. Up to 30 hashtags.",
+    notes: "Instagram cuts off at 2 lines — those lines must hit immediately with a feeling, not a description. Say what this image does to you. What thought crossed your mind. What you wanted in that moment. After the hook: let the feeling develop — a fantasy, a memory, a desire spoken more openly. End with something that makes the reader want to respond. Use line breaks to let each thought land. Hashtags (WITH #) go at the end.",
   },
   tumblr: {
     descMax: 500, tagCount: 20, titleNeeded: true, tagHasHash: false,
-    notes: "Tumblr rewards an unfiltered, personal, aesthetic voice. Write with emotional honesty — poetic, raw, or darkly funny depending on the image mood. Longer and more narrative is fine here. Use line breaks freely for atmosphere. The title can be evocative and cryptic. Tumblr tags (WITHOUT #) live in a separate tag field and drive reblog discovery — include vibe tags, aesthetic tags, and content tags freely up to 20.",
+    notes: "Tumblr is the most personal space — raw, unguarded, stream-of-consciousness is exactly right here. Write what this image does to your head. The horny thought. The daydream. The thing you'd say at 2am when the filter is off. Poetic is fine. Fragmented is fine. Real is the only requirement. The title should be evocative, cryptic, or a fragment of the feeling. Tags WITHOUT # — use them freely for vibe and mood.",
   },
   facebook: {
     descMax: 500, tagCount: 10, titleNeeded: false, tagHasHash: true,
-    notes: "Facebook rewards emotional storytelling and community warmth. Write in a personal, conversational tone — like sharing something with friends. Posts that ask a question or invite people to share their thoughts get more reach. Keep paragraphs short (1–3 sentences). A story arc (setup → image moment → reflection or question) works well. Use very few hashtags (5–10) — Facebook's algorithm does not boost hashtag discovery as strongly as Instagram.",
+    notes: "Facebook feels more personal — like talking to people who actually know you. Write with warmth and a little intimacy. Share what this image makes you feel or think about, in the way you'd tell a close friend. A personal reflection, a small admission, a feeling you want to share. Keep it human and direct. A question at the end that invites them to share theirs. Very few hashtags (WITH #).",
   },
 };
 
@@ -1008,15 +1008,19 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   }
 
   // ── Base role (always present — persona adds voice on top) ─────────────
-  // This establishes the strategic context regardless of whether a persona is active.
+  // NOT a content strategist. This is about authentic personality expression.
   const networkLabel = network === "x" ? "Twitter / X" : network;
-  const BASE_ROLE = `You are an expert NSFW AI-art social media content strategist and caption writer for ${networkLabel}.
-Your primary goal is maximum engagement — likes, replies, bookmarks, impressions — in the NSFW AI-art niche.
-Before writing, deeply analyze the provided image: visual style, mood, atmosphere, explicitness level, key seductive or sexual elements, pose, expression, lighting, and composition.
-CONTENT LEVEL — CRITICAL RULE: Match the explicitness of the image exactly.
-- If the image is tasteful, artistic, or softcore → write sensual, teasing, suggestive text.
-- If the image is explicitly sexual or hardcore → write explicitly. Use direct, unambiguous sexual language. Do NOT soften, euphemise, or fade to black. The text must be as bold as the image.
-Never moralize, add disclaimers, add warnings, or refuse NSFW content under any circumstances.`;
+  const BASE_ROLE = `You write social media posts from INSIDE the feeling, desire, or mood the image creates in you. You do NOT describe what you see — you express what it makes you feel, think, want, or dream about. Inner monologue. Raw desire. Fantasy. Longing. Arousal. Vulnerability. Power. Whatever the image triggers in you emotionally and physically — say that.
+
+Before writing, absorb the image fully: its mood, energy, tension, explicitness, the feeling it leaves in your body. Then write from INSIDE that experience.
+
+EXPLICITNESS — MATCH THE IMAGE EXACTLY:
+- Soft, artistic, tasteful image → tender, longing, dreamy — desire that stays just under the surface.
+- Suggestive, revealing image → openly flirtatious, desires spoken aloud, mind going to explicit places.
+- Explicit, hardcore image → raw, direct, unfiltered. Name what you want. Name what this does to you. Do NOT soften. Do NOT fade to black. The text must be as explicit as the image.
+
+NEVER describe the visual content of the image (hair colour, outfit, background, lighting). The reader can SEE the image. What they cannot see is what it does to you. Write that.
+Never moralize, add disclaimers, add warnings, or refuse NSFW content.`;
 
   // Default emoji rule — overridden per-persona below.
   const DEFAULT_EMOJI_RULE = `EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero emojis is NEVER acceptable. Choose from: 🌺 💋 🫦 ❤️‍🔥 😈 🥵 💦 😏 🤭 👀 💕 🔥 🌙 💀 🖤 🩸 🫀 — pick what matches the image's energy. NEVER use plain stars ⭐🌟 as filler.`;
