@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.2",
+    date: "2026-06-30",
+    items: [
+      "feat: fair-shuffle picker and stable image identity via stem_id",
+    ],
+  },
+  {
     version: "0.3.1",
     date: "2026-06-29",
     items: [

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.2 - 2026-06-30
+
+- feat: fair-shuffle picker and stable image identity via stem_id
+
+
 ## v0.3.1 - 2026-06-29
 
 - chore: release v0.3.0
