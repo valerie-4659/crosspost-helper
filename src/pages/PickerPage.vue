@@ -742,9 +742,9 @@ onUnmounted(() => {
           <Ban class="h-3.5 w-3.5" />Exclude globally
         </button>
 
-        <!-- Cooldown indicator -->
-        <p v-if="picker.cooldownCount > 0" class="text-[11px] text-slate-500">
-          {{ picker.cooldownCount }} image{{ picker.cooldownCount === 1 ? '' : 's' }} on cooldown
+        <!-- Round indicator -->
+        <p v-if="picker.currentRound > 1" class="text-[11px] text-slate-500">
+          Round {{ picker.currentRound }}
         </p>
 
         <button

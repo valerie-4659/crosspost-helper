@@ -412,6 +412,150 @@ export async function pickRandomImage(filters: ImageFilters): Promise<ImageWithP
   return rows[0] ? mapImageWithState(rows[0]) : null;
 }
 
+// ── Fair shuffle (per-network round-based) ──────────────────────────────────
+
+async function queryFairRandom(
+  filters: ImageFilters,
+  targetId: string,
+  round: number,
+): Promise<ImageWithPostState | null> {
+  const db = await getDatabase();
+  const params: unknown[] = [];
+  const conditions = ["images.is_archived = 0"];
+
+  if (filters.sourceId) {
+    params.push(filters.sourceId);
+    conditions.push(`images.source_id = $${params.length}`);
+  }
+  if (filters.folderPath) {
+    params.push(`%${filters.folderPath}%`);
+    conditions.push(`images.folder_path LIKE $${params.length}`);
+  }
+  if (filters.exactFolderPath) {
+    params.push(filters.exactFolderPath);
+    conditions.push(`images.folder_path = $${params.length}`);
+  }
+  if (filters.rating && filters.rating !== "all") {
+    params.push(filters.rating);
+    conditions.push(`images.rating = $${params.length}`);
+  }
+  if (filters.dateFrom) {
+    params.push(filters.dateFrom);
+    conditions.push(`COALESCE(images.created_at, images.modified_at, images.indexed_at) >= $${params.length}`);
+  }
+  if (filters.dateTo) {
+    params.push(filters.dateTo);
+    conditions.push(`COALESCE(images.created_at, images.modified_at, images.indexed_at) <= $${params.length}`);
+  }
+  if (filters.excludePostedAnywhere) {
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM post_records pa
+      WHERE pa.image_id = images.id AND pa.status = 'posted'
+    )`);
+  }
+
+  // Permanently exclude images already posted to this target
+  params.push(targetId);
+  conditions.push(`NOT EXISTS (
+    SELECT 1 FROM post_records pr
+    WHERE pr.image_id = images.id AND pr.target_id = $${params.length} AND pr.status = 'posted'
+  )`);
+
+  // Excluded folders
+  conditions.push(`NOT EXISTS (
+    SELECT 1 FROM excluded_folders ef
+    WHERE images.folder_path = ef.folder_path
+       OR images.folder_path LIKE ef.folder_path || '/%'
+  )`);
+
+  // Fair shuffle: exclude images already shown in this round for this target
+  params.push(targetId);
+  const tParam = params.length;
+  params.push(round);
+  const rParam = params.length;
+  conditions.push(`NOT EXISTS (
+    SELECT 1 FROM pick_history ph
+    WHERE ph.image_id = images.id
+      AND ph.target_id = $${tParam}
+      AND ph.round = $${rParam}
+  )`);
+
+  const rows = await db.select<ImageListRow[]>(
+    `SELECT images.*, image_sources.name AS source_name, image_sources.type AS source_type,
+      GROUP_CONCAT(post_records.target_id || ':' || post_records.status, '|') AS post_states
+     FROM images
+     JOIN image_sources ON image_sources.id = images.source_id
+     LEFT JOIN post_records ON post_records.image_id = images.id
+     WHERE ${conditions.join(" AND ")}
+     GROUP BY images.id
+     ORDER BY RANDOM()
+     LIMIT 1`,
+    params,
+  );
+
+  return rows[0] ? mapImageWithState(rows[0]) : null;
+}
+
+/**
+ * Pick a random image using per-network round-based fair shuffle.
+ * Each eligible image appears exactly once per round before any image repeats.
+ * When all eligible images have been shown, a new round starts automatically.
+ * Skipped images are recorded as shown this round (Option A) via recordImageShown().
+ * Posted images are permanently excluded.
+ */
+export async function pickFairRandomImage(filters: ImageFilters): Promise<ImageWithPostState | null> {
+  const db = await getDatabase();
+  const targetId = filters.targetId!;
+
+  const roundRows = await db.select<Array<{ round: number }>>(
+    "SELECT round FROM pick_rounds WHERE target_id = $1",
+    [targetId],
+  );
+  let currentRound = roundRows[0]?.round ?? 1;
+
+  let image = await queryFairRandom(filters, targetId, currentRound);
+
+  if (!image) {
+    // All eligible images shown this round — start a new round
+    currentRound += 1;
+    await db.execute(
+      "INSERT OR REPLACE INTO pick_rounds (target_id, round) VALUES ($1, $2)",
+      [targetId, currentRound],
+    );
+    image = await queryFairRandom(filters, targetId, currentRound);
+  }
+
+  return image;
+}
+
+/** Return the current round number for a target (1 if never picked). */
+export async function getCurrentRound(targetId: string): Promise<number> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<{ round: number }>>(
+    "SELECT round FROM pick_rounds WHERE target_id = $1",
+    [targetId],
+  );
+  return rows[0]?.round ?? 1;
+}
+
+/**
+ * Record that an image was shown (picked or skipped) in the current round for a target.
+ * Call this after every pick and every skip so the image won't reappear this round.
+ */
+export async function recordImageShown(imageId: string, targetId: string): Promise<void> {
+  const db = await getDatabase();
+  const roundRows = await db.select<Array<{ round: number }>>(
+    "SELECT round FROM pick_rounds WHERE target_id = $1",
+    [targetId],
+  );
+  const currentRound = roundRows[0]?.round ?? 1;
+  await db.execute(
+    `INSERT OR REPLACE INTO pick_history (image_id, target_id, round, picked_at)
+     VALUES ($1, $2, $3, $4)`,
+    [imageId, targetId, currentRound, nowIso()],
+  );
+}
+
 // ── Picker state helpers ────────────────────────────────────────────────────
 
 /** Increment the persistent pick counter by 1. Called after every successful pick. */

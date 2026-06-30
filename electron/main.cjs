@@ -20,6 +20,13 @@ let databaseInitPromise;
 
 const supportedExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm", ".mov"]);
 
+// Stable identity key: full path without file extension.
+// my_art.png and my_art.jpg both produce the same stem so post_records survive format conversions.
+function fileStem(normalizedPath) {
+  const ext = path.extname(normalizedPath);
+  return ext ? normalizedPath.slice(0, -ext.length) : normalizedPath;
+}
+
 function appDataPath() {
   const dir = path.join(app.getPath("userData"), "data");
   fs.mkdirSync(dir, { recursive: true });
@@ -93,29 +100,35 @@ async function indexSingleFile(filePath) {
       }
     }
 
-    // Upsert: update if already indexed, insert if new.
+    const stemId = fileStem(normalizedPath);
+
+    // Upsert: look up by stem_id so extension changes (PNG→JPG) reuse the same row.
     const chkStmt = db.prepare(
-      "SELECT id FROM images WHERE source_id = ? AND source_file_id = ? LIMIT 1"
+      "SELECT id FROM images WHERE source_id = ? AND stem_id = ? LIMIT 1"
     );
-    chkStmt.bind([sourceId, normalizedPath]);
+    chkStmt.bind([sourceId, stemId]);
     const existing = [];
     while (chkStmt.step()) existing.push(chkStmt.getAsObject());
     chkStmt.free();
 
     if (existing[0]) {
       db.run(
-        "UPDATE images SET thumbnail_url = COALESCE(?, thumbnail_url), indexed_at = ?, modified_at = ? WHERE id = ?",
-        [thumbnailUrl, now, stat.mtime.toISOString(), existing[0].id]
+        `UPDATE images SET source_file_id = ?, local_path = ?, filename = ?, folder_path = ?,
+         mime_type = ?, file_size = ?, thumbnail_url = COALESCE(?, thumbnail_url),
+         indexed_at = ?, modified_at = ? WHERE id = ?`,
+        [normalizedPath, normalizedPath, filename, folderPath,
+         mimeType, stat.size, thumbnailUrl,
+         now, stat.mtime.toISOString(), existing[0].id]
       );
     } else {
       const id = `image_${crypto.randomUUID()}`;
       const insStmt = db.prepare(
-        `INSERT INTO images (id, source_id, source_file_id, local_path, filename, folder_path,
+        `INSERT INTO images (id, source_id, source_file_id, stem_id, local_path, filename, folder_path,
          mime_type, file_size, thumbnail_url, created_at, modified_at, indexed_at, rating, is_archived)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', 0)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', 0)`
       );
       insStmt.run([
-        id, sourceId, normalizedPath, normalizedPath, filename, folderPath,
+        id, sourceId, normalizedPath, stemId, normalizedPath, filename, folderPath,
         mimeType, stat.size, thumbnailUrl,
         stat.birthtime.toISOString(), stat.mtime.toISOString(), now,
       ]);
@@ -147,6 +160,8 @@ function migrationSql() {
     "011_wavespeed_image_jobs.sql",
     "012_topaz_jobs.sql",
     "013_job_queue.sql",
+    "014_pick_rounds.sql",
+    "015_stem_id.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
@@ -381,33 +396,36 @@ async function scanAndIndex(sourceId, rootPath, onProgress) {
   let removed = 0;
   const errors = [];
 
-  // ── Build a Set of all file paths found on disk this scan ────────────────
+  // ── Build Sets of all paths and stems found on disk this scan ───────────
   const diskPaths = new Set(files.map((f) => f.localPath));
+  const diskStems = new Set(files.map((f) => fileStem(f.localPath)));
 
   db.run("BEGIN TRANSACTION");
   try {
     // ── Upsert all files found on disk ───────────────────────────────────────
     for (const file of files) {
-      // Check if this file was already indexed.
+      const stemId = fileStem(file.localPath);
+
+      // Look up by stem_id so extension changes (PNG→JPG) reuse the same row.
       const chkStmt = db.prepare(
-        "SELECT id FROM images WHERE source_id = ? AND source_file_id = ? LIMIT 1"
+        "SELECT id FROM images WHERE source_id = ? AND stem_id = ? LIMIT 1"
       );
-      chkStmt.bind([sourceId, file.localPath]);
+      chkStmt.bind([sourceId, stemId]);
       const existing = [];
       while (chkStmt.step()) existing.push(chkStmt.getAsObject());
       chkStmt.free();
 
       if (existing[0]) {
         const updStmt = db.prepare(
-          `UPDATE images SET local_path = ?, filename = ?, folder_path = ?, mime_type = ?,
-           file_size = ?, thumbnail_url = COALESCE(?, thumbnail_url), web_view_link = ?,
+          `UPDATE images SET source_file_id = ?, local_path = ?, filename = ?, folder_path = ?,
+           mime_type = ?, file_size = ?, thumbnail_url = COALESCE(?, thumbnail_url), web_view_link = ?,
            created_at = ?, modified_at = ?, indexed_at = ?,
            perceptual_hash = COALESCE(?, perceptual_hash),
            width = COALESCE(?, width), height = COALESCE(?, height),
            rating = COALESCE(?, rating) WHERE id = ?`
         );
         updStmt.run([
-          file.localPath, file.filename, file.folderPath, file.mimeType,
+          file.localPath, file.localPath, file.filename, file.folderPath, file.mimeType,
           file.fileSize ?? null, file.thumbnailUrl ?? null, null,
           file.createdAt ?? null, file.modifiedAt ?? null, now,
           null, null, null, "unknown", existing[0].id,
@@ -417,13 +435,13 @@ async function scanAndIndex(sourceId, rootPath, onProgress) {
       } else {
         const id = `image_${crypto.randomUUID()}`;
         const insStmt = db.prepare(
-          `INSERT INTO images (id, source_id, source_file_id, local_path, filename,
+          `INSERT INTO images (id, source_id, source_file_id, stem_id, local_path, filename,
            folder_path, mime_type, file_size, thumbnail_url, web_view_link,
            created_at, modified_at, indexed_at, perceptual_hash, width, height, rating, is_archived)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
         );
         insStmt.run([
-          id, sourceId, file.localPath, file.localPath, file.filename,
+          id, sourceId, file.localPath, stemId, file.localPath, file.filename,
           file.folderPath, file.mimeType, file.fileSize ?? null,
           file.thumbnailUrl ?? null, null,
           file.createdAt ?? null, file.modifiedAt ?? null, now,
@@ -434,11 +452,12 @@ async function scanAndIndex(sourceId, rootPath, onProgress) {
       }
     }
 
-    // ── Remove stale DB records (files deleted/moved from disk) ──────────────
-    // Load all source_file_id values from DB for this source, then delete any
-    // that were not found on disk during this scan.
+    // ── Remove stale DB records (files deleted from disk) ───────────────────
+    // Use stem_id for the check: if the stem no longer exists on disk under any
+    // extension, the file is truly gone. This prevents deletion when only the
+    // extension changed (PNG→JPG) and the file was re-scanned.
     const allStmt = db.prepare(
-      "SELECT id, source_file_id FROM images WHERE source_id = ?"
+      "SELECT id, source_file_id, stem_id FROM images WHERE source_id = ?"
     );
     allStmt.bind([sourceId]);
     const dbRows = [];
@@ -446,7 +465,8 @@ async function scanAndIndex(sourceId, rootPath, onProgress) {
     allStmt.free();
 
     for (const row of dbRows) {
-      if (!diskPaths.has(row.source_file_id)) {
+      const stemToCheck = row.stem_id ?? fileStem(String(row.source_file_id));
+      if (!diskStems.has(stemToCheck) && !diskPaths.has(row.source_file_id)) {
         const delStmt = db.prepare("DELETE FROM images WHERE id = ?");
         delStmt.run([row.id]);
         delStmt.free();
@@ -2542,12 +2562,25 @@ app.whenReady().then(() => {
   // On startup: orphaned 'running' jobs (no wavespeed_local_id) couldn't have been submitted.
   // Reset them to 'pending' so they get retried. Jobs with a wavespeed_local_id are still
   // being polled by the existing Wavespeed pollers and will complete normally.
+  // Also backfill stem_id for any images that were indexed before migration 015.
   (async () => {
     try {
       const db = await getDatabase();
       db.run(
         "UPDATE job_queue SET status = 'pending', updated_at = datetime('now') WHERE status = 'running' AND wavespeed_local_id IS NULL"
       );
+
+      // Backfill stem_id for existing images that don't have it yet.
+      const backfillStmt = db.prepare(
+        "SELECT id, source_file_id FROM images WHERE stem_id IS NULL AND source_file_id IS NOT NULL"
+      );
+      const toBackfill = [];
+      while (backfillStmt.step()) toBackfill.push(backfillStmt.getAsObject());
+      backfillStmt.free();
+      for (const row of toBackfill) {
+        db.run("UPDATE images SET stem_id = ? WHERE id = ?", [fileStem(String(row.source_file_id)), row.id]);
+      }
+
       persistDatabase();
       processJobQueue();
     } catch { /* ignore startup errors */ }

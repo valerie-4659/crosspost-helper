@@ -1,21 +1,13 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { copyImagePath, copyImageToClipboard, revealImage } from "@/services/imageActionService";
-import { countEligibleImages, markImagePosted, pickRandomUnpostedImage } from "@/services/pickerService";
-import {
-  getActiveCooldownCount,
-  incrementPickCount,
-  pickRandomImages,
-  setImageArchived,
-  setImageCooldown,
-} from "@/repositories/imageRepository";
+import { markImagePosted, markImageSkipped, pickRandomUnpostedImage } from "@/services/pickerService";
+import { getCurrentRound, pickRandomImages, recordImageShown, setImageArchived } from "@/repositories/imageRepository";
 import { markWithSiblings } from "@/repositories/postRecordRepository";
 import { useTargetStore } from "./targetStore";
 import type { ImageFilters, ImageWithPostState } from "@/types/image";
 
 const HISTORY_MAX = 10;
-/** Fraction of the eligible pool required as picks before a skipped image re-enters. */
-const COOLDOWN_FRACTION = 0.4;
 
 export const usePickerStore = defineStore("picker", () => {
   const targetStore = useTargetStore();
@@ -33,16 +25,17 @@ export const usePickerStore = defineStore("picker", () => {
     rating: "all",
   });
 
-  // ── Cooldown counter (reactive, reflects DB state) ───────────────────────
-  /** Number of images currently on active cooldown. Updated after each skip/pick. */
-  const cooldownCount = ref(0);
-
-  async function refreshCooldownCount() {
-    cooldownCount.value = await getActiveCooldownCount();
-  }
-
   const canPick = computed(() => Boolean(targetStore.activeTargetId));
   const canGoBack = computed(() => history.value.length > 0);
+
+  /** Current fair-shuffle round for the active target (1-based). */
+  const currentRound = ref(1);
+
+  async function refreshCurrentRound() {
+    if (targetStore.activeTargetId) {
+      currentRound.value = await getCurrentRound(targetStore.activeTargetId);
+    }
+  }
 
   async function pickRandom() {
     loading.value = true;
@@ -59,9 +52,11 @@ export const usePickerStore = defineStore("picker", () => {
         history.value = [currentImage.value, ...history.value].slice(0, HISTORY_MAX);
       }
       currentImage.value = next;
-      // Increment the persistent pick counter so cooldown thresholds advance.
-      await incrementPickCount();
-      await refreshCooldownCount();
+      // Record as shown this round so this image won't reappear until next round.
+      if (filters.value.targetId) {
+        await recordImageShown(next.id, filters.value.targetId);
+        await refreshCurrentRound();
+      }
     } catch (caught) {
       error.value = caught instanceof Error ? caught.message : String(caught);
     } finally {
@@ -91,18 +86,11 @@ export const usePickerStore = defineStore("picker", () => {
 
   /**
    * Skip the current image.
-   * Writes a persistent cooldown entry to the DB: the image won't be re-picked
-   * until 40% of the eligible pool has been randomly seen (pick counter threshold).
-   * Survives app restarts.
+   * Records it as shown this round — it won't reappear until the next round starts.
    */
   async function markSkipped() {
     if (!currentImage.value || !targetStore.activeTargetId) return;
-    const imageId = currentImage.value.id;
-    // Count the eligible pool to calculate the 40% threshold
-    const poolSize = await countEligibleImages({ ...filters.value, targetId: targetStore.activeTargetId });
-    const stepsAhead = Math.max(1, Math.ceil(poolSize * COOLDOWN_FRACTION));
-    await setImageCooldown(imageId, stepsAhead);
-    await refreshCooldownCount();
+    await markImageSkipped(currentImage.value.id, targetStore.activeTargetId);
     await pickRandom();
   }
 
@@ -253,7 +241,7 @@ export const usePickerStore = defineStore("picker", () => {
     message,
     canPick,
     canGoBack,
-    cooldownCount,
+    currentRound,
     pickRandom,
     goBack,
     markPosted,
