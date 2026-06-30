@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { Check, Clapperboard, ExternalLink, Film, FolderOpen, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
+import { Check, Clapperboard, Download, ExternalLink, Film, FolderOpen, RefreshCcw, RotateCcw, Sparkles, Trash2, X } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import { VIDEO_MODELS, getVideoModelCfg, isValidVideoModel } from "@/composables/useVideoModels";
 
@@ -42,6 +42,7 @@ function openNewVideoFromPath(imagePath: string) {
     status:     "created",
     video_url:  null,
     error_msg:  null,
+    local_path: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   } satisfies WavespeedJobRecord;
@@ -143,6 +144,7 @@ async function submitRerun() {
       status:     result.status ?? "created",
       video_url:  null,
       error_msg:  null,
+      local_path: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -188,6 +190,24 @@ function handleJobUpdated(data: Partial<WavespeedJobRecord>) {
 async function deleteJob(localId: string) {
   await window.desktop.wavespeed.deleteJob(localId);
   jobs.value = jobs.value.filter((j) => j.id !== localId);
+}
+
+// ── Download ──────────────────────────────────────────────────────────────
+const downloadingIds = ref(new Set<string>());
+const downloadErrors = ref(new Map<string, string>());
+
+async function downloadVideo(job: WavespeedJobRecord) {
+  downloadingIds.value = new Set([...downloadingIds.value, job.id]);
+  downloadErrors.value.delete(job.id);
+  try {
+    await window.desktop.wavespeed.downloadVideo(job.id);
+    // local_path is set via the jobUpdated event that the handler emits
+  } catch (err) {
+    downloadErrors.value = new Map([...downloadErrors.value, [job.id, err instanceof Error ? err.message : String(err)]]);
+  } finally {
+    downloadingIds.value.delete(job.id);
+    downloadingIds.value = new Set(downloadingIds.value);
+  }
 }
 
 function openVideo(url: string) {
@@ -315,13 +335,37 @@ onUnmounted(() => {
 
         <!-- Actions -->
         <div class="flex shrink-0 flex-col gap-1">
+          <!-- Download to source folder (shown when video is ready but not yet saved locally) -->
+          <button
+            v-if="job.video_url && !job.local_path"
+            class="button h-6 gap-1 px-2 text-[10px]"
+            :disabled="downloadingIds.has(job.id)"
+            :title="downloadingIds.has(job.id) ? 'Downloading…' : 'Download video to source folder'"
+            @click="downloadVideo(job)"
+          >
+            <Download v-if="!downloadingIds.has(job.id)" class="h-3 w-3" />
+            <Clapperboard v-else class="h-3 w-3 animate-pulse" />
+            {{ downloadingIds.has(job.id) ? 'Saving…' : 'Download' }}
+          </button>
+          <!-- Open downloaded file in Finder -->
+          <button
+            v-if="job.local_path"
+            class="button h-6 gap-1 px-2 text-[10px] border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
+            title="Reveal downloaded video in Finder"
+            @click="revealImage(job.local_path!)"
+          >
+            <FolderOpen class="h-3 w-3" />In Finder
+          </button>
+          <p v-if="downloadErrors.get(job.id)" class="max-w-24 text-[9px] text-rose leading-tight">
+            {{ downloadErrors.get(job.id) }}
+          </p>
           <button
             v-if="job.video_url"
-            class="button h-6 gap-1 px-2 text-[10px] border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
-            title="Open video"
+            class="button h-6 gap-1 px-2 text-[10px]"
+            title="Open video externally"
             @click="openVideo(job.video_url!)"
           >
-            <ExternalLink class="h-3 w-3" />Video
+            <ExternalLink class="h-3 w-3" />Open
           </button>
           <!-- Re-run -->
           <button

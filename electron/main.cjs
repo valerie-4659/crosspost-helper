@@ -164,6 +164,7 @@ function migrationSql() {
     "015_stem_id.sql",
     "016_drop_cooldowns.sql",
     "017_job_queue_extras.sql",
+    "018_wavespeed_local_path.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
@@ -2232,8 +2233,13 @@ app.whenReady().then(() => {
     fs.writeFileSync(destPath, buffer);
 
     await indexSingleFile(destPath);
+
+    // Persist local_path so the UI knows the file has been saved.
+    db.run("UPDATE wavespeed_jobs SET local_path = ?, updated_at = datetime('now') WHERE id = ?", [destPath, localJobId]);
+    if (mainWindow) mainWindow.webContents.send("wavespeed:jobUpdated", { id: localJobId, local_path: destPath });
+
     shell.showItemInFolder(destPath);
-    return { path: destPath };
+    return { path: destPath, folder: destDir };
   });
 
   // files:copyFile — copy a local file to a destination path.

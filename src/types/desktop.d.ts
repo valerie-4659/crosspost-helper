@@ -27,6 +27,7 @@ declare global {
     status: "created" | "processing" | "completed" | "failed";
     video_url: string | null;
     error_msg: string | null;
+    local_path: string | null;
     created_at: string;
     updated_at: string;
   }
