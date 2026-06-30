@@ -6,6 +6,22 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.3",
+    date: "2026-06-30",
+    items: [
+      "feat: picker folder selector, video toggle, and video preview",
+      "fix: image card action strip overflow + always-visible network indicators",
+      "refine: persona form simplified to single personality rules field",
+      "refine: visual detail as springboard OK, multi-character story support",
+      "refine: no-visual-description rule, content-level-aware post types, mood tags",
+      "refine: explicit analyse → content-level → write pipeline for post generation",
+      "refine: shift post generation from marketing to authentic personality expression",
+      "refine: AI prompt engineering for video, image, and description generation",
+      "feat: job queue download, AI instructions, and library navigation",
+      "fix: multi-pick fair shuffle, stem sibling lookup, round refresh, notifications",
+    ],
+  },
+  {
     version: "0.3.2",
     date: "2026-06-30",
     items: [
