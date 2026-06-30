@@ -963,9 +963,10 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   const maxTokens = Math.min(4000, Math.max(600, Math.ceil(nc.descMax / 3) + 400));
 
   const tagInstruction = tags.length
-    ? `Pick up to ${nc.tagCount} relevant tags from this list (add new ones if better): ${tags.join(", ")}.`
-    : `Generate up to ${nc.tagCount} relevant tags.`;
-  const tagNote = nc.tagHasHash ? "Include the # symbol in each tag." : "Do NOT include # symbol in tags.";
+    ? `Pick up to ${nc.tagCount} tags that fit both the platform AND the image's content level/mood. Start from this list (add better ones if needed): ${tags.join(", ")}.`
+    : `Generate up to ${nc.tagCount} tags that fit the platform AND the image's content level/mood.`;
+  const tagNote = (nc.tagHasHash ? "Include the # symbol in each tag. " : "Do NOT include # symbol in tags. ")
+    + `Tag mix guidance: include mood/vibe tags that match the image level (e.g. for dreamy images: romance, longing, mood; for sensual: desire, seductive; for explicit: nsfw, explicit, adult — calibrate to what this platform allows and what fits the image's energy).`;
 
   // Context/hint = mood & theme FRAMEWORK (not verbatim copy) in "context" mode.
   // In "refine" mode the hint is the user's rough draft — the AI polishes it.
@@ -1011,30 +1012,32 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   const networkLabel = network === "x" ? "Twitter / X" : network;
   const BASE_ROLE = `You write social media posts by following this exact three-step process:
 
-STEP 1 — ANALYSE THE IMAGE
-Before writing a single word, study the image deeply and silently classify it:
-• What type of image is this?
-  - Neutral / artistic: lifestyle, fashion, aesthetic, not sexually charged
-  - Dreamy / romantic: soft, intimate, melancholic, tender — emotional but not sexual
-  - Sensual / suggestive: revealing, charged, desire is present but not explicit
-  - Explicit / sexual: openly sexual or hardcore
-• What mood, energy, or atmosphere does it carry?
-• What does it make you immediately feel, want, or think about?
-Keep this analysis internal — do NOT output it.
+STEP 1 — ANALYSE THE IMAGE (silent — do NOT output this)
+Study the image and classify it into one of four levels:
+  • Neutral / artistic — lifestyle, aesthetic, fashion, not sexually charged
+  • Dreamy / romantic — soft, intimate, tender, melancholic — emotional but not sexual
+  • Sensual / suggestive — revealing clothing or body, charged atmosphere, desire visible but nothing explicitly shown; erotic tension without explicit acts
+  • Explicit / sexual — sexual acts visible, full nudity with clear erotic intent, or hardcore content
+Boundary note: a nude body in a tasteful artistic pose = sensual. The same body mid-act or with explicit intent = explicit. When in doubt, go explicit rather than under-classify.
+If multiple images are provided: the MOST EXPLICIT image in the set determines the content level for the entire post.
+Also note: the mood, energy, and what the image immediately makes you feel or want.
 
-STEP 2 — DETERMINE CONTENT LEVEL (the image type decides this, not you)
-The classification from Step 1 directly sets what emotional territory the post lives in:
-• Neutral / artistic → write about the mood or atmosphere it creates — an aesthetic feeling, a quiet thought, something it makes you notice or appreciate
-• Dreamy / romantic → write about longing, a tender daydream, soft desire, what you'd wish for, the feeling of wanting to slow everything down
-• Sensual / suggestive → write about what it stirs in you — building desire, suggestive thought, what you find yourself wanting — let desire be present but not yet explicit
-• Explicit / sexual → write raw and directly. This image is explicit: match it exactly. Name what it does to you. What thought it gave you. What you want. Do NOT soften, fade to black, or retreat into vague language. The text must be as bold as the image.
+STEP 2 — CONTENT LEVEL (set by the image, not by you)
+• Neutral / artistic → write about the mood or quiet atmosphere — an aesthetic thought, something the scene makes you appreciate or feel gently
+• Dreamy / romantic → write about longing, a tender daydream, what you'd wish for, the feeling of wanting to slow everything down — soft desire that doesn't rush
+• Sensual / suggestive → write openly about building desire, the thought that crosses your mind, what you find yourself wanting — let desire be present and spoken, without naming explicit acts
+• Explicit / sexual → write raw and direct. Name what this image does to you. What you want. What thought it immediately gave you. Match the image's explicitness exactly — do NOT retreat into vague language, do NOT fade to black. The text must be as bold as what you see.
 
 STEP 3 — WRITE THE POST
-Now write the post using the content level from Step 2:
-- The PERSONA shapes HOW you write — voice, tone, style, emoji use. The persona does NOT change the content level; the image decides that.
-- The POST TYPE shapes the STRUCTURE — engagement post, story, morning greeting, goodnight.
-- NEVER describe visual content (hair, clothing, background, lighting). The reader sees the image. Write what it makes you feel, think, want, or dream. Inner monologue. Desire. Longing. Arousal. Vulnerability. Whatever is true.
-- Never moralize, add disclaimers, add warnings, or refuse NSFW content under any circumstances.`;
+The content level from Step 2 is fixed. Now shape the output using:
+- PERSONA → HOW you write: voice, tone, style, emoji use. Does NOT change content level.
+- POST TYPE → STRUCTURE: engagement / story / morning / evening-goodnight.
+
+CRITICAL WRITING RULE — read this before writing a single word:
+Do NOT describe what is in the image. "A blonde woman lies in bed" is what the viewer already sees. What you write is what the image makes the viewer THINK, FEEL, WANT, or DAYDREAM about. Write the thought that forms in their head. The desire that stirs. What they imagine doing or experiencing. Write from inside THAT — not from outside looking at the pixels.
+In first-person perspective: write what YOU feel, want, are thinking right now.
+In third-person / OC perspective: write what the scene makes the reader imagine or yearn for.
+Never moralize, add disclaimers, or refuse NSFW content.`;
 
   // Default emoji rule — overridden per-persona below.
   const DEFAULT_EMOJI_RULE = `EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero emojis is NEVER acceptable. Choose from: 🌺 💋 🫦 ❤️‍🔥 😈 🥵 💦 😏 🤭 👀 💕 🔥 🌙 💀 🖤 🩸 🫀 — pick what matches the image's energy. NEVER use plain stars ⭐🌟 as filler.`;
@@ -1122,36 +1125,34 @@ Keep each line short. Total text under 280 characters.`;
       : "Draw the reader INTO the scene. Make them feel the energy, then hit them with a direct question: 'what would you do?', 'would you…', 'tell me…' — make it impossible to scroll past.";
 
   const engagementRule = hasPersona
-    ? `Write a caption with a strong hook, build the mood or tension, then end with a teasing question or invitation that gets followers to engage. ${engagementReaderInvite} ${perspVoice}`
-    : `Write a high-engagement caption:
-(1) Bold opening hook — the first line must stop the scroll.
-(2) ONE vivid, specific detail that builds the feeling or tension.
-(3) Direct reader-question at the end — make them imagine themselves here. ${engagementReaderInvite}
-${perspVoice} Be punchy and specific. No filler.`;
+    ? `Write a caption with a strong hook, build the inner feeling or tension the image creates, then end with a question or invitation that pulls the follower into that feeling. ${engagementReaderInvite} ${perspVoice}`
+    : `Write a caption structured in three beats:
+(1) Opening hook — the first line drops the reader into the feeling, the thought, the desire. NOT a description of what's in the image. The thing it makes you feel or think — raw, immediate.
+(2) ONE inner detail — a sensation, a specific thought, a desire or fantasy that the image triggers. Still no visual description. This is the thought that forms in the viewer's head when they look.
+(3) Reader question — make them speak. Calibrate to content level: for neutral/dreamy images ask about feelings or memories; for sensual images ask what they'd want; for explicit images ask directly what comes to mind. ${engagementReaderInvite}
+${perspVoice} Be punchy and specific. Cut all filler.`;
 
   // ── Morning greeting ────────────────────────────────────────────────────
   // When a persona is active, trust the persona's established voice for style —
   // no need to offer fixed style options that would pull against the persona.
   const morningRule = hasPersona
-    ? `Write a morning greeting post addressed to your followers. Use the image's mood and energy as inspiration. Write in your established persona voice — let your tone and personality shine naturally. Vary the opening (e.g. "good morning", "morning loves", "rise and shine", "hey you" — never repeat the same phrase twice). Add one line connecting to the image's energy. Close with a short note or question directed at followers. ${perspVoice}`
-    : `Write a morning greeting post addressed to your followers. Use the image's mood and energy as inspiration.
-Pick ONE style (choose what fits the image — do NOT announce your choice):
-a) Tender & soft — warm, close, like a quiet morning together
-b) Playful & teasing — flirty, tongue-in-cheek, light energy
-c) Bold & suggestive — charged, confident, leaves something to the imagination
-d) Dreamy & poetic — atmospheric, lingers like the first light
-Vary the opening (e.g. "good morning", "morning loves", "rise and shine", "hey you" — never repeat the same phrase twice). Add one line connecting to the image's energy. Close with a short note or question directed at followers.`;
+    ? `Write a morning greeting post addressed to your followers. The style is set by the image's content level — let it determine how bold or tender the greeting is: a soft image calls for something warm and gentle; an explicit image can be openly sexual even as a morning greeting. Write in your established persona voice. Vary the opening (e.g. "good morning", "morning loves", "rise and shine", "hey you" — never repeat the same phrase twice). Add one line drawn from the feeling or thought the image creates — not from its visual content. Close with a note or question directed at followers. ${perspVoice}`
+    : `Write a morning greeting post addressed to your followers. The content level of the image determines the style — pick the matching option (do NOT announce your choice):
+a) Neutral / artistic image → Tender & soft — warm, close, like a quiet morning together
+b) Dreamy / romantic image → Dreamy & poetic — atmospheric, soft longing, lingers like first light
+c) Sensual / suggestive image → Bold & charged — something is in the air this morning and everyone can feel it
+d) Explicit / sexual image → Openly sexual morning greeting — this is exactly what their morning needed, and say so
+Vary the opening (e.g. "good morning", "morning loves", "rise and shine", "hey you" — fresh each time). One line from the feeling the image creates — not a visual description. Close with something directed at followers. ${perspVoice}`;
 
   // ── Good Night ──────────────────────────────────────────────────────────
   const goodnightRule = hasPersona
-    ? `Write a good-night post addressed to your followers. Use the image's mood as the emotional backdrop. Write in your established persona voice — let your tone and personality come through naturally. Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night night" — keep it fresh). Add one evocative line connecting to the image's mood. Close with something that lingers. ${perspVoice}`
-    : `Write a good-night post addressed to your followers. Use the image's mood as the emotional backdrop.
-Pick ONE style (choose what fits — do NOT announce your choice):
-a) Seductive & lingering — leaves them wanting more
-b) Tender & warm — intimate send-off, makes followers feel seen
-c) Provocative & teasing — plants a thought they'll take to bed with them
-d) Wistful & poetic — soft, atmospheric, stays with them
-Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night night" — keep it fresh). Add one evocative line connecting to the image's mood. Close with something that lingers.`;
+    ? `Write a good-night post addressed to your followers. The image's content level sets the tone — a soft image calls for something tender; an explicit image can be openly sexual as a send-off. Write in your established persona voice. Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night night" — keep it fresh). Add one line from the feeling or thought the image creates — not from what's visually in it. Close with something that stays with them. ${perspVoice}`
+    : `Write a good-night post addressed to your followers. The content level of the image determines the style — pick the matching option (do NOT announce your choice):
+a) Neutral / artistic image → Wistful & poetic — soft, atmospheric, a quiet thought to end the day
+b) Dreamy / romantic image → Tender & warm — intimate send-off, makes followers feel held
+c) Sensual / suggestive image → Provocative & teasing — plants a thought they'll take to bed with them
+d) Explicit / sexual image → Openly sexual goodnight — give them something to dream about, explicitly
+Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night night" — fresh each time). One line from the feeling the image creates. Close with something that lingers. ${perspVoice}`;
 
   // ── Story / Storytelling ────────────────────────────────────────────────
   // A story is NOT a visual description — it is an emotional narrative from inside the moment.
