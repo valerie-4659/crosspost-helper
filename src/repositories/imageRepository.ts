@@ -653,16 +653,29 @@ export async function pickRandomImages(
       WHERE pr3.image_id = images.id AND pr3.status = 'posted'
     )`);
   }
-  if (!filters.includeSkipped) {
-    conditions.push(`NOT EXISTS (
-      SELECT 1 FROM post_records pr4
-      WHERE pr4.image_id = images.id AND pr4.status = 'skipped'
-    )`);
-  }
   conditions.push(`NOT EXISTS (
     SELECT 1 FROM excluded_folders ef
     WHERE images.folder_path = ef.folder_path OR images.folder_path LIKE ef.folder_path || '/%'
   )`);
+
+  // Fair shuffle: exclude images already shown in the current round for this target.
+  if (filters.targetId) {
+    const roundRows = await db.select<Array<{ round: number }>>(
+      "SELECT round FROM pick_rounds WHERE target_id = $1",
+      [filters.targetId],
+    );
+    const round = roundRows[0]?.round ?? 1;
+    params.push(filters.targetId);
+    const tParam = params.length;
+    params.push(round);
+    const rParam = params.length;
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM pick_history ph
+      WHERE ph.image_id = images.id
+        AND ph.target_id = $${tParam}
+        AND ph.round = $${rParam}
+    )`);
+  }
 
   params.push(count);
   const rows = await db.select<ImageListRow[]>(
@@ -891,21 +904,16 @@ export async function listExcludedFolderPaths(): Promise<Set<string>> {
  */
 export async function findStemSiblingIds(imageId: string): Promise<string[]> {
   const db = await getDatabase();
-  const meta = await db.select<Array<{ source_id: string; filename: string }>>(
-    "SELECT source_id, filename FROM images WHERE id = $1 LIMIT 1",
+  const meta = await db.select<Array<{ source_id: string; stem_id: string | null }>>(
+    "SELECT source_id, stem_id FROM images WHERE id = $1 LIMIT 1",
     [imageId],
   );
-  if (!meta.length) return [];
+  if (!meta.length || !meta[0].stem_id) return [];
 
-  const { source_id, filename } = meta[0];
-  // Strip the last extension: "blubb.jpg" → "blubb", "my.cool.image.jpg" → "my.cool.image"
-  const stem = filename.replace(/\.[^.]+$/, "");
-  if (!stem || stem === filename) return []; // no extension → nothing to propagate
-
-  // Match any file with the same stem followed by a dot (different extension)
+  const { source_id, stem_id } = meta[0];
   const rows = await db.select<Array<{ id: string }>>(
-    "SELECT id FROM images WHERE source_id = $1 AND id != $2 AND LOWER(filename) LIKE LOWER($3)",
-    [source_id, imageId, stem + ".%"],
+    "SELECT id FROM images WHERE source_id = $1 AND stem_id = $2 AND id != $3",
+    [source_id, stem_id, imageId],
   );
   return rows.map((r) => r.id);
 }

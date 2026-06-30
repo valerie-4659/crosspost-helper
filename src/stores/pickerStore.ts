@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { copyImagePath, copyImageToClipboard, revealImage } from "@/services/imageActionService";
 import { markImagePosted, markImageSkipped, pickRandomUnpostedImage } from "@/services/pickerService";
@@ -36,6 +36,9 @@ export const usePickerStore = defineStore("picker", () => {
       currentRound.value = await getCurrentRound(targetStore.activeTargetId);
     }
   }
+
+  // Refresh round indicator whenever the active target changes.
+  watch(() => targetStore.activeTargetId, () => { refreshCurrentRound(); });
 
   async function pickRandom() {
     loading.value = true;
@@ -181,12 +184,16 @@ export const usePickerStore = defineStore("picker", () => {
       multiPickSlots.value = multiPickSlots.value.map((slot) =>
         slot ? slot : picked[pi++],
       );
-      if (pi < picked.length) {
-        // More were needed than available — already handled via emptyCount.
-      }
       const stillEmpty = multiPickSlots.value.filter((s) => !s).length;
       if (stillEmpty > 0) {
         multiPickError.value = `Only ${multiPickCount.value - stillEmpty} images found — not enough to fill all ${multiPickCount.value} slots.`;
+      }
+      // Record all picked images as shown this round so they don't reappear in single-pick.
+      if (targetStore.activeTargetId) {
+        for (const img of picked) {
+          await recordImageShown(img.id, targetStore.activeTargetId);
+        }
+        await refreshCurrentRound();
       }
     } catch (e) {
       multiPickError.value = e instanceof Error ? e.message : String(e);

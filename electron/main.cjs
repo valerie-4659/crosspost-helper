@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, net, protocol, shell } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, net, Notification, protocol, shell } = require("electron");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -162,6 +162,7 @@ function migrationSql() {
     "013_job_queue.sql",
     "014_pick_rounds.sql",
     "015_stem_id.sql",
+    "016_drop_cooldowns.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
@@ -2631,9 +2632,9 @@ app.whenReady().then(() => {
 
         // Advance job queue when a queued video job finishes
         if (data.status === "completed" || data.status === "failed") {
-          const qRes = db.exec(`SELECT id FROM job_queue WHERE wavespeed_local_id = '${job.id}' AND status = 'running' LIMIT 1`);
+          const qRes = db.exec(`SELECT id, prompt FROM job_queue WHERE wavespeed_local_id = '${job.id}' AND status = 'running' LIMIT 1`);
           if (qRes[0]?.values?.length) {
-            const qId = qRes[0].values[0][0];
+            const [qId, qPrompt] = qRes[0].values[0];
             const qStatus = data.status === "completed" ? "completed" : "failed";
             db.run(
               "UPDATE job_queue SET status = ?, result_url = ?, error_msg = ?, updated_at = ? WHERE id = ?",
@@ -2642,6 +2643,12 @@ app.whenReady().then(() => {
             persistDatabase();
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send("jobqueue:updated", { id: qId, status: qStatus, result_url: videoUrl, error_msg: errorMsg });
+            }
+            if (Notification.isSupported()) {
+              new Notification({
+                title: qStatus === "completed" ? "Video ready" : "Video failed",
+                body: String(qPrompt || "").slice(0, 100) || "Wavespeed job finished",
+              }).show();
             }
             processJobQueue();
           }
@@ -2694,9 +2701,9 @@ app.whenReady().then(() => {
 
         // Advance job queue when a queued image job finishes
         if (data.status === "completed" || data.status === "failed") {
-          const qRes = db.exec(`SELECT id FROM job_queue WHERE wavespeed_local_id = '${job.id}' AND status = 'running' LIMIT 1`);
+          const qRes = db.exec(`SELECT id, prompt FROM job_queue WHERE wavespeed_local_id = '${job.id}' AND status = 'running' LIMIT 1`);
           if (qRes[0]?.values?.length) {
-            const qId = qRes[0].values[0][0];
+            const [qId, qPrompt] = qRes[0].values[0];
             const qStatus = data.status === "completed" ? "completed" : "failed";
             db.run(
               "UPDATE job_queue SET status = ?, result_url = ?, error_msg = ?, updated_at = ? WHERE id = ?",
@@ -2705,6 +2712,12 @@ app.whenReady().then(() => {
             persistDatabase();
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send("jobqueue:updated", { id: qId, status: qStatus, result_url: resultUrl, error_msg: errorMsg });
+            }
+            if (Notification.isSupported()) {
+              new Notification({
+                title: qStatus === "completed" ? "Image ready" : "Image failed",
+                body: String(qPrompt || "").slice(0, 100) || "Wavespeed job finished",
+              }).show();
             }
             processJobQueue();
           }

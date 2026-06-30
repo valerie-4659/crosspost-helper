@@ -519,7 +519,12 @@ onUnmounted(() => {
       </div>
     </header>
 
-    <FilterBar v-model:filters="picker.filters" :sources="sources.sources" show-target-rules />
+    <FilterBar
+      v-model:filters="picker.filters"
+      :sources="sources.sources"
+      show-target-rules
+      :show-include-skipped="picker.multiPickMode"
+    />
 
     <!-- ══ MULTI-PICK MODE ══════════════════════════════════════════════ -->
     <template v-if="picker.multiPickMode">

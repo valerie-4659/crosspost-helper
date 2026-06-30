@@ -11,6 +11,8 @@ defineProps<{
   targets?: PostingTarget[];
   showTargetRules?: boolean;
   showTargetFilter?: boolean;
+  /** Show the "Incl. skipped" toggle. Default true. Set false in single-pick mode where fair shuffle handles recurrence. */
+  showIncludeSkipped?: boolean;
 }>();
 </script>
 
@@ -55,6 +57,7 @@ defineProps<{
 
     <!-- Toggle pills -->
     <button
+      v-if="showIncludeSkipped !== false"
       class="shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium transition"
       :class="filters.includeSkipped ? 'border-accent bg-accent/10 text-accent' : 'border-line text-slate-400 hover:border-slate-500 hover:text-slate-200'"
       @click="filters.includeSkipped = !filters.includeSkipped"
