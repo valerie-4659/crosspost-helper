@@ -254,10 +254,11 @@ async function addToQueue() {
   wsError.value      = "";
   try {
     await window.desktop.jobqueue.add({
-      type:       "image",
-      image_path: imagePath,
-      prompt:     generatedPrompt.value,
-      model:      selectedModel.value,
+      type:            "image",
+      image_path:      imagePath,
+      prompt:          generatedPrompt.value,
+      model:           selectedModel.value,
+      ai_instructions: instructions.value,
       params: {
         imagePath:    useRefImage.value ? imagePath : "",
         prompt:       generatedPrompt.value,

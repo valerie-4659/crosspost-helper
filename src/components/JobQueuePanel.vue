@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { ArrowUp, Check, Clapperboard, Download, GripVertical, Image, Pencil, Trash2, X } from "lucide-vue-next";
+import { computed, inject, onMounted, onUnmounted, ref } from "vue";
+import { ArrowUp, Check, Clapperboard, Download, FolderOpen, GripVertical, Image, Pencil, RefreshCw, Trash2, X } from "lucide-vue-next";
+import type { AppPage } from "@/components/SidebarNavigation.vue";
+import { pendingLibraryPath } from "@/stores/libraryNavStore";
+
+const setPage = inject<(page: AppPage) => void>("setPage");
 
 const jobs = ref<JobQueueRecord[]>([]);
 const loading = ref(true);
@@ -12,10 +16,17 @@ const dragOverId = ref<number | null>(null);
 // Edit modal state
 const editingJob = ref<JobQueueRecord | null>(null);
 const editPrompt = ref("");
+const editInstructions = ref("");
+const editRegenerating = ref(false);
+const editRegenError = ref("");
 const editSaving = ref(false);
 
 // Delete confirm state
 const confirmDeleteId = ref<number | null>(null);
+
+// Download state: set of job IDs currently downloading
+const downloadingIds = ref(new Set<number>());
+const downloadErrors = ref(new Map<number, string>());
 
 const pendingJobs = computed(() => jobs.value.filter((j) => j.status === "pending"));
 const runningJob  = computed(() => jobs.value.find((j) => j.status === "running") ?? null);
@@ -93,11 +104,34 @@ async function confirmDelete() {
 function openEdit(job: JobQueueRecord) {
   editingJob.value = job;
   editPrompt.value = job.prompt;
+  editInstructions.value = job.ai_instructions ?? "";
+  editRegenError.value = "";
 }
 
 function closeEdit() {
   editingJob.value = null;
   editPrompt.value = "";
+  editInstructions.value = "";
+  editRegenError.value = "";
+}
+
+async function regeneratePrompt() {
+  if (!editingJob.value) return;
+  editRegenerating.value = true;
+  editRegenError.value = "";
+  try {
+    const job = editingJob.value;
+    const imagePaths = job.image_path ? [job.image_path] : [];
+    if (job.type === "video") {
+      editPrompt.value = await window.desktop.ai.generateVideoPrompt(imagePaths, job.model, editInstructions.value || undefined, true);
+    } else {
+      editPrompt.value = await window.desktop.ai.generateImagePrompt(imagePaths, job.model, editInstructions.value || undefined);
+    }
+  } catch (err) {
+    editRegenError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    editRegenerating.value = false;
+  }
 }
 
 async function saveEdit() {
@@ -111,12 +145,38 @@ async function saveEdit() {
       id: editingJob.value.id,
       prompt: editPrompt.value,
       params,
+      ai_instructions: editInstructions.value,
     });
     await loadJobs();
     closeEdit();
   } finally {
     editSaving.value = false;
   }
+}
+
+async function requeue(id: number) {
+  await window.desktop.jobqueue.requeue(id);
+}
+
+// ── Download ─────────────────────────────────────────────────────────────────
+async function downloadResult(job: JobQueueRecord) {
+  downloadingIds.value = new Set([...downloadingIds.value, job.id]);
+  downloadErrors.value.delete(job.id);
+  try {
+    await window.desktop.jobqueue.download(job.id);
+    // DB is updated; jobqueue:updated event will trigger loadJobs()
+  } catch (err) {
+    downloadErrors.value = new Map([...downloadErrors.value, [job.id, err instanceof Error ? err.message : String(err)]]);
+  } finally {
+    downloadingIds.value.delete(job.id);
+    downloadingIds.value = new Set(downloadingIds.value);
+  }
+}
+
+function openInLibrary(localPath: string) {
+  const folder = localPath.replace(/\/[^/]+$/, "");
+  pendingLibraryPath.value = folder;
+  setPage?.("library");
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -190,13 +250,10 @@ function thumbnailSrc(imagePath: string) {
           @dragend="onDragEnd"
           @drop="onDrop($event, job.id)"
         >
-          <!-- Grip + position -->
           <div class="flex shrink-0 flex-col items-center gap-1 pt-0.5">
             <GripVertical class="h-4 w-4 text-slate-600 group-hover:text-slate-400" />
             <span class="text-[10px] text-slate-700">{{ idx + 1 }}</span>
           </div>
-
-          <!-- Thumbnail -->
           <img
             v-if="job.image_path"
             :src="thumbnailSrc(job.image_path)"
@@ -204,8 +261,6 @@ function thumbnailSrc(imagePath: string) {
             alt=""
           />
           <div v-else class="h-10 w-10 shrink-0 rounded bg-slate-800" />
-
-          <!-- Details -->
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5">
               <span
@@ -218,8 +273,6 @@ function thumbnailSrc(imagePath: string) {
               {{ job.prompt || 'No prompt' }}
             </p>
           </div>
-
-          <!-- Actions -->
           <div class="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
             <button
               v-if="idx > 0"
@@ -243,50 +296,88 @@ function thumbnailSrc(imagePath: string) {
     <!-- ── Done / failed ────────────────────────────────────────────────────── -->
     <div v-if="doneJobs.length">
       <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Recent</p>
-      <ul class="space-y-1">
+      <ul class="space-y-2">
         <li
           v-for="job in doneJobs"
           :key="job.id"
-          class="flex items-start gap-2.5 rounded-xl border px-3 py-2.5"
+          class="rounded-xl border px-3 py-2.5"
           :class="job.status === 'completed' ? 'border-mint/20 bg-mint/5' : 'border-rose/20 bg-rose/5'"
         >
-          <div
-            class="mt-1 h-2 w-2 shrink-0 rounded-full"
-            :class="job.status === 'completed' ? 'bg-mint' : 'bg-rose'"
-          />
-          <img
-            v-if="job.image_path"
-            :src="thumbnailSrc(job.image_path)"
-            class="h-8 w-8 shrink-0 rounded object-cover opacity-60"
-            alt=""
-          />
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[11px] font-medium" :class="job.status === 'completed' ? 'text-mint' : 'text-rose'">
-                {{ job.status === 'completed' ? 'Done' : 'Failed' }}
-              </span>
-              <span class="text-[11px] text-slate-500">{{ modelLabel(job) }}</span>
-              <span class="text-[10px] text-slate-700">{{ job.type }}</span>
+          <!-- Top row: indicator + meta + thumbnail + remove -->
+          <div class="flex items-start gap-2.5">
+            <div
+              class="mt-1 h-2 w-2 shrink-0 rounded-full"
+              :class="job.status === 'completed' ? 'bg-mint' : 'bg-rose'"
+            />
+            <img
+              v-if="job.image_path"
+              :src="thumbnailSrc(job.image_path)"
+              class="h-8 w-8 shrink-0 rounded object-cover opacity-60"
+              alt=""
+            />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5">
+                <span class="text-[11px] font-medium" :class="job.status === 'completed' ? 'text-mint' : 'text-rose'">
+                  {{ job.status === 'completed' ? 'Done' : 'Failed' }}
+                </span>
+                <span class="text-[11px] text-slate-500">{{ modelLabel(job) }}</span>
+                <span class="text-[10px] text-slate-700">{{ job.type }}</span>
+              </div>
+              <p v-if="job.status === 'failed' && job.error_msg" class="mt-0.5 text-[11px] text-rose/70 line-clamp-2">
+                {{ job.error_msg }}
+              </p>
+              <p v-if="job.prompt" class="mt-0.5 line-clamp-1 text-[10px] text-slate-600">{{ job.prompt }}</p>
             </div>
-            <p v-if="job.status === 'failed' && job.error_msg" class="mt-0.5 text-[11px] text-rose/70 line-clamp-2">
-              {{ job.error_msg }}
-            </p>
-            <p v-if="job.status === 'completed'" class="mt-0.5 text-[11px] text-slate-600">
-              Result available in the {{ job.type === 'video' ? 'Video' : 'Image' }} Queue tab.
+            <button
+              class="button h-6 w-6 shrink-0 p-0 text-slate-600"
+              title="Remove from history"
+              @click="askDelete(job.id)"
+            >
+              <X class="h-3 w-3" />
+            </button>
+          </div>
+
+          <!-- Action row for completed jobs -->
+          <div v-if="job.status === 'completed'" class="mt-2 ml-9 flex flex-wrap items-center gap-2">
+            <!-- Not yet downloaded: show Download button -->
+            <button
+              v-if="!job.local_path"
+              class="button h-7 gap-1.5 px-3 text-xs"
+              :disabled="downloadingIds.has(job.id)"
+              @click="downloadResult(job)"
+            >
+              <Download v-if="!downloadingIds.has(job.id)" class="h-3 w-3" />
+              <Clapperboard v-else class="h-3 w-3 animate-pulse" />
+              {{ downloadingIds.has(job.id) ? 'Downloading…' : `Download ${job.type}` }}
+            </button>
+            <!-- Downloaded: show Open in Library button instead -->
+            <button
+              v-else
+              class="button h-7 gap-1.5 px-3 text-xs text-mint border-mint/30 hover:bg-mint/10"
+              @click="openInLibrary(job.local_path)"
+            >
+              <FolderOpen class="h-3 w-3" />
+              Open in Library
+            </button>
+            <p v-if="downloadErrors.get(job.id)" class="text-[10px] text-rose">
+              {{ downloadErrors.get(job.id) }}
             </p>
           </div>
-          <button
-            class="button h-6 w-6 shrink-0 p-0 text-slate-600"
-            title="Remove from history"
-            @click="askDelete(job.id)"
-          >
-            <X class="h-3 w-3" />
-          </button>
+
+          <!-- Action row for failed jobs: edit + requeue -->
+          <div v-if="job.status === 'failed'" class="mt-2 ml-9 flex gap-2">
+            <button class="button h-7 gap-1.5 px-3 text-xs" @click="openEdit(job)">
+              <Pencil class="h-3 w-3" />Edit
+            </button>
+            <button class="button h-7 gap-1.5 px-3 text-xs" @click="requeue(job.id)">
+              <RefreshCw class="h-3 w-3" />Requeue
+            </button>
+          </div>
         </li>
       </ul>
     </div>
 
-    <!-- ── Empty state (no jobs at all) ─────────────────────────────────────── -->
+    <!-- ── Empty state ─────────────────────────────────────────────────────── -->
     <div v-if="!loading && !runningJob && !pendingJobs.length && !doneJobs.length" class="py-6 text-center">
       <Clapperboard class="mx-auto mb-3 h-8 w-8 text-slate-700" />
       <p class="text-sm text-slate-500">Queue is empty</p>
@@ -304,24 +395,50 @@ function thumbnailSrc(imagePath: string) {
       >
         <div class="w-full max-w-lg rounded-2xl border border-line bg-panel p-5 shadow-2xl space-y-4">
           <div class="flex items-center justify-between">
-            <h2 class="text-sm font-semibold text-white">Edit Job Prompt</h2>
+            <h2 class="text-sm font-semibold text-white">Edit Job</h2>
             <button class="button h-7 w-7 p-0" @click="closeEdit"><X class="h-4 w-4" /></button>
           </div>
 
+          <p class="text-[11px] text-slate-500">
+            <span class="font-medium text-slate-400">Model:</span> {{ modelLabel(editingJob) }}
+            &nbsp;·&nbsp;
+            <span class="font-medium text-slate-400">Type:</span> {{ editingJob.type }}
+          </p>
+
+          <!-- AI Instructions -->
           <div class="space-y-1">
-            <p class="text-[11px] text-slate-500">
-              <span class="font-medium text-slate-400">Model:</span> {{ modelLabel(editingJob) }}
-              &nbsp;·&nbsp;
-              <span class="font-medium text-slate-400">Type:</span> {{ editingJob.type }}
+            <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              Instructions <span class="normal-case text-slate-600">(optional — guide the AI prompt)</span>
             </p>
+            <div class="flex gap-2">
+              <textarea
+                v-model="editInstructions"
+                rows="2"
+                class="flex-1 resize-none rounded-lg border border-line bg-panelSoft px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+                placeholder="e.g. The woman is Valerie. Setting is a moonlit rooftop."
+              />
+              <button
+                class="button h-auto shrink-0 self-stretch px-3 text-xs"
+                :disabled="editRegenerating"
+                title="Regenerate prompt using these instructions"
+                @click="regeneratePrompt"
+              >
+                <RefreshCw class="h-3 w-3" :class="editRegenerating ? 'animate-spin' : ''" />
+              </button>
+            </div>
+            <p v-if="editRegenError" class="text-[10px] text-rose">{{ editRegenError }}</p>
           </div>
 
-          <textarea
-            v-model="editPrompt"
-            rows="7"
-            class="w-full resize-y rounded-lg border border-line bg-panelSoft px-3 py-2.5 text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
-            placeholder="Enter prompt…"
-          />
+          <!-- Prompt -->
+          <div class="space-y-1">
+            <p class="text-[11px] font-medium uppercase tracking-wide text-slate-500">Prompt</p>
+            <textarea
+              v-model="editPrompt"
+              rows="7"
+              class="w-full resize-y rounded-lg border border-line bg-panelSoft px-3 py-2.5 text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+              placeholder="Enter prompt…"
+            />
+          </div>
 
           <div class="flex justify-end gap-2">
             <button class="button h-8 px-4 text-xs" @click="closeEdit">Cancel</button>

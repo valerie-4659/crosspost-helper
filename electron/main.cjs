@@ -163,6 +163,7 @@ function migrationSql() {
     "014_pick_rounds.sql",
     "015_stem_id.sql",
     "016_drop_cooldowns.sql",
+    "017_job_queue_extras.sql",
   ].map((f) => fs.readFileSync(path.join(migrationsDir, f), "utf8")).join("\n");
 }
 
@@ -2490,13 +2491,13 @@ app.whenReady().then(() => {
     return rows;
   });
 
-  ipcMain.handle("jobqueue:add", async (_event, { type, params, image_path, prompt, model }) => {
+  ipcMain.handle("jobqueue:add", async (_event, { type, params, image_path, prompt, model, ai_instructions }) => {
     const db = await getDatabase();
     const posRes = db.exec("SELECT COALESCE(MAX(position), -1) + 1 FROM job_queue WHERE status = 'pending'");
     const nextPos = Number(posRes[0]?.values?.[0]?.[0] ?? 0);
     db.run(
-      "INSERT INTO job_queue (type, position, status, params, image_path, prompt, model) VALUES (?, ?, 'pending', ?, ?, ?, ?)",
-      [type, nextPos, JSON.stringify(params), image_path || "", prompt || "", model || ""]
+      "INSERT INTO job_queue (type, position, status, params, image_path, prompt, model, ai_instructions) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)",
+      [type, nextPos, JSON.stringify(params), image_path || "", prompt || "", model || "", ai_instructions || ""]
     );
     persistDatabase();
     const lastId = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
@@ -2532,17 +2533,79 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
-  ipcMain.handle("jobqueue:edit", async (_event, { id, prompt, params }) => {
+  ipcMain.handle("jobqueue:edit", async (_event, { id, prompt, params, ai_instructions }) => {
     const db = await getDatabase();
     db.run(
-      "UPDATE job_queue SET prompt = ?, params = ?, updated_at = datetime('now') WHERE id = ? AND status = 'pending'",
-      [prompt, JSON.stringify(params), id]
+      "UPDATE job_queue SET prompt = ?, params = ?, ai_instructions = ?, updated_at = datetime('now') WHERE id = ? AND status IN ('pending', 'failed')",
+      [prompt, JSON.stringify(params), ai_instructions ?? "", id]
     );
     persistDatabase();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("jobqueue:updated", { action: "edited", id });
     }
     return { ok: true };
+  });
+
+  ipcMain.handle("jobqueue:requeue", async (_event, id) => {
+    const db = await getDatabase();
+    const posRes = db.exec("SELECT COALESCE(MAX(position), -1) + 1 FROM job_queue WHERE status = 'pending'");
+    const nextPos = Number(posRes[0]?.values?.[0]?.[0] ?? 0);
+    db.run(
+      "UPDATE job_queue SET status = 'pending', position = ?, wavespeed_local_id = NULL, result_url = NULL, error_msg = NULL, updated_at = datetime('now') WHERE id = ? AND status = 'failed'",
+      [nextPos, id]
+    );
+    persistDatabase();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("jobqueue:updated", { action: "requeued", id });
+    }
+    processJobQueue();
+    return { ok: true };
+  });
+
+  ipcMain.handle("jobqueue:download", async (_event, id) => {
+    const db = await getDatabase();
+    const rows = db.exec(`SELECT type, result_url, image_path FROM job_queue WHERE id = ${Number(id)} AND status = 'completed' LIMIT 1`);
+    if (!rows[0]?.values?.length) throw new Error("Job not found or not completed.");
+    const [type, resultUrl, imagePath] = rows[0].values[0];
+    if (!resultUrl) throw new Error("No result URL — job may not be complete.");
+
+    const destDir = path.dirname(String(imagePath));
+    const sourceStem = path.basename(String(imagePath), path.extname(String(imagePath)));
+    const now = new Date();
+    const ts = [
+      String(now.getFullYear()).slice(2),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+      String(now.getHours()).padStart(2, "0"),
+      String(now.getMinutes()).padStart(2, "0"),
+    ].join("");
+
+    let ext;
+    if (type === "video") {
+      ext = (String(resultUrl).split("?")[0] ?? "").match(/\.(mp4|webm|mov)$/i)?.[1]?.toLowerCase() ?? "mp4";
+    } else {
+      ext = (String(resultUrl).split("?")[0] ?? "").match(/\.(png|jpe?g|webp)$/i)?.[1]?.toLowerCase() ?? "jpg";
+    }
+
+    const filename = `${sourceStem}_${type}_${ts}.${ext}`;
+    const destPath = path.join(destDir, filename);
+
+    const res = await fetch(String(resultUrl));
+    if (!res.ok) throw new Error(`Download failed: HTTP ${res.status} ${res.statusText}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    fs.mkdirSync(destDir, { recursive: true });
+    fs.writeFileSync(destPath, buffer);
+
+    db.run(
+      "UPDATE job_queue SET local_path = ?, updated_at = datetime('now') WHERE id = ?",
+      [destPath, id]
+    );
+    persistDatabase();
+    await indexSingleFile(destPath);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("jobqueue:updated", { id, action: "downloaded", local_path: destPath });
+    }
+    return { path: destPath, folder: destDir };
   });
 
   ipcMain.handle("jobqueue:prioritize", async (_event, id) => {

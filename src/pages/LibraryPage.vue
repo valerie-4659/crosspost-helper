@@ -19,6 +19,7 @@ import { listSlots, getSlotImageData } from "@/repositories/queueRepository";
 import type { ImageWithPostState } from "@/types/image";
 import type { PostingTargetType } from "@/types/postingTarget";
 import type { QueueSlot } from "@/types/queue";
+import { pendingLibraryPath } from "@/stores/libraryNavStore";
 
 // All platform types — queue buttons show for all of them.
 const EXTENSION_TYPES = new Set<PostingTargetType>(["x", "bluesky", "deviantart", "civitai", "instagram", "facebook", "tumblr"]);
@@ -446,6 +447,14 @@ const rootDir = computed(() => {
 const currentDir = ref("");
 // Save currentDir whenever it changes
 watch(currentDir, saveLibState);
+
+// Navigate to folder requested from another panel (e.g. JobQueuePanel "Open in Library")
+watch(pendingLibraryPath, (path) => {
+  if (path) {
+    currentDir.value = path;
+    pendingLibraryPath.value = null;
+  }
+});
 
 /** The last folder the user navigated out of — highlighted in the parent view. */
 const lastVisitedDir = ref("");

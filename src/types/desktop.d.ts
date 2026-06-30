@@ -85,6 +85,8 @@ declare global {
     image_path: string;
     prompt: string;
     model: string;
+    ai_instructions: string;
+    local_path: string | null;
     created_at: string;
     updated_at: string;
   }
@@ -258,11 +260,14 @@ declare global {
           image_path: string;
           prompt: string;
           model: string;
+          ai_instructions?: string;
         }): Promise<{ ok: boolean; id: number }>;
         delete(id: number): Promise<{ ok: boolean }>;
         reorder(items: Array<{ id: number; position: number }>): Promise<{ ok: boolean }>;
-        edit(params: { id: number; prompt: string; params: Record<string, unknown> }): Promise<{ ok: boolean }>;
+        edit(params: { id: number; prompt: string; params: Record<string, unknown>; ai_instructions?: string }): Promise<{ ok: boolean }>;
         prioritize(id: number): Promise<{ ok: boolean }>;
+        download(id: number): Promise<{ path: string; folder: string }>;
+        requeue(id: number): Promise<{ ok: boolean }>;
         onUpdated(cb: (data: Partial<JobQueueRecord> & { action?: string }) => void): void;
         offUpdated(): void;
       };

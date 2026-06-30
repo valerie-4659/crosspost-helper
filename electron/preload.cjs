@@ -120,6 +120,8 @@ contextBridge.exposeInMainWorld("desktop", {
     reorder: (items) => ipcRenderer.invoke("jobqueue:reorder", items),
     edit: (params) => ipcRenderer.invoke("jobqueue:edit", params),
     prioritize: (id) => ipcRenderer.invoke("jobqueue:prioritize", id),
+    download: (id) => ipcRenderer.invoke("jobqueue:download", id),
+    requeue: (id) => ipcRenderer.invoke("jobqueue:requeue", id),
     onUpdated: (cb) => ipcRenderer.on("jobqueue:updated", (_e, data) => cb(data)),
     offUpdated: () => ipcRenderer.removeAllListeners("jobqueue:updated"),
   },
