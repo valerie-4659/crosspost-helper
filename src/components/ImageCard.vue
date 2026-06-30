@@ -12,16 +12,11 @@ function handleDragStart(event: DragEvent) {
     .filter((p): p is string => Boolean(p));
 
   if (localPaths.length > 0 && window.desktop?.core?.startDrag) {
-    // Cancel HTML5 drag — running both simultaneously causes the app to freeze
-    // after the drag ends because macOS gets two conflicting drag sessions.
     event.preventDefault();
-
-    // Use cached thumbnail as drag icon (loads in <1 ms).
     const firstImg = dragImages.value[0];
     let iconPath: string | undefined;
     if (firstImg.thumbnailUrl?.startsWith("localfile://")) {
       let p = decodeURIComponent(firstImg.thumbnailUrl.slice("localfile://".length));
-      // On Windows the URL encodes as /C:/... — strip the leading slash.
       if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1);
       iconPath = p;
     }
@@ -61,7 +56,7 @@ const emit = defineEmits<{
 const isVideo = computed(() => props.image.mimeType?.startsWith("video/") ?? false);
 
 const imageUrl = computed(() => {
-  if (isVideo.value) return ""; // videos use separate element
+  if (isVideo.value) return "";
   if (props.image.thumbnailUrl) return props.image.thumbnailUrl;
   if (props.image.localPath) return convertFileSrc(props.image.localPath);
   return "";
@@ -70,8 +65,6 @@ const imageUrl = computed(() => {
 const imageLoaded = ref(false);
 const imgEl = ref<HTMLImageElement | null>(null);
 
-// For images already in the browser cache the 'load' event fires before
-// the listener is attached, so we also check img.complete after mount.
 onMounted(() => {
   if (imgEl.value?.complete) imageLoaded.value = true;
 });
@@ -80,28 +73,23 @@ const activeTarget = computed(() => props.targets.find((target) => target.id ===
 const activeTargetStatus = computed(() => (activeTarget.value ? props.image.postStates[activeTarget.value.id] : undefined));
 const dragImages = computed(() => (props.selected && props.dragImages?.length ? props.dragImages : [props.image]));
 
-// Only show platforms where the image is already posted (compact indicators)
 const postedTargets = computed(() => props.targets.filter((t) => props.image.postStates[t.id] === "posted"));
+const skippedTargets = computed(() => props.targets.filter((t) => props.image.postStates[t.id] === "skipped"));
 </script>
 
 <template>
-  <!--
-    Default:  only image + checkbox visible.
-    Hover:    card ring highlights, image brightens slightly,
-              compact action strip slides up from the bottom (never covers the full image).
-  -->
   <article
-    class="group relative rounded-lg bg-ink p-1 transition-all duration-200 hover:z-10 hover:scale-[1.04] hover:shadow-2xl hover:shadow-black/60"
+    class="group relative flex flex-col rounded-lg bg-ink p-1 transition-all duration-200 hover:z-10 hover:scale-[1.04] hover:shadow-2xl hover:shadow-black/60"
     :class="selected
       ? 'ring-2 ring-accent'
       : 'ring-1 ring-transparent hover:ring-2 hover:ring-white/25'"
   >
-    <!-- ── Image — inset inside the frame, scales on hover ───────────────────── -->
+    <!-- ── Image ────────────────────────────────────────────────────────────── -->
     <div
       class="relative overflow-hidden rounded cursor-grab active:cursor-grabbing"
       :class="{ 'min-h-32 animate-pulse': imageUrl && !imageLoaded }"
     >
-      <!-- Video placeholder — show icon + filename, no thumbnail generation needed -->
+      <!-- Video placeholder -->
       <div
         v-if="isVideo"
         class="flex aspect-video w-full flex-col items-center justify-center gap-1.5 bg-violet-950/50"
@@ -128,7 +116,7 @@ const postedTargets = computed(() => props.targets.filter((t) => props.image.pos
         @dragstart.stop="handleDragStart"
       />
 
-      <!-- ── Checkbox — always visible, top-left ─────────────────────────────── -->
+      <!-- ── Checkbox — top-left ──────────────────────────────────────────── -->
       <label
         class="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded border border-line bg-ink/75 transition group-hover:border-accent"
         @click.stop
@@ -136,7 +124,7 @@ const postedTargets = computed(() => props.targets.filter((t) => props.image.pos
         <input class="h-3.5 w-3.5 accent-accent" type="checkbox" :checked="selected" @change.stop="emit('toggleSelected', image.id)" />
       </label>
 
-      <!-- ── Expand / Vollansicht — top-right, visible on hover ──────────────── -->
+      <!-- ── Expand — top-right ───────────────────────────────────────────── -->
       <button
         class="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded border border-line bg-ink/75 text-slate-300 opacity-0 transition hover:border-white/40 hover:text-white group-hover:opacity-100"
         title="Full preview"
@@ -145,33 +133,26 @@ const postedTargets = computed(() => props.targets.filter((t) => props.image.pos
         <Expand class="h-3.5 w-3.5" />
       </button>
 
-      <!-- ── Excluded badge ───────────────────────────────────────────────────── -->
+      <!-- ── Excluded badge ────────────────────────────────────────────────── -->
       <span
         v-if="image.isArchived"
         class="absolute bottom-1.5 left-1.5 rounded border border-rose/50 bg-rose/20 px-1.5 py-0.5 text-[10px] text-rose"
       >Excluded</span>
 
-      <!-- ── Compact action strip — slides up from bottom ───────────────────── -->
+      <!-- ── Hover action strip ─────────────────────────────────────────────
+           Slides up from the bottom. Three rows:
+           1) Filename
+           2) Mark for active target
+           3) Utility icons
+           4) AI icons
+      ─────────────────────────────────────────────────────────────────────── -->
       <div
         class="pointer-events-none absolute inset-x-0 bottom-0 translate-y-full transition-transform duration-200 ease-out group-hover:translate-y-0 group-hover:pointer-events-auto"
       >
         <div class="border-t border-white/10 bg-ink/95 px-2 py-1.5 flex flex-col gap-1.5">
 
-          <!-- Row 1: filename + posted-platform indicators -->
-          <div class="flex items-center gap-1.5 min-w-0">
-            <p class="min-w-0 flex-1 truncate text-[11px] font-medium text-white">{{ image.filename }}</p>
-            <!-- Only platforms where image is already posted -->
-            <div v-if="postedTargets.length > 0" class="flex shrink-0 gap-0.5">
-              <span
-                v-for="target in postedTargets"
-                :key="target.id"
-                class="flex h-4 w-4 items-center justify-center rounded border border-mint/40 bg-mint/10 text-mint"
-                :title="`Posted on ${target.name}`"
-              >
-                <PlatformIcon :type="target.type" :size="9" />
-              </span>
-            </div>
-          </div>
+          <!-- Row 1: filename -->
+          <p class="truncate text-[11px] font-medium text-white leading-tight">{{ image.filename }}</p>
 
           <!-- Row 2: Mark for active target -->
           <div v-if="activeTarget" class="flex gap-1">
@@ -196,7 +177,7 @@ const postedTargets = computed(() => props.targets.filter((t) => props.image.pos
             </button>
           </div>
 
-          <!-- Row 3: utility + AI actions -->
+          <!-- Row 3: utility actions -->
           <div class="flex items-center gap-1">
             <button class="button h-6 w-6 shrink-0 p-0" title="Reveal file" @click.stop="emit('reveal', image)">
               <FolderOpen class="h-3.5 w-3.5" />
@@ -226,34 +207,63 @@ const postedTargets = computed(() => props.targets.filter((t) => props.image.pos
               <PinOff v-if="isFolderPreview" class="h-3.5 w-3.5" />
               <Pin v-else class="h-3.5 w-3.5" />
             </button>
-            <!-- AI tools — right-aligned -->
-            <div v-if="!image.isArchived && image.localPath" class="ml-auto flex gap-1">
-              <button
-                class="flex h-6 w-6 items-center justify-center rounded border border-line bg-transparent text-slate-400 transition hover:border-violet-500/50 hover:text-violet-400"
-                title="Generate video prompt"
-                @click.stop="emit('videoPrompt', image.localPath!)"
-              >
-                <Clapperboard class="h-3.5 w-3.5" />
-              </button>
-              <button
-                class="flex h-6 w-6 items-center justify-center rounded border border-line bg-transparent text-slate-400 transition hover:border-sky-500/50 hover:text-sky-400"
-                title="Recreate with AI"
-                @click.stop="emit('recreateImage', image.localPath!)"
-              >
-                <Image class="h-3.5 w-3.5" />
-              </button>
-              <button
-                class="flex h-6 w-6 items-center justify-center rounded border border-line bg-transparent text-slate-400 transition hover:border-amber-500/50 hover:text-amber-400"
-                title="Upscale with Topaz"
-                @click.stop="emit('upscaleImage', image.localPath!)"
-              >
-                <Zap class="h-3.5 w-3.5" />
-              </button>
-            </div>
+          </div>
+
+          <!-- Row 4: AI tools (own row so nothing gets cut) -->
+          <div v-if="!image.isArchived && image.localPath" class="flex items-center gap-1">
+            <button
+              class="button h-6 w-6 shrink-0 p-0 hover:border-violet-500/50 hover:text-violet-400"
+              title="Generate video prompt"
+              @click.stop="emit('videoPrompt', image.localPath!)"
+            >
+              <Clapperboard class="h-3.5 w-3.5" />
+            </button>
+            <button
+              class="button h-6 w-6 shrink-0 p-0 hover:border-sky-500/50 hover:text-sky-400"
+              title="Recreate with AI"
+              @click.stop="emit('recreateImage', image.localPath!)"
+            >
+              <Image class="h-3.5 w-3.5" />
+            </button>
+            <button
+              class="button h-6 w-6 shrink-0 p-0 hover:border-amber-500/50 hover:text-amber-400"
+              title="Upscale with Topaz"
+              @click.stop="emit('upscaleImage', image.localPath!)"
+            >
+              <Zap class="h-3.5 w-3.5" />
+            </button>
+            <span class="ml-1 text-[9px] uppercase tracking-wide text-slate-600">AI</span>
           </div>
 
         </div>
       </div>
     </div>
+
+    <!-- ── Always-visible network strip ──────────────────────────────────────
+         Shows which networks this image has been posted or skipped on.
+         Lives outside the overflow-hidden image area so it's always visible.
+    ─────────────────────────────────────────────────────────────────────────── -->
+    <div
+      v-if="postedTargets.length || skippedTargets.length"
+      class="flex flex-wrap items-center gap-0.5 px-0.5 pt-1 pb-0"
+    >
+      <span
+        v-for="target in postedTargets"
+        :key="target.id"
+        class="flex h-4 w-4 items-center justify-center rounded border border-mint/40 bg-mint/15"
+        :title="`Posted: ${target.name}`"
+      >
+        <PlatformIcon :type="target.type" :size="9" class="text-mint" />
+      </span>
+      <span
+        v-for="target in skippedTargets"
+        :key="target.id"
+        class="flex h-4 w-4 items-center justify-center rounded border border-slate-600/50 bg-slate-800/50"
+        :title="`Skipped: ${target.name}`"
+      >
+        <PlatformIcon :type="target.type" :size="9" class="text-slate-600" />
+      </span>
+    </div>
+
   </article>
 </template>
