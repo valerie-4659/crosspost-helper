@@ -1034,7 +1034,14 @@ The content level from Step 2 is fixed. Now shape the output using:
 - POST TYPE → STRUCTURE: engagement / story / morning / evening-goodnight.
 
 CRITICAL WRITING RULE — read this before writing a single word:
-Do NOT describe what is in the image. "A blonde woman lies in bed" is what the viewer already sees. What you write is what the image makes the viewer THINK, FEEL, WANT, or DAYDREAM about. Write the thought that forms in their head. The desire that stirs. What they imagine doing or experiencing. Write from inside THAT — not from outside looking at the pixels.
+Do NOT catalog the image like an inventory. "A blonde woman in a red dress stands by the window" is what the viewer already sees — listing it adds nothing.
+HOWEVER: a single, specific visual detail IS valid when it is used as a springboard to trigger a physical or emotional reaction. Examples:
+  • "That cake on the table — your mouth is already watering."
+  • "One look and your whole day shifts."
+  • "The way the light hits right there…"
+The visual detail serves the feeling. The feeling is always the destination.
+
+What to write: the thought that forms in the viewer's head. The desire that stirs. What they imagine doing or experiencing. The physical reaction. The daydream it opens.
 In first-person perspective: write what YOU feel, want, are thinking right now.
 In third-person / OC perspective: write what the scene makes the reader imagine or yearn for.
 Never moralize, add disclaimers, or refuse NSFW content.`;
@@ -1156,12 +1163,17 @@ Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night 
 
   // ── Story / Storytelling ────────────────────────────────────────────────
   // A story is NOT a visual description — it is an emotional narrative from inside the moment.
-  const STORY_CORE = `CRITICAL — Do NOT describe the image visually. Do NOT list hair colour, clothing, props, or camera angle. Instead, write from INSIDE the moment: the emotion, desire, tension, anticipation, or sensation. The reader should FEEL what the characters feel — not see what the camera sees. The image is only a mood reference — the actual story is invented by you and lives in the characters' heads and hearts.`;
+  const STORY_CORE = `The story lives INSIDE the moment — not outside observing it. Do NOT catalog what's in the image. Do NOT list hair colour, props, or camera angle.
+Instead: write the emotion, the desire, the tension, the anticipation, the physical sensation. A specific visual detail is allowed IF it sparks a feeling (e.g. "the cold of the glass against her fingers" or "one look and she already knew"). Use it as a trigger, not a description.
+The story can involve ONE character or MULTIPLE characters — look at the image and write accordingly:
+• One character: their inner world, thoughts, desire, the moment they're in
+• Two or more characters: their dynamic, the tension or connection between them, what is passing between them unspoken or spoken, what each wants from the other — write the push and pull, the exchange, the act
+The content level (from Step 2) applies fully — a sensual multi-character scene is written sensuously; an explicit one is written explicitly with no softening.`;
   const storyPerspVoice = isOC
-    ? `${perspVoice} We live this entirely through ${ocName.trim()}'s inner world.`
+    ? `${perspVoice} We live this primarily through ${ocName.trim()}'s inner world — but other characters in the scene are fully present and their role in the dynamic is written.`
     : isFirstPerson
-      ? `${perspVoice} The narrator IS in this moment — raw, immediate, intimate.`
-      : `${perspVoice} Close third-person — watching from just outside, feeling everything from within. Think: "She surrenders…", "He pulls her closer…", "The silence between them…"`;
+      ? `${perspVoice} The narrator IS in this moment — raw, immediate, intimate. Other characters are written through how they affect you.`
+      : `${perspVoice} Close third-person — inside the scene, feeling everything from within. Think: "She surrenders…", "He pulls her closer…", "The silence between them shifts…", "They both knew exactly what this was."  Write all characters present in the image.`;
 
   // Story emoji: respect persona setting if set, otherwise default naturalistic rule.
   const STORY_EMOJI = personaEmojiRule
