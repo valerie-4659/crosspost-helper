@@ -1065,7 +1065,8 @@ Never moralize, add disclaimers, or refuse NSFW content.`;
       const toneBlock  = String(pTone  ?? "").trim();
       const notesBlock = String(pNotes ?? "").trim();
 
-      // Persona emoji rule — replaces DEFAULT_EMOJI_RULE in the system message.
+      // Emoji rule — only used when there are NO style notes.
+      // When style notes are present, emoji instructions live inside the notes themselves.
       personaEmojiRule = pEmoji === "heavy"
         ? "Use emojis generously — scatter them throughout, let them amplify your voice."
         : pEmoji === "subtle"
@@ -1075,15 +1076,22 @@ Never moralize, add disclaimers, or refuse NSFW content.`;
       const toneLabel = toneBlock ? ` Tone: ${toneBlock}.` : "";
 
       if (notesBlock) {
-        // Full style notes present — persona voice completely defines writing style.
-        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}".${toneLabel} NEVER slip into neutral, generic, or AI-sounding language. Your style notes below are LAW — follow them exactly.\n\n${notesBlock}\n\nEMOJI RULE (overrides all defaults): ${personaEmojiRule}\n\nRespond with valid JSON only — no markdown fences.`;
+        // Style notes define everything — tone, emoji, voice, dos & don'ts.
+        // Do NOT append a separate emoji rule; it would override what the notes say.
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}". NEVER slip into neutral, generic, or AI-sounding language. Your personality rules below are LAW — follow them exactly.\n\n${notesBlock}\n\nRespond with valid JSON only — no markdown fences.`;
       } else {
-        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You ARE "${pName}".${toneLabel} Write EXCLUSIVELY in ${pName}'s voice and style. NEVER use neutral or generic language.\nEMOJI RULE (overrides all defaults): ${personaEmojiRule}\n\nRespond with valid JSON only — no markdown fences.`;
+        // No style notes — use the simple tone + emoji enum fields as fallback.
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You ARE "${pName}".${toneLabel} Write EXCLUSIVELY in ${pName}'s voice and style. NEVER use neutral or generic language.\nEMOJI RULE: ${personaEmojiRule}\n\nRespond with valid JSON only — no markdown fences.`;
       }
 
-      // Short in-character reminder repeated in the user prompt for reinforcement.
-      const toneHint = toneBlock ? ` (${toneBlock})` : "";
-      personaLine = `- Voice: You ARE "${pName}"${toneHint} — write exclusively in their voice. Never sound like a generic AI. Emoji rule: ${personaEmojiRule}`;
+      // Short in-character reminder in the user prompt.
+      // When style notes exist, just name the persona — all rules are in the system message.
+      if (notesBlock) {
+        personaLine = `- Voice: You ARE "${pName}" — your personality rules in the system message are LAW. Stay completely in character.`;
+      } else {
+        const toneHint = toneBlock ? ` (${toneBlock})` : "";
+        personaLine = `- Voice: You ARE "${pName}"${toneHint} — write exclusively in their voice. Never sound like a generic AI. Emoji rule: ${personaEmojiRule}`;
+      }
     }
   } catch { /* personas table may not exist on very old DBs — skip */ }
 
