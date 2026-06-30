@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.5 - 2026-06-30
+
+- fix: replace run-all-migrations-every-start with tracked migrations
+
+
 ## v0.3.4 - 2026-06-30
 
 - refine: video cards in library — thumbnail, controls, AI post source image

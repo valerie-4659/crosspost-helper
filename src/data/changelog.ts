@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.5",
+    date: "2026-06-30",
+    items: [
+      "fix: replace run-all-migrations-every-start with tracked migrations",
+    ],
+  },
+  {
     version: "0.3.4",
     date: "2026-06-30",
     items: [
