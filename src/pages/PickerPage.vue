@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Clipboard, Copy, FolderOpen, Image, Images, Layers, Maximize2, Send, SkipForward, Shuffle, Sparkles, X, Zap } from "lucide-vue-next";
+import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Clipboard, Copy, Film, FolderOpen, Image, Images, Layers, Maximize2, Send, SkipForward, Shuffle, Sparkles, X, Zap } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import VideoPromptPanel from "@/components/VideoPromptPanel.vue";
 import ImageGeneratePanel from "@/components/ImageGeneratePanel.vue";
 import { convertFileSrc } from "@/electron-shims/core";
 import FilterBar from "@/components/FilterBar.vue";
 import ImagePreview from "@/components/ImagePreview.vue";
+import PickerFolderSelector from "@/components/PickerFolderSelector.vue";
 import PlatformIcon from "@/components/PlatformIcon.vue";
 import { useAiStore } from "@/stores/aiStore";
 import { useFolderHistoryStore } from "@/stores/folderHistoryStore";
@@ -183,8 +184,10 @@ async function sendMultiPickToExtension(targetType: string) {
 }
 
 // ── Multi-pick mode ───────────────────────────────────────────────────────
-/** Show/hide the folder-selection panel. */
+/** Show/hide the multi-pick folder-selection panel. */
 const showFolderPanel = ref(false);
+/** Show/hide the single-pick folder-selection panel. */
+const showSinglePickFolderPanel = ref(false);
 
 const maxForActiveTarget = computed(() => {
   const type = targets.activeTarget?.type ?? "";
@@ -500,6 +503,28 @@ onUnmounted(() => {
           Multi-Pick
         </button>
         <template v-if="!picker.multiPickMode">
+          <!-- Folder filter toggle -->
+          <button
+            class="button rounded-md gap-1.5"
+            :class="picker.pickerFolderPaths.length ? 'border-accent bg-accent/10 text-accent' : ''"
+            title="Select source folders for random pick"
+            @click="showSinglePickFolderPanel = !showSinglePickFolderPanel"
+          >
+            <FolderOpen class="h-4 w-4" />
+            {{ picker.pickerFolderPaths.length ? `${picker.pickerFolderPaths.length} folder(s)` : 'All folders' }}
+          </button>
+          <!-- Mime filter toggle -->
+          <button
+            class="button rounded-md gap-1.5"
+            :class="picker.mimeFilter !== 'images' ? 'border-violet-500/60 bg-violet-500/10 text-violet-300' : ''"
+            :title="picker.mimeFilter === 'images' ? 'Images only — click to include videos' : picker.mimeFilter === 'videos' ? 'Videos only — click for all' : 'All media — click for images only'"
+            @click="picker.mimeFilter = picker.mimeFilter === 'images' ? 'videos' : picker.mimeFilter === 'videos' ? 'all' : 'images'"
+          >
+            <Film v-if="picker.mimeFilter === 'videos'" class="h-4 w-4" />
+            <Image v-else-if="picker.mimeFilter === 'images'" class="h-4 w-4" />
+            <Layers v-else class="h-4 w-4" />
+            {{ picker.mimeFilter === 'images' ? 'Images' : picker.mimeFilter === 'videos' ? 'Videos' : 'All media' }}
+          </button>
           <button
             class="button rounded-md"
             :disabled="!picker.canGoBack"
@@ -526,6 +551,18 @@ onUnmounted(() => {
       :show-include-skipped="picker.multiPickMode"
     />
 
+    <!-- Single-pick folder selector panel -->
+    <div
+      v-if="!picker.multiPickMode && showSinglePickFolderPanel"
+      class="shrink-0 rounded-xl border border-line bg-panel px-4 py-3"
+    >
+      <PickerFolderSelector
+        :selected-paths="picker.pickerFolderPaths"
+        @toggle="picker.togglePickerFolder"
+        @clear="picker.pickerFolderPaths.splice(0)"
+      />
+    </div>
+
     <!-- ══ MULTI-PICK MODE ══════════════════════════════════════════════ -->
     <template v-if="picker.multiPickMode">
 
@@ -550,11 +587,11 @@ onUnmounted(() => {
         <!-- Folder selector toggle -->
         <button
           class="button h-7 px-2 text-xs"
-          :class="picker.multiPickFolderPaths.length ? 'border-accent bg-accent/10 text-accent' : ''"
+          :class="picker.pickerFolderPaths.length ? 'border-accent bg-accent/10 text-accent' : ''"
           @click="showFolderPanel = !showFolderPanel"
         >
           <FolderOpen class="h-3 w-3" />
-          {{ picker.multiPickFolderPaths.length ? `${picker.multiPickFolderPaths.length} folder(s)` : 'All folders' }}
+          {{ picker.pickerFolderPaths.length ? `${picker.pickerFolderPaths.length} folder(s)` : 'All folders' }}
         </button>
 
         <!-- Spacer + Pick button -->
@@ -575,13 +612,13 @@ onUnmounted(() => {
             v-for="folder in imageStore.folders"
             :key="folder.folderPath"
             class="flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs transition hover:bg-panelSoft"
-            :class="picker.multiPickFolderPaths.includes(folder.folderPath) ? 'text-accent' : 'text-slate-300'"
+            :class="picker.pickerFolderPaths.includes(folder.folderPath) ? 'text-accent' : 'text-slate-300'"
           >
             <input
               type="checkbox"
               class="h-3 w-3 accent-accent"
-              :checked="picker.multiPickFolderPaths.includes(folder.folderPath)"
-              @change="picker.toggleMultiPickFolder(folder.folderPath)"
+              :checked="picker.pickerFolderPaths.includes(folder.folderPath)"
+              @change="picker.togglePickerFolder(folder.folderPath)"
             />
             <span class="truncate" :title="folder.folderPath">{{ folder.folderPath.split('/').pop() }}</span>
             <span class="shrink-0 text-slate-600">({{ folder.count }})</span>

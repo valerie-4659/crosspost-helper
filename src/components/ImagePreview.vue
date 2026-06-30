@@ -8,7 +8,9 @@ const props = defineProps<{
   image: ImageWithPostState | null;
 }>();
 
-const imageUrl = computed(() => {
+const isVideo = computed(() => props.image?.mimeType?.startsWith("video/") ?? false);
+
+const mediaUrl = computed(() => {
   if (!props.image) return "";
   // Prefer the full local file so the picker shows the real image at full
   // resolution — the thumbnail (400 px JPEG) is only a fallback for cases
@@ -39,9 +41,16 @@ function handleDragStart(event: DragEvent) {
 <template>
   <section class="surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg">
     <div class="flex min-h-0 flex-1 items-center justify-center bg-black/40">
+      <video
+        v-if="image && mediaUrl && isVideo"
+        :src="mediaUrl"
+        class="max-h-full max-w-full"
+        controls
+        loop
+      />
       <img
-        v-if="image && imageUrl"
-        :src="imageUrl"
+        v-else-if="image && mediaUrl"
+        :src="mediaUrl"
         :alt="image.filename"
         class="max-h-full max-w-full cursor-grab object-contain"
         draggable="true"
@@ -49,7 +58,7 @@ function handleDragStart(event: DragEvent) {
       />
       <div v-else class="flex flex-col items-center gap-3 text-slate-500">
         <ImageOff class="h-12 w-12" />
-        <p class="text-sm">Pick an image to preview it here.</p>
+        <p class="text-sm">Pick an image or video to preview it here.</p>
       </div>
     </div>
     <div v-if="image" class="border-t border-line p-4">

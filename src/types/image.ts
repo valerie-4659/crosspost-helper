@@ -70,6 +70,10 @@ export interface ImageFilters {
    * Index 0 = first (highest priority). Passed by the Library page from folderHistoryStore.
    */
   folderPickOrder?: string[];
+  /** Picker: restrict random pick to these folder paths and their subfolders. Empty = all. */
+  pickerFolderPaths?: string[];
+  /** Picker: mime type filter. 'images' = only images (default), 'videos' = only videos, 'all' = both. */
+  mimeFilter?: 'images' | 'videos' | 'all';
 }
 
 export interface DuplicateWarning {

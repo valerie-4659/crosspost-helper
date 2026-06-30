@@ -45,7 +45,11 @@ export const usePickerStore = defineStore("picker", () => {
     error.value = null;
     try {
       filters.value.targetId = targetStore.activeTargetId;
-      const next = await pickRandomUnpostedImage(filters.value);
+      const next = await pickRandomUnpostedImage({
+        ...filters.value,
+        pickerFolderPaths: pickerFolderPaths.value,
+        mimeFilter: mimeFilter.value,
+      });
       if (!next) {
         error.value = "No unposted image matched the current filters.";
         return;
@@ -133,8 +137,10 @@ export const usePickerStore = defineStore("picker", () => {
   const multiPickSlots = ref<Array<ImageWithPostState | undefined>>([]);
   /** How many images the user wants per post. */
   const multiPickCount = ref(3);
-  /** Folders selected as the random source; empty = all folders. */
-  const multiPickFolderPaths = ref<string[]>([]);
+  /** Folders selected as the random source; empty = all folders. Shared by single-pick and multi-pick. */
+  const pickerFolderPaths = ref<string[]>([]);
+  /** Mime filter for random picking. */
+  const mimeFilter = ref<'images' | 'videos' | 'all'>('images');
   const multiPickError = ref("");
   const multiPickMessage = ref("");
 
@@ -153,10 +159,10 @@ export const usePickerStore = defineStore("picker", () => {
     multiPickSlots.value = current;
   }
 
-  function toggleMultiPickFolder(folderPath: string) {
-    const idx = multiPickFolderPaths.value.indexOf(folderPath);
-    if (idx === -1) multiPickFolderPaths.value.push(folderPath);
-    else multiPickFolderPaths.value.splice(idx, 1);
+  function togglePickerFolder(folderPath: string) {
+    const idx = pickerFolderPaths.value.indexOf(folderPath);
+    if (idx === -1) pickerFolderPaths.value.push(folderPath);
+    else pickerFolderPaths.value.splice(idx, 1);
   }
 
   /** Fill only the empty slots with new random images. */
@@ -170,10 +176,10 @@ export const usePickerStore = defineStore("picker", () => {
     try {
       const filledIds = multiPickSlots.value.filter(Boolean).map((s) => s!.id);
       const picked = await pickRandomImages(
-        { ...filters.value, targetId: targetStore.activeTargetId },
+        { ...filters.value, targetId: targetStore.activeTargetId, mimeFilter: mimeFilter.value },
         emptyCount,
         filledIds,
-        multiPickFolderPaths.value,
+        pickerFolderPaths.value,
       );
       if (!picked.length) {
         multiPickError.value = "No unposted images found for the selected folders/filters.";
@@ -259,16 +265,18 @@ export const usePickerStore = defineStore("picker", () => {
     copyPath,
     copyImage,
     selectImage,
+    // Shared picker settings
+    pickerFolderPaths,
+    mimeFilter,
+    togglePickerFolder,
     // Multi-pick
     multiPickMode,
     multiPickSlots,
     multiPickCount,
-    multiPickFolderPaths,
     multiPickError,
     multiPickMessage,
     setMultiPickMode,
     setMultiPickCount,
-    toggleMultiPickFolder,
     fillMultiPickSlots,
     removeMultiPickSlot,
     queueMultiPickForExtension,

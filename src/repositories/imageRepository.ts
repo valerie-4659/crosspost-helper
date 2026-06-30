@@ -435,6 +435,18 @@ async function queryFairRandom(
     params.push(filters.exactFolderPath);
     conditions.push(`images.folder_path = $${params.length}`);
   }
+  if (filters.pickerFolderPaths?.length) {
+    const folderClauses = filters.pickerFolderPaths.map((fp) => {
+      params.push(fp, fp);
+      return `(images.folder_path = $${params.length - 1} OR images.folder_path LIKE $${params.length} || '/%')`;
+    });
+    conditions.push(`(${folderClauses.join(' OR ')})`);
+  }
+  if (!filters.mimeFilter || filters.mimeFilter === 'images') {
+    conditions.push(`images.mime_type LIKE 'image/%'`);
+  } else if (filters.mimeFilter === 'videos') {
+    conditions.push(`images.mime_type LIKE 'video/%'`);
+  }
   if (filters.rating && filters.rating !== "all") {
     params.push(filters.rating);
     conditions.push(`images.rating = $${params.length}`);
@@ -622,6 +634,13 @@ export async function pickRandomImages(
       return `(images.folder_path = $${params.length - 1} OR images.folder_path LIKE $${params.length} || '/%')`;
     });
     conditions.push(`(${folderClauses.join(" OR ")})`);
+  }
+
+  // ── Mime type filter ──────────────────────────────────────────────────
+  if (!filters.mimeFilter || filters.mimeFilter === 'images') {
+    conditions.push(`images.mime_type LIKE 'image/%'`);
+  } else if (filters.mimeFilter === 'videos') {
+    conditions.push(`images.mime_type LIKE 'video/%'`);
   }
 
   // ── Exclude already-picked images ──────────────────────────────────────
