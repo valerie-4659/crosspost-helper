@@ -45,6 +45,35 @@ const showVideoPanel = ref<boolean>(_savedLibPanels.showVideoPanel ?? false);
 /** When set, the video modal analyses only this single image path (card button click). */
 const videoPromptSinglePath = ref<string | null>(null);
 
+/**
+ * For a given localPath, if it's a video file, attempt to find the source image that
+ * was used to generate it (saved as {stem}_video_{timestamp}.mp4 → source is {stem}.ext).
+ * Falls back to the original path if no match is found.
+ */
+function resolveSourceImagePath(localPath: string): string {
+  const mimeGuess = localPath.match(/\.(mp4|webm|mov)$/i);
+  if (!mimeGuess) return localPath;
+  // Strip _video_TIMESTAMP suffix to recover the source stem.
+  const withoutExt = localPath.replace(/\.[^.]+$/, "");
+  const sourceStem = withoutExt.replace(/_video_\d+$/, "");
+  if (sourceStem === withoutExt) return localPath; // no _video_ pattern — can't resolve
+  const folder = localPath.replace(/\/[^/]+$/, "");
+  const match = imageStore.images.find(
+    (img) =>
+      !img.mimeType?.startsWith("video/") &&
+      img.folderPath === folder &&
+      img.localPath?.startsWith(sourceStem + "."),
+  );
+  return match?.localPath ?? localPath;
+}
+
+/** Build AI-analysis-ready paths: for videos, resolve to source image if possible. */
+function aiImagePaths(items: { localPath: string | null; mimeType?: string }[]): string[] {
+  return items
+    .map((i) => (i.localPath ? resolveSourceImagePath(i.localPath) : null))
+    .filter((p): p is string => !!p);
+}
+
 function openVideoPromptForImage(localPath: string) {
   videoPromptSinglePath.value = localPath;
   showVideoPanel.value = true;
@@ -1583,7 +1612,7 @@ async function fillSlot(slotId: string) {
           <!-- Scrollable body -->
           <div class="overflow-y-auto px-5 py-4">
             <AiPostPanel
-              :image-paths="(collectionArray.length ? collectionArray : imageStore.selectedImages).map(i => i.localPath).filter((p): p is string => !!p)"
+              :image-paths="aiImagePaths(collectionArray.length ? collectionArray : imageStore.selectedImages)"
               :image-ids="(collectionArray.length ? collectionArray : imageStore.selectedImages).map(i => i.id)"
               :network="libActiveTargetType ?? ''"
               :network-name="libActiveTargetName"

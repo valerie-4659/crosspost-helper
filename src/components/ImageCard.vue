@@ -62,12 +62,20 @@ const imageUrl = computed(() => {
   return "";
 });
 
+const videoSrc = computed(() =>
+  isVideo.value && props.image.localPath ? convertFileSrc(props.image.localPath) : "",
+);
+
 const imageLoaded = ref(false);
 const imgEl = ref<HTMLImageElement | null>(null);
 
 onMounted(() => {
   if (imgEl.value?.complete) imageLoaded.value = true;
 });
+
+function seekFirstFrame(e: Event) {
+  (e.target as HTMLVideoElement).currentTime = 0.1;
+}
 
 const activeTarget = computed(() => props.targets.find((target) => target.id === props.activeTargetId) ?? null);
 const activeTargetStatus = computed(() => (activeTarget.value ? props.image.postStates[activeTarget.value.id] : undefined));
@@ -89,9 +97,21 @@ const skippedTargets = computed(() => props.targets.filter((t) => props.image.po
       class="relative overflow-hidden rounded cursor-grab active:cursor-grabbing"
       :class="{ 'min-h-32 animate-pulse': imageUrl && !imageLoaded }"
     >
-      <!-- Video placeholder -->
+      <!-- Video: show first frame as thumbnail -->
+      <video
+        v-if="isVideo && videoSrc"
+        :src="videoSrc"
+        muted
+        preload="metadata"
+        playsinline
+        draggable="true"
+        class="block w-full object-cover transition duration-300 group-hover:scale-[1.03] group-hover:brightness-110"
+        @loadedmetadata="seekFirstFrame"
+        @dragstart.stop="handleDragStart"
+      />
+      <!-- Video without local file: icon placeholder -->
       <div
-        v-if="isVideo"
+        v-else-if="isVideo"
         class="flex aspect-video w-full flex-col items-center justify-center gap-1.5 bg-violet-950/50"
         draggable="true"
         @dragstart.stop="handleDragStart"
@@ -118,7 +138,7 @@ const skippedTargets = computed(() => props.targets.filter((t) => props.image.po
 
       <!-- ── Checkbox — top-left ──────────────────────────────────────────── -->
       <label
-        class="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded border border-line bg-ink/75 transition group-hover:border-accent"
+        class="absolute left-1.5 top-1.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-line bg-ink/90 transition group-hover:border-accent"
         @click.stop
       >
         <input class="h-3.5 w-3.5 accent-accent" type="checkbox" :checked="selected" @change.stop="emit('toggleSelected', image.id)" />
@@ -209,8 +229,8 @@ const skippedTargets = computed(() => props.targets.filter((t) => props.image.po
             </button>
           </div>
 
-          <!-- Row 4: AI tools (own row so nothing gets cut) -->
-          <div v-if="!image.isArchived && image.localPath" class="flex items-center gap-1">
+          <!-- Row 4: AI tools — images only (video prompt / recreate / upscale require an image file) -->
+          <div v-if="!image.isArchived && image.localPath && !isVideo" class="flex items-center gap-1">
             <button
               class="button h-6 w-6 shrink-0 p-0 hover:border-violet-500/50 hover:text-violet-400"
               title="Generate video prompt"
