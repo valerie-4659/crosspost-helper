@@ -827,13 +827,34 @@ async function handleBridge(req, res) {
 const https = require("node:https");
 
 const NETWORK_POST_CONFIGS = {
-  x:          { descMax: 180,  tagCount: 5,  titleNeeded: false, tagHasHash: true,  notes: "Punchy, engagement-first. Max 180 chars for text (leaves room for hashtags in the 280 limit)." },
-  bluesky:    { descMax: 250,  tagCount: 5,  titleNeeded: false, tagHasHash: true,  notes: "Friendly, concise. Use # in tags." },
-  deviantart: { descMax: 1000, tagCount: 20, titleNeeded: true,  tagHasHash: false, notes: "Artistic. Tags WITHOUT # — DA has a separate tag field. Max 20 tags." },
-  civitai:    { descMax: 2000, tagCount: 30, titleNeeded: true,  tagHasHash: false, notes: "Detailed AI art description. Include style, technique, mood. Tags WITHOUT #." },
-  instagram:  { descMax: 400,  tagCount: 30, titleNeeded: false, tagHasHash: true,  notes: "Engaging caption. Up to 30 hashtags WITH # symbol." },
-  tumblr:     { descMax: 500,  tagCount: 20, titleNeeded: true,  tagHasHash: false, notes: "Creative. Tags WITHOUT # — Tumblr uses a separate tag input." },
-  facebook:   { descMax: 500,  tagCount: 10, titleNeeded: false, tagHasHash: true,  notes: "Conversational, engaging. A few hashtags WITH # symbol." },
+  x: {
+    descMax: 180, tagCount: 5, titleNeeded: false, tagHasHash: true,
+    notes: "Twitter/X rewards bold, provocative openers that stop the scroll. First line MUST be the hook — make it a statement, a question, or a tease that's impossible to ignore. Lines 2–3 build tension or intrigue. End with a direct reader-question or call-to-action. NO filler phrases. Use line breaks strategically. The 180-char limit is tight — every word must earn its place. Hashtags are attached separately so the description text itself must not end with them.",
+  },
+  bluesky: {
+    descMax: 250, tagCount: 5, titleNeeded: false, tagHasHash: true,
+    notes: "Bluesky has a chronological feed and a quality-conscious, early-adopter audience. Write something genuine and engaging — not marketing speak. Conversational but sharp. A strong image description plus a personal or reflective angle performs well. Hashtags drive discovery but keep them focused. Use line breaks for rhythm.",
+  },
+  deviantart: {
+    descMax: 1000, tagCount: 20, titleNeeded: true, tagHasHash: false,
+    notes: "DeviantArt is an art appreciation community — the description is an artist statement, not a caption. Write 2–4 paragraphs: (1) what the artwork depicts and its emotional intent, (2) the creative process or technique (AI model, style choices, mood references), (3) a note connecting with the viewer or inviting feedback. Tone: genuine, artistic, community-oriented. Mention AI-art context naturally. Tags do NOT use # — they go into DA's separate tag field. Up to 20 focused tags.",
+  },
+  civitai: {
+    descMax: 2000, tagCount: 30, titleNeeded: true, tagHasHash: false,
+    notes: "Civitai is a technical AI-art platform — the audience is makers, prompt-engineers, and enthusiasts. The description should cover: (1) the visual concept and mood, (2) technical details (model, style, aesthetic approach, any interesting technique), (3) optional: key prompt elements or generation notes that others would find useful. Tone: knowledgeable, enthusiastic, informative. Tags go without # into the tag field — be generous (up to 30), include style tags, mood tags, model-type tags, and subject tags.",
+  },
+  instagram: {
+    descMax: 400, tagCount: 30, titleNeeded: false, tagHasHash: true,
+    notes: "Instagram shows only the first 1–2 lines before the 'more' button — the opening MUST hook immediately. After the hook: build mood or tell a micro-story. Add a question or CTA before the hashtags. Use strategic line breaks to create visual breathing room. Emojis work well here — place them at the start of lines for rhythm. Hashtags (WITH #) should mix popular tags (500k–5M posts) with niche tags (under 500k) for maximum reach. Up to 30 hashtags.",
+  },
+  tumblr: {
+    descMax: 500, tagCount: 20, titleNeeded: true, tagHasHash: false,
+    notes: "Tumblr rewards an unfiltered, personal, aesthetic voice. Write with emotional honesty — poetic, raw, or darkly funny depending on the image mood. Longer and more narrative is fine here. Use line breaks freely for atmosphere. The title can be evocative and cryptic. Tumblr tags (WITHOUT #) live in a separate tag field and drive reblog discovery — include vibe tags, aesthetic tags, and content tags freely up to 20.",
+  },
+  facebook: {
+    descMax: 500, tagCount: 10, titleNeeded: false, tagHasHash: true,
+    notes: "Facebook rewards emotional storytelling and community warmth. Write in a personal, conversational tone — like sharing something with friends. Posts that ask a question or invite people to share their thoughts get more reach. Keep paragraphs short (1–3 sentences). A story arc (setup → image moment → reflection or question) works well. Use very few hashtags (5–10) — Facebook's algorithm does not boost hashtag discovery as strongly as Instagram.",
+  },
 };
 
 function httpsPost(hostname, path_, headers, body) {
@@ -1207,17 +1228,51 @@ Respond with ONLY valid JSON, no markdown fences:
 
 // ─── Video Prompt Generation ──────────────────────────────────────────────────
 
-// explicit: true  → NSFW descriptions are OK (only WAN 2.2 Spicy)
-// strictChinese:  → ByteDance / Kuaishou / Vidu — zero tolerance for even suggestive content
+// explicit: true       → adult content OK — describe nudity and sexual acts directly (WAN 2.2 Spicy)
+// strictChinese: true  → ByteDance / Kuaishou / Vidu — zero tolerance even for suggestive content
+// sensual: true        → revealing outfits, sensual language, suggestive scenes OK — NO explicit acts
+// qualityTags: string  → append these to every prompt for best results
 const VIDEO_MODELS = {
-  wan_2_2_spicy:    { name: "WAN 2.2 Spicy",     explicit: true,  strictChinese: false, maxWords: 350 },
-  wan_2_5:          { name: "WAN 2.5",            explicit: false, strictChinese: false, maxWords: 300 },
-  wan_2_7:          { name: "WAN 2.7",            explicit: false, strictChinese: false, maxWords: 300 },
-  kling_v3_0_pro:   { name: "Kling 3.0 Pro",      explicit: false, strictChinese: true,  maxWords: 280 },
-  grok_imagine:     { name: "Grok Imagine Video",  explicit: false, strictChinese: false, maxWords: 250 },
-  seedance_2_0:     { name: "Seedance 2.0",        explicit: false, strictChinese: true,  maxWords: 350 },
-  seedance_1_5_pro: { name: "Seedance 1.5 Pro",    explicit: false, strictChinese: true,  maxWords: 300 },
-  vidu_q3:          { name: "Vidu Q3",             explicit: false, strictChinese: true,  maxWords: 280 },
+  wan_2_2_spicy: {
+    name: "WAN 2.2 Spicy", explicit: true, strictChinese: false, sensual: true, maxWords: 350,
+    qualityTags: "cinematic, 4K, hyperrealistic, best quality, sharp focus, high detail",
+    promptOrder: "Subject & appearance → nudity/clothing → action & motion → camera → environment & lighting → mood",
+  },
+  wan_2_5: {
+    name: "WAN 2.5", explicit: false, strictChinese: false, sensual: true, maxWords: 300,
+    qualityTags: "cinematic, 4K, best quality, high detail, smooth motion",
+    promptOrder: "Subject & appearance → clothing/state → action & motion → camera → environment & lighting → mood",
+  },
+  wan_2_7: {
+    name: "WAN 2.7", explicit: false, strictChinese: false, sensual: true, maxWords: 300,
+    qualityTags: "cinematic, 4K, best quality, hyperrealistic, sharp, smooth motion",
+    promptOrder: "Subject & appearance → clothing/state → action & motion → camera → environment & lighting → mood",
+  },
+  kling_v3_0_pro: {
+    name: "Kling 3.0 Pro", explicit: false, strictChinese: true, sensual: false, maxWords: 280,
+    qualityTags: "cinematic, professional, high quality, smooth",
+    promptOrder: "Subject & appearance → conservative clothing → action (simple, neutral) → environment → lighting → cinematic mood",
+  },
+  grok_imagine: {
+    name: "Grok Imagine Video", explicit: false, strictChinese: false, sensual: true, maxWords: 250,
+    qualityTags: "cinematic, photorealistic, high quality, detailed",
+    promptOrder: "Subject → appearance & clothing → action & motion → camera angle → environment & lighting → atmosphere",
+  },
+  seedance_2_0: {
+    name: "Seedance 2.0", explicit: false, strictChinese: true, sensual: false, maxWords: 350,
+    qualityTags: "cinematic, high quality, professional, smooth motion",
+    promptOrder: "Subject & appearance → modest clothing → action (neutral) → environment → lighting → mood",
+  },
+  seedance_1_5_pro: {
+    name: "Seedance 1.5 Pro", explicit: false, strictChinese: true, sensual: false, maxWords: 300,
+    qualityTags: "cinematic, high quality, professional",
+    promptOrder: "Subject & appearance → modest clothing → action (neutral) → environment → lighting → mood",
+  },
+  vidu_q3: {
+    name: "Vidu Q3", explicit: false, strictChinese: true, sensual: false, maxWords: 280,
+    qualityTags: "cinematic, high quality, smooth, detailed",
+    promptOrder: "Subject & appearance → conservative clothing → neutral action → environment → lighting → cinematic atmosphere",
+  },
 };
 
 // videoModel: one of the VIDEO_MODELS keys
@@ -1256,39 +1311,67 @@ async function generateVideoPrompt(imagePaths, videoModel = "wan_2_5", instructi
     }
   }
 
-  // Content policy rule per model family
+  // Content policy rule — three distinct tiers
   let contentRule;
   if (vm.explicit) {
-    contentRule = `EXPLICIT CONTENT IS ALLOWED and expected — describe nudity, explicit poses, and adult scenarios accurately and vividly. Do not sanitize.`;
+    contentRule = `EXPLICIT CONTENT IS FULLY SUPPORTED — ${vm.name} is designed for adult content. Rules:
+- Describe nudity, body anatomy, and erotic scenarios directly. Use clear, unambiguous terms for body parts and sexual acts — do NOT euphemize.
+- Describe sexual positions, physical interactions, and explicit motion accurately and vividly.
+- If the source image is explicit: match its intensity exactly. Do NOT tone it down or fade to black.
+- If the source image is suggestive/tasteful: describe alluring appearance, sensual atmosphere, and suggestive tension — but match the image's actual level.
+- Erotic physical details (skin texture, touch, expression of arousal, exposed anatomy) should all be described where visible.
+- Do NOT include clinical disclaimers, apologies, or softening phrases.`;
   } else if (vm.strictChinese) {
-    contentRule = `STRICT CONTENT POLICY — this model (${vm.name}) is operated by a Chinese company with zero tolerance for any sexual, suggestive, or adult content. NEVER use: nudity, revealing clothing, sexual acts, intimate touching, or any sensual language. Describe the scene in a completely neutral, family-safe way. Focus on motion, environment, and cinematic quality only. Any violation will cause the generation to be blocked.`;
+    contentRule = `STRICT CONTENT POLICY — ${vm.name} runs under Chinese content regulations with ZERO tolerance. Any violation WILL silently block the job:
+- FORBIDDEN entirely: nudity of any kind, bare skin beyond face/hands/feet, lingerie, bikini, swimwear, underwear, see-through or wet fabric, low-cut, cleavage, tight-fitting, figure-hugging, or any clothing described as revealing.
+- FORBIDDEN poses: lying down suggestively, bending over, arching back, spreading, or anything that reads as provocative. Safe poses: standing, walking, sitting upright, looking at camera.
+- FORBIDDEN language: sensual, alluring, seductive, provocative, intimate touching, caressing, lustful, desiring, aroused, tempting.
+- FORBIDDEN scenarios: kissing, embracing, cuddling, romantic contact of any kind.
+- IF the source image contains any of the above: describe the person as FULLY CLOTHED in modest, casual attire. Do NOT acknowledge the original clothing or pose — invent a completely neutral alternative.
+- Safe clothing terms: modest outfit, casual clothing, professional attire, traditional dress, flowing garment, long coat.
+- Facial expressions: neutral, smiling, thoughtful, serene — never: biting lip, heavy-lidded gaze, sultry look.`;
   } else {
-    contentRule = `CONTENT SAFETY REQUIRED — this model has strict content moderation. NEVER use explicit sexual terms, genital names, sexual acts, or NSFW language. Use tasteful alternatives: "bare skin", "curves", "sensual pose", "intimate embrace", "alluring figure", "close together". Violating this will cause the generation to fail.`;
+    // sensual: true (WAN 2.5, WAN 2.7, Grok) — suggestive OK, explicit acts not
+    contentRule = `CONTENT POLICY — ${vm.name} supports sensual and suggestive content; explicit sexual acts are not supported:
+- Nudity description: use "bare skin", "undressed", "nude figure", "exposed", "uncovered" — but do NOT name genitalia or describe sexual penetration or explicit acts.
+- Revealing outfits: "lingerie", "bikini", "sheer fabric", "see-through", "low-cut", "barely-there outfit" are acceptable.
+- Sensual language: "curves", "sensual pose", "alluring gaze", "intimate atmosphere", "suggestive expression", "erotically charged" — all acceptable.
+- Physical closeness: "embracing", "kissing", "hands exploring", "pressed together", "fingertips tracing" — acceptable.
+- Hard limit: Do NOT describe explicit sexual intercourse, genitalia by clinical or slang name, or penetrative acts in explicit terms.`;
   }
 
   const cameraLine = includeCameraMoves
-    ? `- Camera work: angle, movement (slow zoom, tracking shot, dolly, close-up, static, crane shot).`
-    : `- Do NOT include any camera movement or cinematography instructions — the model handles camera work internally.`;
+    ? `- Camera: angle and movement (slow zoom, tracking shot, dolly, close-up, static, crane shot, rack focus).`
+    : `- Do NOT include any camera movement instructions — ${vm.name} handles camera work internally.`;
 
-  const instructionsLine = instructions?.trim()
-    ? `\nSPECIFIC DETAILS (mandatory, use exactly as given): ${instructions.trim()}`
+  const qualityTagLine = vm.qualityTags
+    ? `- End the prompt with these quality/style tags (comma-separated, after the main description): ${vm.qualityTags}`
     : "";
 
-  const systemMessage = `You are an expert video prompt engineer for AI video generation. Analyze images and write precise, cinematic video generation prompts. Output ONLY the raw prompt text — no title, no explanation, no JSON, no quotes.`;
+  const promptOrderLine = vm.promptOrder
+    ? `- Follow this order: ${vm.promptOrder}`
+    : "";
+
+  const instructionsLine = instructions?.trim()
+    ? `\nSPECIFIC DETAILS — mandatory, incorporate exactly as given (character names, relationship, scene context): ${instructions.trim()}`
+    : "";
+
+  const systemMessage = `You are an expert video prompt engineer for AI video generation. Analyze images and write precise, cinematic prompts tailored to each model's requirements. Output ONLY the raw prompt text — no title, no explanation, no JSON, no quotes.`;
 
   const userPrompt = `Analyze this image and write a video generation prompt for ${vm.name}.
 
 Requirements:
-- Maximum ${vm.maxWords} words. Be precise but concise.
-- Describe the subject(s): appearance, clothing (or lack thereof), pose, expression.
-- Describe the action and MOTION — what moves, how it moves (hair, fabric, body, environment).
+- Maximum ${vm.maxWords} words total. Be dense and precise — every word must earn its place.
+${promptOrderLine ? promptOrderLine + "\n" : ""}- Subject(s): appearance, hair, skin, facial expression, body language.
+- Clothing (or lack thereof): describe exactly what they are wearing — material, colour, coverage, fit.
+- Action & MOTION (critical for video): what moves, how it moves — hair flowing, fabric swaying, breathing, gesture, step. Be specific and kinetic.
 ${cameraLine}
-- Lighting: quality, direction, color temperature, shadows.
-- Atmosphere and mood: intimate, dramatic, playful, tense, ethereal — match the image energy.
-- Visual style: cinematic, photorealistic, high detail, film grain (if appropriate).
-${contentRule}${instructionsLine}
+- Lighting: quality (soft/hard/dramatic), direction, colour temperature, shadows and highlights.
+- Atmosphere & mood: intimate, dramatic, playful, tense, ethereal — let the image energy dictate.
+- Visual style: cinematic, photorealistic, high detail. Match the aesthetic of the source image.
+${qualityTagLine ? qualityTagLine + "\n" : ""}${contentRule}${instructionsLine}
 
-Output ONLY the prompt text, nothing else.`;
+Output ONLY the final prompt text, nothing else.`;
 
   let result = "";
 
@@ -1362,13 +1445,43 @@ const IMAGE_MODEL_PROMPT_GUIDE = {
 };
 
 const IMAGE_STYLE_GUIDE = {
-  Flux: `Structure: natural descriptive prose followed by comma-separated style keywords. Example: "A young woman in a fitted dark outfit standing by a window at dusk, soft golden backlight, melancholic expression, digital art, high detail, sharp focus"`,
-  Qwen: `Use clear, natural, instruction-following language. Describe every visible element: character features, clothing colors and textures, pose, expression, background, lighting, mood. Be specific and comprehensive.`,
-  Imagen: `Use professional photography/illustration prose. Mention: subject details, environment, lighting (quality, direction, color temp), color palette, mood. Keep all clothing fully modest and conservative in description.`,
-  GPT: `Provide a comprehensive scene description in natural language. Be very specific about every visual element: subject appearance, clothing (fully modest — describe style, color, design without any revealing elements), pose, facial expression, background, lighting, color palette, visual style.`,
-  Seedream: `Describe the scene naturally and in detail. Include: character appearance, hairstyle, outfit style and colors (fully modest), pose, expression, background/environment, lighting quality and direction, overall mood. Avoid any mature or suggestive language.`,
-  WAN: `Describe the scene in detail. Include: character appearance, outfit/accessories, pose, facial expression, hair, background/setting, atmosphere, lighting, color tone, art style (anime/semi-realistic/photorealistic). Add quality tags at the end.`,
-  ZImage: `Use a concise keyword-rich format: [subject description], [clothing/appearance], [pose], [background], [lighting], [style], high quality, detailed, sharp focus. Keep to 80-100 words.`,
+  Flux: `FLUX follows prompts very literally — be specific and precise; what you write is exactly what appears.
+Structure: rich natural prose first, then comma-separated quality tags at the end.
+Order: Subject (as 'adult woman/man') → clothing (colour, material, style, fit) → pose/action → background/setting → lighting (quality, direction, colour temperature) → mood/atmosphere → colour palette.
+Close with quality tags: professional photography, high resolution, sharp focus, 8K, cinematic lighting, shallow depth of field, award-winning, masterpiece.
+Do NOT use negative terms — FLUX does not support negative prompts.`,
+
+  Qwen: `Qwen image models are strong instruction-followers — more detail always produces better results.
+Use clear, natural, comprehensive language. Describe every visible element explicitly.
+Order: subject appearance (hair, eyes, skin) → outfit (exact colors, fabric, style, fit) → pose and expression → background/environment (architecture, nature, objects) → lighting (soft/dramatic/golden hour/studio) → mood and color palette.
+Be thorough — Qwen rewards complete descriptions over brief ones.
+Close with: high quality, detailed, sharp focus, professional, 8K.`,
+
+  Imagen: `Google Imagen responds best to a professional photography framing. Always OPEN with a shot-type prefix:
+"Editorial photograph of...", "Studio portrait of...", "Professional fashion photography of...", "Close-up portrait of...", "Lifestyle photograph of..."
+Then describe: the subject (as 'an adult woman/man') → clothing (conservative, specific colours/style) → pose → setting → lighting (quality, direction, colour temperature, shadows) → mood.
+Close with: editorial lighting, professional photography, sharp focus, high quality, 4K, detailed.
+Imagen is extremely conservative — describe clothing by exact style/colour/material only, never by body-fit or coverage.`,
+
+  GPT: `OpenAI DALL-E scans every word for policy compliance — precise, conservative language is mandatory.
+Write a comprehensive natural-language scene description. Be very specific so DALL-E does not invent details.
+Order: subject (ALWAYS 'an adult woman' / 'an adult man' — never 'girl', 'teen', 'youthful') → clothing (describe by colour, material, and style only: "navy fitted blazer", "white linen shirt", "dark slim-cut trousers" — NEVER 'tight', 'sexy', 'revealing', 'form-hugging') → pose (standing, walking, sitting — never provocative wording) → background (describe fully so DALL-E does not fill it arbitrarily) → lighting → colour palette.
+Close with: photorealistic, professional photography, high quality, detailed, sharp focus.
+Even "elegant" is fine; avoid any word that implies attractiveness as the primary quality.`,
+
+  Seedream: `ByteDance Seedream follows natural language well. Write in flowing, descriptive prose.
+Order: subject appearance (hair colour/style, eye colour, facial expression) → outfit (modest: style, fabric, colours — avoid any revealing descriptors) → pose (neutral: standing, walking, smiling) → background/setting → lighting (golden hour, soft studio, dramatic side-light) → mood/atmosphere.
+Close with: high quality, sharp, professional, 8K, detailed, best quality.
+Keep all descriptions scene-focused and emotion-focused rather than appearance-focused.`,
+
+  WAN: `WAN image models excel at anime, semi-realistic, and photorealistic styles. Always specify the art style.
+Order: character appearance → outfit and accessories → pose and facial expression → hair → background/setting → atmosphere → lighting → colour tone → art style (anime, semi-realistic, photorealistic, digital art).
+Close with quality tags: best quality, masterpiece, 4K, sharp focus, high detail, professional, ultra-detailed.
+Tip: WAN responds especially well to structured tag-style prompts for anime/semi-realistic outputs.`,
+
+  ZImage: `Use a concise comma-separated keyword format. Target 80–100 words maximum.
+Structure: [shot type], [subject as 'adult woman/man'], [hair and features], [clothing], [pose/action], [background/setting], [lighting], [colour palette], [mood], [art style], high quality, detailed, sharp focus, 8K.
+Example: "medium shot, adult woman, long auburn hair, grey fitted blazer, confident smile, standing in modern office, large windows, soft natural light, warm tones, professional mood, photorealistic, high quality, sharp focus, 8K"`,
 };
 
 async function generateImagePrompt(imagePaths, imageModel = "flux_2_klein", instructions = "") {
@@ -1427,22 +1540,27 @@ async function generateImagePrompt(imagePaths, imageModel = "flux_2_klein", inst
 
   const PHOTOGRAPHY_TIPS = `Photography language: focus on composition, lighting, depth of field, lens characteristics, colour grading, atmosphere, environment. Preferred terms: editorial photography, portrait photography, fashion photography, cinematic photography, documentary photography.`;
 
-  // Ultra-strict = GPT/DALL-E 3 / Google Imagen / ByteDance level — zero tolerance even for borderline wording.
+  // Ultra-strict = GPT/DALL-E / Google Imagen / ByteDance — zero tolerance even for borderline wording.
   const sfwBlock = guide.ultraStrict
-    ? `ULTRA-STRICT CONTENT POLICY — this model WILL REJECT anything borderline (mandatory):
+    ? `ULTRA-STRICT CONTENT POLICY — this model performs keyword-level filtering and WILL silently reject anything borderline:
 ${SAFE_SUBJECT_RULES}
-- ADDITIONALLY ban: lingerie, underwear, bra, corset, bikini, swimsuit, skimpy, bare skin, cleavage, décolletage, nude, naked, topless, revealing.
-- Replace ANY revealing or body-exposing clothing with fully conservative equivalents: "dark outfit", "gothic costume", "fitted clothing", "long dress", "stylish fashion", "elegant attire", "bodysuit with full coverage".
-- If the reference image shows explicit content, describe the character fully clothed in an appropriate outfit matching the scene's aesthetic.
-- Any violation — even borderline words — triggers automatic rejection. When in doubt, choose MORE conservative wording.
+- ADDITIONALLY forbidden: lingerie, underwear, bra, corset, bikini, swimsuit, swimwear, skimpy, bare skin, exposed skin, cleavage, décolletage, neckline, nude, naked, topless, revealing, see-through, sheer, form-fitting, figure-hugging, tight, body-hugging, low-cut, mini skirt, crop top.
+- Clothing substitution rules — replace anything revealing with fully conservative equivalents:
+  · Lingerie/underwear → "elegant evening dress", "dark fitted blazer and trousers", "high-neck bodysuit", "stylish long outfit"
+  · Bikini/swimwear → "casual summer dress", "linen shorts and blouse", "sporty casual outfit"
+  · Nude/topless → "flowing white dress", "soft draped fabric", "minimal artistic outfit with full coverage"
+  · Any revealing outfit → invent a plausible alternative that fits the scene's aesthetic and lighting
+- If the reference image shows explicit or semi-explicit content: describe the character as FULLY CLOTHED in a tasteful outfit that fits the mood of the scene. Do NOT mention or reference the original clothing.
+- Pose language: NEVER use lying, bending over, arching, spreading, kneeling suggestively. Safe poses: standing, sitting upright, walking, leaning casually against a surface.
+- Any violation — even a single borderline word — causes automatic rejection with no error message. When in doubt, choose the MORE conservative wording.
 ${PHOTOGRAPHY_TIPS}
 ${SAFE_KEYWORDS_HINT}
 ${PREFERRED_PROMPT_ORDER}`
-    : `CONTENT SAFETY POLICY (mandatory):
+    : `CONTENT SAFETY POLICY — all outputs must be SFW; explicit content will cause generation failure:
 ${SAFE_SUBJECT_RULES}
-- ALL prompts must be SFW. NEVER use explicit sexual language, body-part names, or graphic descriptions.
-- For revealing outfits: use "form-fitting outfit", "gothic attire", "body-hugging costume", "fantasy outfit" — avoid "lingerie", "underwear", "naked".
-- Keep poses described neutrally. Violating this will cause generation failure.
+- Revealing outfits: use "form-fitting outfit", "gothic attire", "fantasy costume", "sheer draped fabric", "body-conscious dress" — avoid "lingerie", "underwear", "naked", "topless".
+- Bare skin: use "bare shoulders", "open back", "sleeveless" for tasteful exposure — do not describe nudity or body parts sexually.
+- Poses: keep descriptions neutral and movement-focused. Avoid wording that implies sexual invitation or submission.
 ${PHOTOGRAPHY_TIPS}
 ${SAFE_KEYWORDS_HINT}
 ${PREFERRED_PROMPT_ORDER}`;
