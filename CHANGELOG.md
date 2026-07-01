@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.8 - 2026-07-01
+
+- Release v0.3.8
+
+
 ## v0.3.7 - 2026-07-01
 
 - feat: personality enforcement, video results redesign, Topaz empty state
