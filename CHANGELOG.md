@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.6 - 2026-07-01
+
+- Release v0.3.6
+
+
 ## v0.3.5 - 2026-06-30
 
 - fix: replace run-all-migrations-every-start with tracked migrations
