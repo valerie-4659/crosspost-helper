@@ -52,6 +52,7 @@ function openNewVideoFromPath(imagePath: string) {
 // ── Re-run state ──────────────────────────────────────────────────────────
 const rerunJob               = ref<WavespeedJobRecord | null>(null);
 const rerunPrompt            = ref("");
+const rerunInstructions      = ref("");
 const rerunModel             = ref("wan_2_7");
 const rerunRes               = ref("720p");
 const rerunDuration          = ref(5);
@@ -82,6 +83,7 @@ function openRerun(job: WavespeedJobRecord) {
   rerunRes.value               = m.resolutions.includes(job.resolution) ? job.resolution : (m.resolutions[0] ?? "720p");
   rerunDuration.value          = m.durations.includes(Number(job.duration) as never) ? Number(job.duration) : m.durations[Math.min(3, m.durations.length - 1)];
   rerunEndImagePath.value      = "";
+  rerunInstructions.value      = "";
   rerunGenerateAudio.value     = true;
   rerunMovementAmplitude.value = "auto";
   rerunBusy.value              = false;
@@ -108,7 +110,7 @@ async function rerunAnalyse() {
     rerunPrompt.value = await window.desktop.ai.generateVideoPrompt(
       [rerunJob.value.image_path],
       rerunModel.value,
-      "",
+      rerunInstructions.value.trim(),
     );
   } catch (err) {
     rerunAnalyseError.value = err instanceof Error ? err.message : String(err);
@@ -305,99 +307,124 @@ onUnmounted(() => {
       <div
         v-for="job in jobs"
         :key="job.id"
-        class="flex items-start gap-3 rounded-lg border border-line bg-panelSoft p-2.5"
+        class="rounded-lg border border-line bg-ink/40 p-3"
       >
-        <!-- Thumbnail -->
-        <img
-          v-if="job.image_path"
-          :src="thumbSrc(job.image_path)"
-          class="h-12 w-12 shrink-0 rounded object-cover border border-line"
-          draggable="false"
-        />
-
-        <!-- Info -->
-        <div class="min-w-0 flex-1 space-y-1">
-          <!-- Status row -->
-          <div class="flex items-center gap-1.5">
-            <span class="h-2 w-2 shrink-0 rounded-full" :class="STATUS_DOT[job.status] ?? 'bg-slate-500'" />
-            <span class="text-xs font-medium text-slate-200">{{ STATUS_LABEL[job.status] ?? job.status }}</span>
-            <span class="ml-auto text-[10px] text-slate-600 shrink-0">{{ relativeTime(job.created_at) }}</span>
+        <div class="flex items-start gap-3">
+          <!-- Thumbnail -->
+          <div
+            v-if="job.image_path"
+            class="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-line"
+          >
+            <img
+              :src="thumbSrc(job.image_path)"
+              class="h-full w-full object-cover"
+              draggable="false"
+            />
           </div>
-          <!-- Model + settings -->
-          <p class="text-[10px] text-slate-500 truncate">
-            {{ job.model }} · {{ job.resolution }} · {{ job.duration }}s
-          </p>
-          <!-- Prompt snippet -->
-          <p class="text-[11px] text-slate-400 line-clamp-2 leading-snug">{{ job.prompt }}</p>
-          <!-- Error -->
-          <p v-if="job.error_msg" class="text-[11px] text-rose">{{ job.error_msg }}</p>
-        </div>
+          <!-- Placeholder while rendering -->
+          <div
+            v-else-if="job.status === 'processing'"
+            class="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-violet-500/30 bg-violet-500/5"
+          >
+            <Clapperboard class="h-5 w-5 animate-pulse text-violet-400" />
+          </div>
+          <!-- Queued placeholder -->
+          <div
+            v-else-if="job.status === 'created'"
+            class="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-gold/30 bg-gold/5"
+          >
+            <Clapperboard class="h-5 w-5 animate-pulse text-gold" />
+          </div>
 
-        <!-- Actions -->
-        <div class="flex shrink-0 flex-col gap-1">
-          <!-- Download to source folder (shown when video is ready but not yet saved locally) -->
+          <!-- Info column -->
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
+            <!-- Status + model badge + time -->
+            <div class="flex items-center gap-2">
+              <span class="inline-block h-2 w-2 shrink-0 rounded-full" :class="STATUS_DOT[job.status] ?? 'bg-slate-500'" />
+              <span class="text-xs font-medium text-white">{{ STATUS_LABEL[job.status] ?? job.status }}</span>
+              <span class="rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-300">{{ job.model }}</span>
+              <span class="ml-auto shrink-0 text-[10px] text-slate-600">{{ relativeTime(job.created_at) }}</span>
+            </div>
+            <!-- Settings line -->
+            <p class="truncate text-[11px] text-slate-500">
+              {{ job.resolution }} · {{ job.duration }}s
+            </p>
+            <!-- Prompt snippet -->
+            <p class="line-clamp-2 text-[11px] leading-snug text-slate-400">{{ job.prompt }}</p>
+            <!-- Success -->
+            <p v-if="job.video_url && job.status === 'completed'" class="text-[11px] text-mint">
+              ✓ Video ready
+            </p>
+            <!-- Download error -->
+            <p v-if="downloadErrors.get(job.id)" class="text-[11px] text-rose">{{ downloadErrors.get(job.id) }}</p>
+            <!-- Job error -->
+            <p v-if="job.error_msg" class="text-[11px] text-rose">{{ job.error_msg }}</p>
+
+            <!-- Primary action row -->
+            <div v-if="job.video_url || job.local_path" class="mt-1 flex flex-wrap items-center gap-1.5">
+              <button
+                v-if="job.video_url"
+                class="flex h-6 items-center gap-1 rounded border border-mint/40 bg-mint/10 px-2 text-[11px] text-mint transition hover:bg-mint/20"
+                title="Open video externally"
+                @click="openVideo(job.video_url!)"
+              >
+                <ExternalLink class="h-3 w-3" />Video
+              </button>
+              <button
+                v-if="job.video_url && !job.local_path"
+                class="flex h-6 items-center gap-1 rounded border border-line px-2 text-[11px] text-slate-300 transition hover:border-slate-400"
+                :disabled="downloadingIds.has(job.id)"
+                :title="downloadingIds.has(job.id) ? 'Downloading…' : 'Download video to source folder'"
+                @click="downloadVideo(job)"
+              >
+                <Download v-if="!downloadingIds.has(job.id)" class="h-3 w-3" />
+                <Clapperboard v-else class="h-3 w-3 animate-pulse" />
+                {{ downloadingIds.has(job.id) ? 'Saving…' : '' }}
+              </button>
+              <button
+                v-if="job.local_path"
+                class="flex h-6 items-center gap-1 rounded border border-mint/40 bg-mint/10 px-2 text-[11px] text-mint transition hover:bg-mint/20"
+                title="Reveal downloaded video in Finder"
+                @click="revealImage(job.local_path!)"
+              >
+                <FolderOpen class="h-3 w-3" />In Finder
+              </button>
+              <button
+                v-if="job.image_path"
+                class="flex h-6 items-center gap-1 rounded border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent transition hover:bg-accent/20"
+                title="Generate AI post text"
+                @click="openPostForJob(job)"
+              >
+                <Sparkles class="h-3 w-3" />
+              </button>
+            </div>
+            <!-- Secondary action row -->
+            <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
+              <button
+                class="flex h-6 items-center gap-1 rounded border border-line px-2 text-[11px] text-slate-400 transition hover:border-slate-400"
+                title="Edit prompt &amp; re-submit"
+                @click="openRerun(job)"
+              >
+                <RotateCcw class="h-3 w-3" />
+              </button>
+              <button
+                v-if="job.image_path"
+                class="flex h-6 items-center gap-1 rounded border border-line px-2 text-[11px] text-slate-400 transition hover:border-slate-400"
+                title="Reveal source image in Finder"
+                @click="revealImage(job.image_path)"
+              >
+                <FolderOpen class="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Delete button top-right -->
           <button
-            v-if="job.video_url && !job.local_path"
-            class="button h-6 gap-1 px-2 text-[10px]"
-            :disabled="downloadingIds.has(job.id)"
-            :title="downloadingIds.has(job.id) ? 'Downloading…' : 'Download video to source folder'"
-            @click="downloadVideo(job)"
-          >
-            <Download v-if="!downloadingIds.has(job.id)" class="h-3 w-3" />
-            <Clapperboard v-else class="h-3 w-3 animate-pulse" />
-            {{ downloadingIds.has(job.id) ? 'Saving…' : 'Download' }}
-          </button>
-          <!-- Open downloaded file in Finder -->
-          <button
-            v-if="job.local_path"
-            class="button h-6 gap-1 px-2 text-[10px] border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
-            title="Reveal downloaded video in Finder"
-            @click="revealImage(job.local_path!)"
-          >
-            <FolderOpen class="h-3 w-3" />In Finder
-          </button>
-          <p v-if="downloadErrors.get(job.id)" class="max-w-24 text-[9px] text-rose leading-tight">
-            {{ downloadErrors.get(job.id) }}
-          </p>
-          <button
-            v-if="job.video_url"
-            class="button h-6 gap-1 px-2 text-[10px]"
-            title="Open video externally"
-            @click="openVideo(job.video_url!)"
-          >
-            <ExternalLink class="h-3 w-3" />Open
-          </button>
-          <!-- Re-run -->
-          <button
-            class="button h-6 w-6 p-0"
-            title="Edit prompt &amp; re-submit"
-            @click="openRerun(job)"
-          >
-            <RotateCcw class="h-3 w-3" />
-          </button>
-          <button
-            v-if="job.image_path"
-            class="button h-6 w-6 p-0"
-            title="Reveal source image in Finder"
-            @click="revealImage(job.image_path)"
-          >
-            <FolderOpen class="h-3 w-3" />
-          </button>
-          <!-- Generate AI Post (uses reference image) -->
-          <button
-            v-if="job.image_path"
-            class="button h-6 w-6 p-0 border-accent/40 text-accent hover:bg-accent/20"
-            title="Generate AI post text (uses reference image)"
-            @click="openPostForJob(job)"
-          >
-            <Sparkles class="h-3 w-3" />
-          </button>
-          <button
-            class="button h-6 w-6 p-0 hover:border-rose/60 hover:text-rose"
+            class="button h-7 w-7 shrink-0 p-0 hover:border-rose/50 hover:text-rose"
             title="Remove from list"
             @click="deleteJob(job.id)"
           >
-            <Trash2 class="h-3 w-3" />
+            <Trash2 class="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
@@ -416,7 +443,6 @@ onUnmounted(() => {
         <div
           v-if="rerunJob"
           class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          @click.self="closeRerun"
         >
           <div class="relative mx-4 flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-panelSoft shadow-2xl">
             <!-- header -->
@@ -510,6 +536,19 @@ onUnmounted(() => {
                   <option value="medium">Medium</option>
                   <option value="large">Large</option>
                 </select>
+              </div>
+
+              <!-- AI Instructions (optional) -->
+              <div>
+                <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                  AI Instructions <span class="normal-case text-slate-600">(optional — character names, scene details)</span>
+                </p>
+                <textarea
+                  v-model="rerunInstructions"
+                  rows="2"
+                  class="w-full resize-none rounded-lg border border-line bg-panel px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent/30 transition"
+                  placeholder="e.g. The woman is Valerie. Setting is a moonlit rooftop."
+                />
               </div>
 
               <!-- Prompt + AI Analyse -->

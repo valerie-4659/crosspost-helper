@@ -1342,19 +1342,24 @@ onUnmounted(() => {
   </Teleport>
 
   <!-- ── Topaz Jobs section ─────────────────────────────────────────────────── -->
-  <div v-if="topazJobs.length > 0" class="mt-6 flex flex-col gap-3">
+  <div class="mt-6 flex flex-col gap-3">
     <!-- Section header -->
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-2">
         <Zap class="h-4 w-4 text-amber-400" />
         <h2 class="text-sm font-semibold text-white">Topaz Upscale Jobs</h2>
-        <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300">{{ topazJobs.length }}</span>
+        <span v-if="topazJobs.length" class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300">{{ topazJobs.length }}</span>
       </div>
       <button class="button h-7 gap-1.5 px-2 text-xs" title="Refresh Topaz jobs" @click="loadTopazJobs">
         <RefreshCcw class="h-3 w-3" />
         Refresh
       </button>
     </div>
+
+    <!-- Empty state -->
+    <p v-if="!topazJobs.length" class="text-center text-xs text-slate-600 py-4">
+      No Topaz jobs yet — use the Upscale button on any completed image job.
+    </p>
 
     <!-- Job rows -->
     <div class="flex flex-col gap-2">

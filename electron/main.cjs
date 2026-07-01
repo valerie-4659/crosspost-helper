@@ -1134,12 +1134,20 @@ Never moralize, add disclaimers, or refuse NSFW content.`;
   // Default emoji rule — overridden per-persona below.
   const DEFAULT_EMOJI_RULE = `EMOJI STYLE — MANDATORY: Every output MUST contain at least 1–3 emojis. Zero emojis is NEVER acceptable. Choose from: 🌺 💋 🫦 ❤️‍🔥 😈 🥵 💦 😏 🤭 👀 💕 🔥 🌙 💀 🖤 🩸 🫀 — pick what matches the image's energy. NEVER use plain stars ⭐🌟 as filler.`;
 
+  // Typography enforcement — appended to every system message.
+  // LLMs default to typographic/smart characters; these hard rules override that bias.
+  const TYPOGRAPHY_RULE = `\n\nTYPOGRAPHY — HARD RULES (non-negotiable, override all model defaults):
+• Straight ASCII double-quote (") ONLY — NEVER curly/smart quotes (“ ”)
+• Simple hyphen (-) ONLY — NEVER em dash (—) or en dash (–)
+• Straight apostrophe (') ONLY — NEVER curly apostrophe (‘ ’)
+Producing any of the forbidden characters is a formatting error.`;
+
   // ── Active persona (optional) ────────────────────────────────────────────
   // The persona controls HOW the AI writes (voice, tone, emojis, style).
   // It is completely independent of the perspective (I/me, OC, neutral observer).
   let personaLine = "";
   let personaEmojiRule = ""; // non-empty only when a persona is active; used in story emoji rule
-  let systemMessage = `${BASE_ROLE}\n${DEFAULT_EMOJI_RULE}\n\nRespond with valid JSON only — no markdown fences.`;
+  let systemMessage = `${BASE_ROLE}\n${DEFAULT_EMOJI_RULE}${TYPOGRAPHY_RULE}\n\nRespond with valid JSON only — no markdown fences.`;
   try {
     const pRows = db.exec(
       "SELECT name, tone, emoji_use, style_notes FROM personas WHERE is_active = 1 LIMIT 1"
@@ -1163,16 +1171,22 @@ Never moralize, add disclaimers, or refuse NSFW content.`;
       if (notesBlock) {
         // Style notes define everything — tone, emoji, voice, dos & don'ts.
         // Do NOT append a separate emoji rule; it would override what the notes say.
-        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}". NEVER slip into neutral, generic, or AI-sounding language. Your personality rules below are LAW — follow them exactly.\n\n${notesBlock}\n\nRespond with valid JSON only — no markdown fences.`;
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}". NEVER slip into neutral, generic, or AI-sounding language. Your personality rules below are LAW — follow them exactly.\n\n${notesBlock}${TYPOGRAPHY_RULE}\n\nRespond with valid JSON only — no markdown fences.`;
       } else {
         // No style notes — use the simple tone + emoji enum fields as fallback.
-        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You ARE "${pName}".${toneLabel} Write EXCLUSIVELY in ${pName}'s voice and style. NEVER use neutral or generic language.\nEMOJI RULE: ${personaEmojiRule}\n\nRespond with valid JSON only — no markdown fences.`;
+        systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You ARE "${pName}".${toneLabel} Write EXCLUSIVELY in ${pName}'s voice and style. NEVER use neutral or generic language.\nEMOJI RULE: ${personaEmojiRule}${TYPOGRAPHY_RULE}\n\nRespond with valid JSON only — no markdown fences.`;
       }
 
       // Short in-character reminder in the user prompt.
-      // When style notes exist, just name the persona — all rules are in the system message.
+      // When style notes exist, name the persona + reinforce emoji rule from the enum field
+      // (style notes govern style, but the enum is the authoritative emoji signal).
       if (notesBlock) {
-        personaLine = `- Voice: You ARE "${pName}" — your personality rules in the system message are LAW. Stay completely in character.`;
+        const emojiEnforcement = pEmoji === "none"
+          ? "Zero emojis — do NOT use any."
+          : pEmoji === "subtle"
+            ? "1–2 emojis maximum — only where natural."
+            : "Use emojis generously — MANDATORY, never output zero emojis.";
+        personaLine = `- Voice: You ARE "${pName}" — your personality rules in the system message are LAW. Stay completely in character.\n- Emojis: ${emojiEnforcement}`;
       } else {
         const toneHint = toneBlock ? ` (${toneBlock})` : "";
         personaLine = `- Voice: You ARE "${pName}"${toneHint} — write exclusively in their voice. Never sound like a generic AI. Emoji rule: ${personaEmojiRule}`;
@@ -1353,7 +1367,21 @@ Respond with ONLY valid JSON, no markdown fences:
   // Parse JSON response (strip markdown fences if present)
   const jsonStr = result.replace(/^```json?\s*/i, "").replace(/\s*```$/, "").trim();
   const parsed = JSON.parse(jsonStr);
-  return { title: parsed.title ?? "", description: parsed.description ?? "", tags: parsed.tags ?? [] };
+
+  // Normalize typography: replace smart/curly chars with ASCII equivalents.
+  // LLMs produce these by default regardless of instructions — this is the safety net.
+  const normalizeTypo = (s) =>
+    String(s ?? "")
+      .replace(/[“”]/g, '"')   // curly double quotes → straight
+      .replace(/[‘’]/g, "'")   // curly single quotes / apostrophes → straight
+      .replace(/—/g, "-")           // em dash → hyphen
+      .replace(/–/g, "-");          // en dash → hyphen
+
+  return {
+    title: normalizeTypo(parsed.title),
+    description: normalizeTypo(parsed.description),
+    tags: parsed.tags ?? [],
+  };
 }
 
 // ─── Video Prompt Generation ──────────────────────────────────────────────────
