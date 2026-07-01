@@ -1147,6 +1147,7 @@ Producing any of the forbidden characters is a formatting error.`;
   // It is completely independent of the perspective (I/me, OC, neutral observer).
   let personaLine = "";
   let personaEmojiRule = ""; // non-empty only when a persona is active; used in story emoji rule
+  let personaHasStyleNotes = false; // true when style_notes are present — emoji guidance lives there
   let systemMessage = `${BASE_ROLE}\n${DEFAULT_EMOJI_RULE}${TYPOGRAPHY_RULE}\n\nRespond with valid JSON only — no markdown fences.`;
   try {
     const pRows = db.exec(
@@ -1171,6 +1172,7 @@ Producing any of the forbidden characters is a formatting error.`;
       if (notesBlock) {
         // Style notes define everything — tone, emoji, voice, dos & don'ts.
         // Do NOT append a separate emoji rule; it would override what the notes say.
+        personaHasStyleNotes = true;
         systemMessage = `${BASE_ROLE}\n\nVOICE & PERSONA — You write EXCLUSIVELY as "${pName}". NEVER slip into neutral, generic, or AI-sounding language. Your personality rules below are LAW — follow them exactly.\n\n${notesBlock}${TYPOGRAPHY_RULE}\n\nRespond with valid JSON only — no markdown fences.`;
       } else {
         // No style notes — use the simple tone + emoji enum fields as fallback.
@@ -1178,15 +1180,10 @@ Producing any of the forbidden characters is a formatting error.`;
       }
 
       // Short in-character reminder in the user prompt.
-      // When style notes exist, name the persona + reinforce emoji rule from the enum field
-      // (style notes govern style, but the enum is the authoritative emoji signal).
+      // When style notes exist, they are the sole authority on emoji behavior — do NOT add a
+      // separate enforcement here, as it can contradict what the style notes say.
       if (notesBlock) {
-        const emojiEnforcement = pEmoji === "none"
-          ? "Zero emojis — do NOT use any."
-          : pEmoji === "subtle"
-            ? "1–2 emojis maximum — only where natural."
-            : "Use emojis generously — MANDATORY, never output zero emojis.";
-        personaLine = `- Voice: You ARE "${pName}" — your personality rules in the system message are LAW. Stay completely in character.\n- Emojis: ${emojiEnforcement}`;
+        personaLine = `- Voice: You ARE "${pName}" — your personality rules in the system message are LAW. Stay completely in character.`;
       } else {
         const toneHint = toneBlock ? ` (${toneBlock})` : "";
         personaLine = `- Voice: You ARE "${pName}"${toneHint} — write exclusively in their voice. Never sound like a generic AI. Emoji rule: ${personaEmojiRule}`;
@@ -1283,9 +1280,12 @@ The content level (from Step 2) applies fully — a sensual multi-character scen
       : `${perspVoice} Close third-person — inside the scene, feeling everything from within. Think: "She surrenders…", "He pulls her closer…", "The silence between them shifts…", "They both knew exactly what this was."  Write all characters present in the image.`;
 
   // Story emoji: respect persona setting if set, otherwise default naturalistic rule.
-  const STORY_EMOJI = personaEmojiRule
-    ? `Emojis: ${personaEmojiRule}`
-    : `Scatter 1–2 fitting emojis naturally through the text (e.g. 🫦 ❤️‍🔥 💀 🌙 💋 😈) — they must feel organic, not decorative.`;
+  // When style_notes are present, emoji guidance lives inside them — don't add a conflicting rule.
+  const STORY_EMOJI = personaHasStyleNotes
+    ? ""
+    : personaEmojiRule
+      ? `Emojis: ${personaEmojiRule}`
+      : `Scatter 1–2 fitting emojis naturally through the text (e.g. 🫦 ❤️‍🔥 💀 🌙 💋 😈) — they must feel organic, not decorative.`;
 
   // Determine story length based on available character budget.
   // Short stories for tight limits, rich episodes for larger budgets.
