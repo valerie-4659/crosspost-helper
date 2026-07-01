@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.9 - 2026-07-01
+
+- fix: style_notes are sole authority on emoji when persona is active
+
+
 ## v0.3.8 - 2026-07-01
 
 - Release v0.3.8
