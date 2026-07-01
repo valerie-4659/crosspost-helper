@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.7",
+    date: "2026-07-01",
+    items: [
+      "feat: personality enforcement, video results redesign, Topaz empty state",
+    ],
+  },
+  {
     version: "0.3.6",
     date: "2026-07-01",
     items: [
