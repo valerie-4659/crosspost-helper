@@ -160,6 +160,8 @@ declare global {
         setQueue(target: string, imageIds: string[]): Promise<{ ok: boolean; count: number }>;
         /** Clear the queue for a target platform. */
         clearQueue(target: string): Promise<{ ok: boolean }>;
+        /** Signal the extension to auto-inject + post on the next poll cycle. */
+        triggerAutoInject(target: string): Promise<{ ok: boolean }>;
         /** Read back the current queue for a target platform. */
         getQueue(target: string): Promise<{ imageIds: string[]; limit: number }>;
         /** Store AI-generated post content for the Chrome extension to fill. */

@@ -312,6 +312,39 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
   }
 }
 
+// ── CDP clipboard paste ────────────────────────────────────────────────────
+//
+// Focuses the tweet textarea and dispatches a trusted Ctrl+V keystroke via CDP.
+// Called when all in-page text injection methods fail and the text has already
+// been written to the system clipboard.
+
+async function cdpPasteClipboard(tabId) {
+  await cdpAttach(tabId);
+  try {
+    // Re-focus the Lexical editor so the keystroke lands in the right element.
+    await cdpSend(tabId, "Runtime.evaluate", {
+      expression: `(function(){
+        const ta = document.querySelector('[data-testid="tweetTextarea_0"]');
+        if (ta) ta.focus();
+      })()`,
+      returnByValue: false,
+    });
+    await new Promise((r) => setTimeout(r, 120));
+    // Dispatch a trusted Ctrl+V (CDP Input events bypass the user-gesture check).
+    await cdpSend(tabId, "Input.dispatchKeyEvent", {
+      type: "keyDown", modifiers: 2, key: "v", code: "KeyV",
+      windowsVirtualKeyCode: 86, nativeVirtualKeyCode: 86,
+    });
+    await new Promise((r) => setTimeout(r, 80));
+    await cdpSend(tabId, "Input.dispatchKeyEvent", {
+      type: "keyUp", modifiers: 2, key: "v", code: "KeyV",
+      windowsVirtualKeyCode: 86, nativeVirtualKeyCode: 86,
+    });
+  } finally {
+    await cdpDetach(tabId);
+  }
+}
+
 // ── Message listener ───────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -331,6 +364,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "CDP_INJECT_FILES_BLUESKY") {
     cdpInjectFilesBluesky(sender.tab.id, msg.imageIds)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "CDP_PASTE_CLIPBOARD") {
+    cdpPasteClipboard(sender.tab.id)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;

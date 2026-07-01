@@ -60,6 +60,8 @@ contextBridge.exposeInMainWorld("desktop", {
     setQueue: (target, imageIds) => ipcRenderer.invoke("bridge:set-queue", target, imageIds),
     clearQueue: (target) => ipcRenderer.invoke("bridge:clear-queue", target),
     getQueue: (target) => ipcRenderer.invoke("bridge:get-queue", target),
+    // Signal the extension to auto-inject+post on the next poll cycle.
+    triggerAutoInject: (target) => ipcRenderer.invoke("bridge:trigger-auto-inject", target),
     // Push AI-generated post content so the extension can fill text fields.
     setPostContent: (target, content) => ipcRenderer.invoke("bridge:set-post-content", target, content),
     clearPostContent: (target) => ipcRenderer.invoke("bridge:clear-post-content", target),

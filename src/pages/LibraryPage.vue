@@ -437,8 +437,9 @@ async function queueForExtension(targetType: string) {
   const capped = ids.slice(0, limit);
   try {
     await window.desktop.bridge.setQueue(targetType, capped);
+    await window.desktop.bridge.triggerAutoInject(targetType);
     const extra = ids.length > limit ? ` (capped at ${limit})` : "";
-    imageStore.message = `✓ ${capped.length} image(s) queued for ${targetType}${extra}. Open the Chrome Extension to inject.`;
+    imageStore.message = `✓ ${capped.length} image(s) queued for ${targetType}${extra} — Chrome Extension will auto-inject.`;
   } catch (err) {
     imageStore.error = err instanceof Error ? err.message : String(err);
   }
@@ -832,7 +833,8 @@ async function sendCollectionToPlugin() {
   const ids = collectionArray.value.map((i) => i.id).slice(0, limit);
   try {
     await window.desktop.bridge.setQueue(libActiveTargetType.value, ids);
-    imageStore.message = `✓ ${ids.length} image(s) queued for ${libActiveTargetName.value} — click Inject in the extension`;
+    await window.desktop.bridge.triggerAutoInject(libActiveTargetType.value);
+    imageStore.message = `✓ ${ids.length} image(s) queued for ${libActiveTargetName.value} — Chrome Extension will auto-inject.`;
   } catch (err) {
     imageStore.error = err instanceof Error ? err.message : String(err);
   }

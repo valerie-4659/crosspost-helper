@@ -340,6 +340,7 @@ async function sendToExtension() {
       }
     }
 
+    await window.desktop.bridge.triggerAutoInject(props.network);
     sendDone.value = true;
     setTimeout(() => (sendDone.value = false), 2500);
     emit("queued", ids.length);

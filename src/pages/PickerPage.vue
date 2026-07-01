@@ -99,9 +99,10 @@ async function sendToExtension() {
       }
     }
 
+    await window.desktop.bridge.triggerAutoInject(targetType);
     sendDone.value = true;
     setTimeout(() => (sendDone.value = false), 2500);
-    queueMsg.value = `✓ Queued for ${targetType}. Open the Chrome Extension to inject.`;
+    queueMsg.value = `✓ Queued for ${targetType} — Chrome Extension will auto-inject.`;
   } catch (err) {
     queueErr.value = err instanceof Error ? err.message : String(err);
   }
@@ -179,8 +180,9 @@ async function sendMultiPickToExtension(targetType: string) {
       tags:        ai.editedTags.split(/\s+/).filter(Boolean),
     });
   }
+  await window.desktop.bridge.triggerAutoInject(targetType);
   const extra = ai.generatedPost ? " + AI text" : "";
-  picker.multiPickMessage = `✓ ${ids.length} image(s) queued${extra} for ${targetType}. Open the Chrome Extension.`;
+  picker.multiPickMessage = `✓ ${ids.length} image(s) queued${extra} for ${targetType} — Chrome Extension will auto-inject.`;
 }
 
 // ── Multi-pick mode ───────────────────────────────────────────────────────

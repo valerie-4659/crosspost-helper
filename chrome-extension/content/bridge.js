@@ -300,6 +300,44 @@ window.CrosspostBridge = {
   },
 };
 
+// ── Auto-inject polling ──────────────────────────────────────────────────────
+// Polls /auto-inject every 2.5 s.  When the app fires a trigger (user clicked
+// "Send to X"), the extension auto-injects images + text and clicks Post — no
+// popup interaction needed.  Only active on X pages.
+if (_bridgeFirstRun) {
+  (function startAutoInjectPoll() {
+    // Adapter is set by the adapter script (x.js) which loads AFTER bridge.js.
+    // We check it inside pollOnce (runs async), not at setup time.
+    async function pollOnce() {
+      const adapter = window.CrosspostBridge._currentAdapter;
+      if (!adapter) { setTimeout(pollOnce, 2500); return; }
+      try {
+        const res = await fetch(
+          `${BRIDGE_URL}/auto-inject?target=${encodeURIComponent(adapter.platform)}`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) { setTimeout(pollOnce, 2500); return; }
+        const data = await res.json();
+        if (data.pending) {
+          // Read the user's auto-post preference before injecting.
+          const { autoPostEnabled } = await new Promise((resolve) =>
+            chrome.storage.local.get("autoPostEnabled", resolve),
+          );
+          const result = await adapter.inject(adapter.platform, { autoPost: autoPostEnabled ?? false });
+          if (result?.imageIds?.length) {
+            await window.CrosspostBridge.markAllPosted(result.imageIds, result.targetId).catch(() => {});
+            await window.CrosspostBridge.clearQueue(adapter.platform).catch(() => {});
+          }
+        }
+      } catch { /* network errors are expected when app is not running */ }
+      setTimeout(pollOnce, 2500);
+    }
+
+    // Delay first poll so x.js has time to register its adapter.
+    setTimeout(pollOnce, 3000);
+  })();
+}
+
 // Listen for INJECT_IMAGE and MARK_POSTED messages from the popup.
 // The guard above ensures this block runs only once per document lifetime.
 if (_bridgeFirstRun) {

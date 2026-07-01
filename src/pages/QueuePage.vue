@@ -166,6 +166,7 @@ async function execSend() {
       tags:        aiData.tags,
     });
   }
+  await window.desktop.bridge.triggerAutoInject(targetType);
   execStep.value = "sent";
 }
 

@@ -29,6 +29,15 @@ const injectBtn = document.getElementById("inject-btn");
 const markSection = document.getElementById("mark-section");
 const markBtn = document.getElementById("mark-btn");
 const msg = document.getElementById("msg");
+const autoPostToggle = document.getElementById("auto-post-toggle");
+
+// ── Auto-post toggle ───────────────────────────────────────────────────────
+chrome.storage.local.get("autoPostEnabled", ({ autoPostEnabled }) => {
+  autoPostToggle.checked = autoPostEnabled ?? false;
+});
+autoPostToggle.addEventListener("change", () => {
+  chrome.storage.local.set({ autoPostEnabled: autoPostToggle.checked });
+});
 
 function setMsg(text, type = "") {
   msg.textContent = text;

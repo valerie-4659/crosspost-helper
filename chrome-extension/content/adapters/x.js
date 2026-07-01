@@ -8,7 +8,7 @@
 window.CrosspostBridge._currentAdapter = {
   platform: "x",
 
-  async inject(target) {
+  async inject(target, { autoPost = false } = {}) {
     const bridge = window.CrosspostBridge;
     try {
       // ── 1. Ensure compose is open ─────────────────────────────────────────
@@ -90,9 +90,36 @@ window.CrosspostBridge._currentAdapter = {
           const freshTextarea = document.querySelector('[data-testid="tweetTextarea_0"]') || textarea;
           textFilled = await bridge.fillTextField(freshTextarea, text);
           if (!textFilled) {
-            // All injection methods failed — fall back to clipboard so user can paste.
+            // All in-page injection methods failed — write to clipboard and use
+            // CDP to dispatch a trusted Ctrl+V so the user doesn't have to paste manually.
             await navigator.clipboard.writeText(text).catch(() => {});
-            bridge.notify(`✓ ${toInject.length} image(s) attached — text injection failed, copied to clipboard → Ctrl+V`, "info");
+            bridge.notify(`Pasting text via clipboard…`, "info");
+            // Small delay so X finishes rendering before we send the keystroke.
+            await new Promise((r) => setTimeout(r, 700));
+            const pasteResult = await new Promise((resolve) => {
+              chrome.runtime.sendMessage({ type: "CDP_PASTE_CLIPBOARD" }, (res) =>
+                resolve(res ?? { ok: false }),
+              );
+            });
+            if (pasteResult?.ok) {
+              // CDP paste succeeded — if autoPost, click the tweet button.
+              if (autoPost) {
+                await new Promise((r) => setTimeout(r, 600));
+                const postBtn =
+                  document.querySelector('[data-testid="tweetButtonInline"]') ||
+                  document.querySelector('[data-testid="tweetButton"]');
+                if (postBtn && !postBtn.disabled && postBtn.getAttribute("aria-disabled") !== "true") {
+                  postBtn.click();
+                  bridge.notify(`✓ ${toInject.length} image(s) + text — posting automatically…`, "success");
+                } else {
+                  bridge.notify(`✓ ${toInject.length} image(s) + text pasted — post button not ready, click Post manually`, "info");
+                }
+              } else {
+                bridge.notify(`✓ ${toInject.length} image(s) attached + text pasted — post, then click Mark as Posted`, "success");
+              }
+            } else {
+              bridge.notify(`✓ ${toInject.length} image(s) attached — text copied to clipboard, paste with Ctrl+V`, "info");
+            }
             return { imageIds, targetId: resolvedTargetId, filename: toInject.map((i) => i.filename).join(", ") };
           }
 
@@ -142,7 +169,22 @@ window.CrosspostBridge._currentAdapter = {
         }
       }
 
-      bridge.notify(`✓ ${toInject.length} image(s) attached${textFilled ? " + text filled" : ""} — post, then click Mark as Posted`, "success");
+      // ── 5. Auto-post: click the tweet button if requested ─────────────────
+      if (autoPost) {
+        // Give X a moment to enable the Post button after text + images are ready.
+        await new Promise((r) => setTimeout(r, 600));
+        const postBtn =
+          document.querySelector('[data-testid="tweetButtonInline"]') ||
+          document.querySelector('[data-testid="tweetButton"]');
+        if (postBtn && !postBtn.disabled && postBtn.getAttribute("aria-disabled") !== "true") {
+          postBtn.click();
+          bridge.notify(`✓ ${toInject.length} image(s) + text — posting automatically…`, "success");
+        } else {
+          bridge.notify(`✓ ${toInject.length} image(s) attached${textFilled ? " + text filled" : ""} — post button not ready, click Post manually`, "info");
+        }
+      } else {
+        bridge.notify(`✓ ${toInject.length} image(s) attached${textFilled ? " + text filled" : ""} — post, then click Mark as Posted`, "success");
+      }
       return { imageIds, targetId: resolvedTargetId, filename: toInject.map((i) => i.filename).join(", ") };
     } catch (err) {
       bridge.notify(err.message, "error");

@@ -671,6 +671,10 @@ const selectionQueue = new Map(); // target → string[] of imageIds
 // Set by the app's AI generator; consumed by the Chrome extension's text-fill logic.
 const postContentStore = new Map();
 
+// One-shot auto-inject triggers: { [target]: true }
+// Set when the user clicks "Send to X" etc.; cleared after the extension reads it.
+const autoInjectTriggers = new Map();
+
 function bridgeSendJson(res, data, status = 200) {
   const body = JSON.stringify(data);
   res.writeHead(status, {
@@ -901,6 +905,18 @@ async function handleBridge(req, res) {
     const content = postContentStore.get(targetType);
     if (!content) { bridgeSendJson(res, { ok: false, content: null }); return; }
     bridgeSendJson(res, { ok: true, content });
+    return;
+  }
+
+  // ── GET /auto-inject?target=x ────────────────────────────────────────────
+  // One-shot trigger: returns { pending: true } once after the user clicks
+  // "Send to X" and the extension hasn't picked it up yet.  Clears on read.
+  if (req.method === "GET" && url.pathname === "/auto-inject") {
+    const targetType = url.searchParams.get("target");
+    if (!targetType) { bridgeSendJson(res, { error: "target required" }, 400); return; }
+    const pending = autoInjectTriggers.has(targetType);
+    if (pending) autoInjectTriggers.delete(targetType);
+    bridgeSendJson(res, { pending });
     return;
   }
 
@@ -1890,6 +1906,10 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("bridge:get-queue", (_event, target) => {
     return { imageIds: selectionQueue.get(target) ?? [], limit: PLATFORM_LIMITS[target] ?? 1 };
+  });
+  ipcMain.handle("bridge:trigger-auto-inject", (_event, target) => {
+    autoInjectTriggers.set(target, true);
+    return { ok: true };
   });
   ipcMain.handle("bridge:set-post-content", (_event, target, content) => {
     postContentStore.set(target, content);
