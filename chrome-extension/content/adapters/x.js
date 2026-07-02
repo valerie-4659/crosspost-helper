@@ -72,12 +72,14 @@ window.CrosspostBridge._currentAdapter = {
 
       // ── 4. Fill AI post text if available ────────────────────────────────
       // Wait for X to process the injected files and finish re-rendering.
-      // Use a longer delay — X re-renders the compose box asynchronously after
+      // Longer delay (1200ms) — X re-renders the compose box asynchronously after
       // adding the image preview, which can clobber text injected too early.
-      await new Promise((r) => setTimeout(r, 800));
+      await new Promise((r) => setTimeout(r, 1200));
 
       const postContent = await bridge.getPostContent("x").catch(() => null);
       let textFilled = false;
+      // The text we intend to inject — kept for the re-verify pass in step 5.
+      let pendingText = "";
       if (postContent) {
         const tags = (postContent.tags ?? [])
           .map((t) => (t.startsWith("#") ? t : "#" + t))
@@ -85,6 +87,7 @@ window.CrosspostBridge._currentAdapter = {
         // Use single newline — \n\n triggers a paragraph break in X's Lexical
         // editor which can split description and tags into separate tweet blocks.
         const text = [postContent.description, tags].filter(Boolean).join("\n");
+        pendingText = text;
         if (text) {
           // Re-query — X may have remounted the textarea after file injection.
           const freshTextarea = document.querySelector('[data-testid="tweetTextarea_0"]') || textarea;
@@ -102,9 +105,9 @@ window.CrosspostBridge._currentAdapter = {
               );
             });
             if (pasteResult?.ok) {
-              // CDP paste succeeded — if autoPost, click the tweet button.
+              // CDP paste succeeded — wait for X to process the paste before posting.
+              await new Promise((r) => setTimeout(r, 800));
               if (autoPost) {
-                await new Promise((r) => setTimeout(r, 600));
                 const postBtn =
                   document.querySelector('[data-testid="tweetButtonInline"]') ||
                   document.querySelector('[data-testid="tweetButton"]');
@@ -171,14 +174,36 @@ window.CrosspostBridge._currentAdapter = {
 
       // ── 5. Auto-post: click the tweet button if requested ─────────────────
       if (autoPost) {
-        // Give X a moment to enable the Post button after text + images are ready.
-        await new Promise((r) => setTimeout(r, 600));
-        const postBtn =
-          document.querySelector('[data-testid="tweetButtonInline"]') ||
-          document.querySelector('[data-testid="tweetButton"]');
-        if (postBtn && !postBtn.disabled && postBtn.getAttribute("aria-disabled") !== "true") {
+        // Poll for the Post button to become active (up to 5 s) — X enables it
+        // only after the image upload/preview is fully ready.  Polling avoids a
+        // fixed sleep that may be too short on slow connections.
+        let postBtn = null;
+        for (let i = 0; i < 50; i++) {
+          await new Promise((r) => setTimeout(r, 100));
+          const btn =
+            document.querySelector('[data-testid="tweetButtonInline"]') ||
+            document.querySelector('[data-testid="tweetButton"]');
+          if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") {
+            postBtn = btn;
+            break;
+          }
+        }
+
+        if (postBtn) {
+          // X may have re-rendered the compose box while the image was being
+          // processed, clearing any text we filled in step 4.  Re-verify and
+          // refill right before posting so the text is always present.
+          if (pendingText) {
+            const currentTA = document.querySelector('[data-testid="tweetTextarea_0"]') || textarea;
+            const currentContent = (currentTA?.textContent ?? "").replace(/​/g, "").replace(/\s+/g, " ").trim();
+            if (currentContent.length < 5) {
+              await bridge.fillTextField(currentTA, pendingText);
+              await new Promise((r) => setTimeout(r, 300));
+              textFilled = true;
+            }
+          }
           postBtn.click();
-          bridge.notify(`✓ ${toInject.length} image(s) + text — posting automatically…`, "success");
+          bridge.notify(`✓ ${toInject.length} image(s)${textFilled ? " + text" : ""} — posting automatically…`, "success");
         } else {
           bridge.notify(`✓ ${toInject.length} image(s) attached${textFilled ? " + text filled" : ""} — post button not ready, click Post manually`, "info");
         }

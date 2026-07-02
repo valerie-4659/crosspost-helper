@@ -302,8 +302,8 @@ window.CrosspostBridge = {
 
 // ── Auto-inject polling ──────────────────────────────────────────────────────
 // Polls /auto-inject every 2.5 s.  When the app fires a trigger (user clicked
-// "Send to X"), the extension auto-injects images + text and clicks Post — no
-// popup interaction needed.  Only active on X pages.
+// "Send to X"), only the VISIBLE tab claims and processes it — background tabs
+// skip the claim so they never accidentally post.
 if (_bridgeFirstRun) {
   (function startAutoInjectPoll() {
     // Adapter is set by the adapter script (x.js) which loads AFTER bridge.js.
@@ -319,6 +319,21 @@ if (_bridgeFirstRun) {
         if (!res.ok) { setTimeout(pollOnce, 2500); return; }
         const data = await res.json();
         if (data.pending) {
+          // Only process the trigger if this tab is currently visible.
+          // Background tabs skip the claim — the next visible X tab will handle it.
+          if (document.visibilityState !== "visible") { setTimeout(pollOnce, 2500); return; }
+
+          // Atomically claim the trigger — only one tab wins the race.
+          const claimRes = await fetch(`${BRIDGE_URL}/claim-auto-inject`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ target: adapter.platform }),
+            cache: "no-store",
+          });
+          if (!claimRes.ok) { setTimeout(pollOnce, 2500); return; }
+          const { claimed } = await claimRes.json();
+          if (!claimed) { setTimeout(pollOnce, 2500); return; }
+
           // Read the user's auto-post preference before injecting.
           const { autoPostEnabled } = await new Promise((resolve) =>
             chrome.storage.local.get("autoPostEnabled", resolve),

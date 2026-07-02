@@ -909,14 +909,32 @@ async function handleBridge(req, res) {
   }
 
   // ── GET /auto-inject?target=x ────────────────────────────────────────────
-  // One-shot trigger: returns { pending: true } once after the user clicks
-  // "Send to X" and the extension hasn't picked it up yet.  Clears on read.
+  // Peek-only: returns { pending: true } while the trigger is active.
+  // Does NOT consume the trigger — use POST /claim-auto-inject for that.
+  // Multiple tabs can poll this endpoint; only the visible tab should claim.
   if (req.method === "GET" && url.pathname === "/auto-inject") {
     const targetType = url.searchParams.get("target");
     if (!targetType) { bridgeSendJson(res, { error: "target required" }, 400); return; }
-    const pending = autoInjectTriggers.has(targetType);
-    if (pending) autoInjectTriggers.delete(targetType);
-    bridgeSendJson(res, { pending });
+    bridgeSendJson(res, { pending: autoInjectTriggers.has(targetType) });
+    return;
+  }
+
+  // ── POST /claim-auto-inject ───────────────────────────────────────────────
+  // Atomically claims (and deletes) the trigger for a platform.
+  // Returns { claimed: true } if this caller won the race, { claimed: false }
+  // if another tab already consumed it.  Only one tab can win per trigger.
+  if (req.method === "POST" && url.pathname === "/claim-auto-inject") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      try {
+        const { target } = JSON.parse(body || "{}");
+        if (!target) { bridgeSendJson(res, { error: "target required" }, 400); return; }
+        const claimed = autoInjectTriggers.has(target);
+        if (claimed) autoInjectTriggers.delete(target);
+        bridgeSendJson(res, { claimed });
+      } catch { bridgeSendJson(res, { error: "bad request" }, 400); }
+    });
     return;
   }
 
