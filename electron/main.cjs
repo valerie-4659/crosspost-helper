@@ -1252,7 +1252,8 @@ Keep each line short. Total text under 280 characters.`;
       : "Draw the reader INTO the scene. Make them feel the energy, then hit them with a direct question: 'what would you do?', 'would you…', 'tell me…' — make it impossible to scroll past.";
 
   const engagementRule = hasPersona
-    ? `Write a caption with a strong hook, build the inner feeling or tension the image creates, then end with a question or invitation that pulls the follower into that feeling. ${engagementReaderInvite} ${perspVoice}`
+    ? `Write a caption with a strong hook, build the inner feeling or tension the image creates, then end with a question or invitation that pulls the follower into that feeling. ${engagementReaderInvite} ${perspVoice}
+${personaHasStyleNotes ? "EMOJI ENFORCEMENT: Your persona rules specify emoji use — follow them. Zero emojis is NEVER acceptable." : `Emoji rule: ${personaEmojiRule}`}`
     : `Write a caption structured in three beats:
 (1) Opening hook — the first line drops the reader into the feeling, the thought, the desire. NOT a description of what's in the image. The thing it makes you feel or think — raw, immediate.
 (2) ONE inner detail — a sensation, a specific thought, a desire or fantasy that the image triggers. Still no visual description. This is the thought that forms in the viewer's head when they look.
@@ -1263,17 +1264,23 @@ ${perspVoice} Be punchy and specific. Cut all filler.`;
   // When a persona is active, trust the persona's established voice for style —
   // no need to offer fixed style options that would pull against the persona.
   const morningRule = hasPersona
-    ? `Write a morning greeting post addressed to your followers. The style is set by the image's content level — let it determine how bold or tender the greeting is: a soft image calls for something warm and gentle; an explicit image can be openly sexual even as a morning greeting. Write in your established persona voice. Vary the opening (e.g. "good morning", "morning loves", "rise and shine", "hey you" — never repeat the same phrase twice). Add one line drawn from the feeling or thought the image creates — not from its visual content. Close with a note or question directed at followers. ${perspVoice}`
+    ? `Write a morning greeting post addressed to your followers. The image's content level sets how bold or tender the greeting is — a soft image calls for warmth; an explicit image can be openly sexual even as a morning greeting.
+CRITICAL — PERSONA VOICE: Write exclusively in your established persona voice. Your greeting style, affectionate terms, and emoji use are defined in your persona rules in the system message — follow them exactly. Do NOT default to a generic, flat, or AI-sounding opening. Draw the opening from your persona's established greeting patterns.
+${personaHasStyleNotes ? "EMOJI ENFORCEMENT: Your persona rules specify emoji use — follow them. Zero emojis is NEVER acceptable. Include emojis naturally throughout as your persona dictates." : `Emoji rule: ${personaEmojiRule}`}
+Add one line drawn from the feeling or thought the image creates — not from what is visually in it. Close with a note or question that fits your persona's voice. ${perspVoice}`
     : `Write a morning greeting post addressed to your followers. The content level of the image determines the style — pick the matching option (do NOT announce your choice):
 a) Neutral / artistic image → Tender & soft — warm, close, like a quiet morning together
 b) Dreamy / romantic image → Dreamy & poetic — atmospheric, soft longing, lingers like first light
 c) Sensual / suggestive image → Bold & charged — something is in the air this morning and everyone can feel it
 d) Explicit / sexual image → Openly sexual morning greeting — this is exactly what their morning needed, and say so
-Vary the opening (e.g. "good morning", "morning loves", "rise and shine", "hey you" — fresh each time). One line from the feeling the image creates — not a visual description. Close with something directed at followers. ${perspVoice}`;
+Vary the opening (e.g. "good morning", "morning loves", "morning darlings", "hey lovelies" — fresh each time). One line from the feeling the image creates — not a visual description. Close with something directed at followers. ${perspVoice}`;
 
   // ── Good Night ──────────────────────────────────────────────────────────
   const goodnightRule = hasPersona
-    ? `Write a good-night post addressed to your followers. The image's content level sets the tone — a soft image calls for something tender; an explicit image can be openly sexual as a send-off. Write in your established persona voice. Vary the opening (e.g. "good night", "sweet dreams", "sleep well loves", "night night" — keep it fresh). Add one line from the feeling or thought the image creates — not from what's visually in it. Close with something that stays with them. ${perspVoice}`
+    ? `Write a good-night post addressed to your followers. The image's content level sets the tone — a soft image calls for something tender; an explicit image can be openly sexual as a send-off.
+CRITICAL — PERSONA VOICE: Write exclusively in your established persona voice. Your closing style, affectionate terms, and emoji use are defined in your persona rules in the system message — follow them exactly. Do NOT default to a generic or AI-sounding send-off.
+${personaHasStyleNotes ? "EMOJI ENFORCEMENT: Your persona rules specify emoji use — follow them. Zero emojis is NEVER acceptable. Include emojis naturally throughout as your persona dictates." : `Emoji rule: ${personaEmojiRule}`}
+Add one line from the feeling or thought the image creates — not from what is visually in it. Close with something that stays with them, in your persona's voice. ${perspVoice}`
     : `Write a good-night post addressed to your followers. The content level of the image determines the style — pick the matching option (do NOT announce your choice):
 a) Neutral / artistic image → Wistful & poetic — soft, atmospheric, a quiet thought to end the day
 b) Dreamy / romantic image → Tender & warm — intimate send-off, makes followers feel held
