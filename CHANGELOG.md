@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.12 - 2026-07-02
+
+- Release v0.3.12
+
+
 ## v0.3.11 - 2026-07-02
 
 - fix: ensure text is posted and only one X tab handles auto-inject
