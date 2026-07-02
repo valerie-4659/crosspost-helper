@@ -6,6 +6,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.10",
+    date: "2026-07-02",
+    items: [
+      "feat: add persona personality rules guide to settings UI",
+      "fix: enforce persona voice + emojis in morning/goodnight/engagement posts",
+      "feat: auto-inject + optional auto-post for X via Chrome extension",
+    ],
+  },
+  {
     version: "0.3.9",
     date: "2026-07-01",
     items: [

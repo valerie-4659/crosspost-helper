@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.10 - 2026-07-02
+
+- feat: add persona personality rules guide to settings UI
+- fix: enforce persona voice + emojis in morning/goodnight/engagement posts
+- feat: auto-inject + optional auto-post for X via Chrome extension
+
+
 ## v0.3.9 - 2026-07-01
 
 - fix: style_notes are sole authority on emoji when persona is active
