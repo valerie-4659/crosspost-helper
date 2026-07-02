@@ -312,11 +312,65 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
   }
 }
 
+// ── CDP text fill ──────────────────────────────────────────────────────────
+//
+// Runs execCommand('insertText') directly in the page context via CDP
+// Runtime.evaluate with userGesture:true.  This fires a *trusted* beforeinput
+// event — identical to real keyboard input — which Lexical (X's editor)
+// handles correctly.  Content-script execCommand calls are NOT trusted because
+// they run in an isolated world; innerText assignment bypasses Lexical's state
+// entirely and gets cleared on the next render.  This method sidesteps both
+// limitations.
+
+async function cdpFillText(tabId, text) {
+  const safeText = JSON.stringify(text);
+  await cdpAttach(tabId);
+  try {
+    // Step 1: Focus the editor so execCommand targets the right element.
+    await cdpSend(tabId, "Runtime.evaluate", {
+      expression: `(function(){
+        const ta = document.querySelector('[data-testid="tweetTextarea_0"]');
+        if (ta) ta.focus();
+      })()`,
+      returnByValue: false,
+      userGesture: true,
+    });
+    await new Promise((r) => setTimeout(r, 80));
+    // Step 2: Select-all, delete existing content, insert new text.
+    //         userGesture:true makes execCommand fire trusted beforeinput events.
+    const { result } = await cdpSend(tabId, "Runtime.evaluate", {
+      expression: `(function(){
+        const ta = document.querySelector('[data-testid="tweetTextarea_0"]');
+        if (!ta) return { ok: false, reason: 'no textarea' };
+        ta.focus();
+        const sel = window.getSelection();
+        if (sel) {
+          const r = document.createRange();
+          r.selectNodeContents(ta);
+          sel.removeAllRanges();
+          sel.addRange(r);
+        }
+        document.execCommand('delete', false, null);
+        document.execCommand('insertText', false, ${safeText});
+        const len = (ta.textContent ?? '').replace(/​/g, '').trim().length;
+        return { ok: len > 0, len };
+      })()`,
+      returnByValue: true,
+      userGesture: true,
+    });
+    const val = result?.value;
+    if (!val?.ok) {
+      throw new Error(`CDP fill: len=${val?.len ?? '?'} reason=${val?.reason ?? 'empty'}`);
+    }
+  } finally {
+    await cdpDetach(tabId);
+  }
+}
+
 // ── CDP clipboard paste ────────────────────────────────────────────────────
 //
 // Focuses the tweet textarea and dispatches a trusted Ctrl+V keystroke via CDP.
-// Called when all in-page text injection methods fail and the text has already
-// been written to the system clipboard.
+// Called as last resort when all other text injection methods fail.
 
 async function cdpPasteClipboard(tabId) {
   await cdpAttach(tabId);
@@ -364,6 +418,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "CDP_INJECT_FILES_BLUESKY") {
     cdpInjectFilesBluesky(sender.tab.id, msg.imageIds)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "CDP_FILL_TEXT") {
+    cdpFillText(sender.tab.id, msg.text)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;

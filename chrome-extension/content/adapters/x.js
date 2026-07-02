@@ -91,13 +91,41 @@ window.CrosspostBridge._currentAdapter = {
         if (text) {
           // Re-query — X may have remounted the textarea after file injection.
           const freshTextarea = document.querySelector('[data-testid="tweetTextarea_0"]') || textarea;
+
+          // ── Method A: in-page fillTextField ──────────────────────────────
+          // Fast, but runs in content-script isolated world.  execCommand events
+          // may not be trusted; innerText (method 4 fallback) bypasses Lexical
+          // state and gets cleared on the next render cycle.
           textFilled = await bridge.fillTextField(freshTextarea, text);
+
+          // Verify method A actually stuck — Lexical clears DOM writes that
+          // bypass its own state management (e.g. innerText) on the next tick.
+          if (textFilled) {
+            await new Promise((r) => setTimeout(r, 250));
+            const taCheck = document.querySelector('[data-testid="tweetTextarea_0"]') || freshTextarea;
+            const verified = (taCheck?.textContent ?? "").replace(/​/g, "").trim();
+            if (verified.length < 3) textFilled = false; // Lexical cleared it
+          }
+
+          // ── Method B: CDP fill (primary reliable path) ────────────────────
+          // Runs execCommand('insertText') in PAGE context via Runtime.evaluate
+          // with userGesture:true → fires trusted beforeinput → Lexical handles
+          // it exactly like real keyboard input.  Bypasses both content-script
+          // isolation and the clipboard-permission requirement.
           if (!textFilled) {
-            // All in-page injection methods failed — write to clipboard and use
-            // CDP to dispatch a trusted Ctrl+V so the user doesn't have to paste manually.
+            const cdpFillResult = await new Promise((resolve) => {
+              chrome.runtime.sendMessage({ type: "CDP_FILL_TEXT", text }, resolve);
+            });
+            textFilled = cdpFillResult?.ok ?? false;
+          }
+
+          // ── Method C: clipboard + CDP Ctrl+V (last resort) ───────────────
+          if (!textFilled) {
+            // navigator.clipboard.writeText() requires a user gesture in content
+            // scripts — it will fail silently here (timer context).  We try it
+            // anyway in case the browser grants it, then dispatch the keystroke.
             await navigator.clipboard.writeText(text).catch(() => {});
             bridge.notify(`Pasting text via clipboard…`, "info");
-            // Small delay so X finishes rendering before we send the keystroke.
             await new Promise((r) => setTimeout(r, 700));
             const pasteResult = await new Promise((resolve) => {
               chrome.runtime.sendMessage({ type: "CDP_PASTE_CLIPBOARD" }, (res) =>
@@ -105,7 +133,6 @@ window.CrosspostBridge._currentAdapter = {
               );
             });
             if (pasteResult?.ok) {
-              // CDP paste succeeded — wait for X to process the paste before posting.
               await new Promise((r) => setTimeout(r, 800));
               if (autoPost) {
                 const postBtn =
