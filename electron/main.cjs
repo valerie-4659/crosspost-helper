@@ -1321,9 +1321,8 @@ The content level (from Step 2) applies fully — a sensual multi-character scen
       : `${perspVoice} Close third-person — inside the scene, feeling everything from within. Think: "She surrenders…", "He pulls her closer…", "The silence between them shifts…", "They both knew exactly what this was."  Write all characters present in the image.`;
 
   // Story emoji: respect persona setting if set, otherwise default naturalistic rule.
-  // When style_notes are present, emoji guidance lives inside them — don't add a conflicting rule.
   const STORY_EMOJI = personaHasStyleNotes
-    ? ""
+    ? "EMOJI ENFORCEMENT: Your persona rules specify emoji use — follow them. Zero emojis is NEVER acceptable. Include emojis naturally throughout as your persona dictates."
     : personaEmojiRule
       ? `Emojis: ${personaEmojiRule}`
       : `Scatter 1–2 fitting emojis naturally through the text (e.g. 🫦 ❤️‍🔥 💀 🌙 💋 😈) — they must feel organic, not decorative.`;
