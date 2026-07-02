@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.14",
+    date: "2026-07-02",
+    items: [
+      "fix: use CDP Input.insertText for X text injection to properly update Lexical state",
+    ],
+  },
+  {
     version: "0.3.13",
     date: "2026-07-02",
     items: [

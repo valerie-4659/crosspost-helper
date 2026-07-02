@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.14 - 2026-07-02
+
+- fix: use CDP Input.insertText for X text injection to properly update Lexical state
+
+
 ## v0.3.13 - 2026-07-02
 
 - fix: use CDP userGesture fill as reliable text injection for X compose
