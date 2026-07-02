@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.15",
+    date: "2026-07-02",
+    items: [
+      "fix: enforce emoji rule in story posts when persona has style notes",
+    ],
+  },
+  {
     version: "0.3.14",
     date: "2026-07-02",
     items: [

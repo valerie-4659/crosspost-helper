@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.15 - 2026-07-02
+
+- fix: enforce emoji rule in story posts when persona has style notes
+
+
 ## v0.3.14 - 2026-07-02
 
 - fix: use CDP Input.insertText for X text injection to properly update Lexical state
