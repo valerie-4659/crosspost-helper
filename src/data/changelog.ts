@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.13",
+    date: "2026-07-02",
+    items: [
+      "fix: use CDP userGesture fill as reliable text injection for X compose",
+    ],
+  },
+  {
     version: "0.3.12",
     date: "2026-07-02",
     items: [

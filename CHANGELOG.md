@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.13 - 2026-07-02
+
+- fix: use CDP userGesture fill as reliable text injection for X compose
+
+
 ## v0.3.12 - 2026-07-02
 
 - Release v0.3.12
