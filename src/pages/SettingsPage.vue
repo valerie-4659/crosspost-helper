@@ -199,6 +199,7 @@ const showPersonaForm = ref(false);
 const editingPersonaId = ref<string | null>(null);
 const personaForm = ref({ name: "", tone: "", emojiUse: "subtle" as import("@/types/aiSettings").EmojiUse, styleNotes: "" });
 const personaSaved = ref(false);
+const showPersonaGuide = ref(false);
 
 function openNewPersona() {
   editingPersonaId.value = null;
@@ -549,7 +550,7 @@ onMounted(async () => {
           <Plus class="h-3.5 w-3.5" /> New Persona
         </button>
       </div>
-      <p class="mt-1 text-sm text-slate-400">Define how the AI writes. Everything — voice, tone, emoji use, dos & don'ts — lives in the Personality Rules text. Markdown supported.</p>
+      <p class="mt-1 text-sm text-slate-400">Define how the AI writes. Everything — voice, greeting style, emoji use, dos &amp; don'ts — lives in the Personality Rules text. Click <span class="text-slate-300 font-medium">How to write this</span> inside the form for a structure guide.</p>
 
       <!-- Persona list -->
       <div class="mt-3 flex flex-col gap-2">
@@ -603,15 +604,97 @@ onMounted(async () => {
             <input v-model="personaForm.name" aria-label="Persona name" class="field text-sm" placeholder="e.g. Valerie, Hot Mess, Neutral" />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-[11px] uppercase tracking-wide text-slate-500">
-              Personality Rules
-              <span class="normal-case text-slate-600"> — voice, tone, emoji style, dos &amp; don'ts. Markdown supported.</span>
-            </label>
+            <div class="flex items-center justify-between">
+              <label class="text-[11px] uppercase tracking-wide text-slate-500">
+                Personality Rules
+                <span class="normal-case text-slate-600"> — Markdown supported</span>
+              </label>
+              <button
+                type="button"
+                class="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-slate-400 hover:bg-panel hover:text-slate-200 transition-colors"
+                @click="showPersonaGuide = !showPersonaGuide"
+              >
+                <component :is="showPersonaGuide ? ChevronDown : ChevronRight" class="h-3 w-3" />
+                {{ showPersonaGuide ? 'Hide guide' : 'How to write this' }}
+              </button>
+            </div>
+
+            <!-- Structure guide -->
+            <div v-if="showPersonaGuide" class="rounded-lg border border-accent/20 bg-ink p-3 text-xs text-slate-300 leading-relaxed space-y-3">
+              <p class="font-semibold text-white">What the AI reads — and what it ignores</p>
+              <p class="text-slate-400">The Personality Rules text is the only thing controlling the AI's voice. The more concrete and specific it is, the better the output. Vague descriptions produce generic posts.</p>
+
+              <div class="space-y-2.5">
+                <!-- Emoji -->
+                <div class="rounded border border-rose/30 bg-rose/5 p-2.5">
+                  <p class="font-semibold text-rose-400 mb-1">⚠ Emoji section — required</p>
+                  <p class="text-slate-400 mb-1.5">The AI will produce zero emojis unless you tell it exactly which ones to use and how often. This is the most common failure point.</p>
+                  <p class="font-medium text-slate-300 mb-0.5">Write it like this:</p>
+                  <pre class="rounded bg-panel px-2 py-1.5 text-[11px] text-slate-300 whitespace-pre-wrap">## Emoji Style
+Use emojis naturally throughout every post — never zero.
+Preferred emojis: 💜 💋 😏 😌 🔥 🌸 💕 😈 🫦 ✨
+Use 1–3 per post depending on mood. Match the emoji to the feeling.
+Playful posts → 😏 😌. Warm posts → 💜 💕. Spicy posts → 🔥 😈 🫦.</pre>
+                </div>
+
+                <!-- Morning / Goodnight -->
+                <div class="rounded border border-amber-500/30 bg-amber-500/5 p-2.5">
+                  <p class="font-semibold text-amber-400 mb-1">Morning &amp; Goodnight posts</p>
+                  <p class="text-slate-400 mb-1.5">Without a greeting section the AI falls back to generic openings like "Rise and shine" or "Good evening." Write your character's actual greeting style.</p>
+                  <pre class="rounded bg-panel px-2 py-1.5 text-[11px] text-slate-300 whitespace-pre-wrap">## Affection &amp; Greetings
+For morning posts, open with something warm and personal:
+"Good morning sweethearts 💋"
+"Morning lovelies 💜"
+"Morning my loves — hope you dreamed about something worth blushing over 😏"
+Never use generic phrases like "Rise and shine" or "Good evening, everyone."
+Affectionate terms: sweethearts, lovelies, darlings, my loves, cuties.</pre>
+                </div>
+
+                <!-- Voice -->
+                <div class="rounded border border-line p-2.5">
+                  <p class="font-semibold text-slate-200 mb-1">Core voice — describe, don't label</p>
+                  <p class="text-slate-400 mb-1.5">Don't write "she is flirtatious." Write what flirtatious <em>looks like</em> in her posts.</p>
+                  <pre class="rounded bg-panel px-2 py-1.5 text-[11px] text-slate-300 whitespace-pre-wrap">## Core Voice
+Warm, playful, slightly chaotic. She teases but always leaves the reader
+feeling liked. She does not describe images — she reacts to them.
+She writes like someone texting at midnight, not like a caption writer.</pre>
+                </div>
+
+                <!-- Post types -->
+                <div class="rounded border border-line p-2.5">
+                  <p class="font-semibold text-slate-200 mb-1">Post types (engagement / story / morning / goodnight)</p>
+                  <p class="text-slate-400 mb-1.5">You can define per-type behavior. If you skip a type, the AI uses your core voice.</p>
+                  <pre class="rounded bg-panel px-2 py-1.5 text-[11px] text-slate-300 whitespace-pre-wrap">## Engagement Posts
+End with a question that makes the reader want to reply.
+Never ask boring questions like "What do you think?"
+Ask something specific: "Would you…?", "Tell me if you…"
+
+## Story Posts
+Write from inside the moment, not outside observing it.
+Build tension, then cut before the resolution.</pre>
+                </div>
+
+                <!-- Avoid -->
+                <div class="rounded border border-line p-2.5">
+                  <p class="font-semibold text-slate-200 mb-1">Avoid section — be explicit</p>
+                  <p class="text-slate-400 mb-1.5">List what the AI must never do. The more specific, the better.</p>
+                  <pre class="rounded bg-panel px-2 py-1.5 text-[11px] text-slate-300 whitespace-pre-wrap">## Avoid
+- Describing clothing or poses
+- Generic compliments ("Looking cute today")
+- Marketing language or AI-sounding phrases
+- The same greeting every time
+- Posts that could fit any random image</pre>
+                </div>
+              </div>
+
+              <p class="text-slate-500 text-[11px]">Tip: paste this entire structure as a starting point and replace the examples with your character's actual voice.</p>
+            </div>
+
             <textarea
               v-model="personaForm.styleNotes"
               rows="16"
               class="field resize-y font-mono text-xs leading-relaxed"
-              placeholder="# Persona Name&#10;&#10;Describe voice, tone, emoji use, what to do, what to avoid, examples...&#10;&#10;Everything the AI needs to write as this persona lives here."
+              placeholder="# Persona Name&#10;&#10;## Core Voice&#10;Describe who this character is and how they write...&#10;&#10;## Emoji Style&#10;Which emojis, how many, when to use them...&#10;&#10;## Affection &amp; Greetings&#10;How they open morning/goodnight posts, pet names they use...&#10;&#10;## Avoid&#10;What they never say or do..."
             />
           </div>
         </div>
