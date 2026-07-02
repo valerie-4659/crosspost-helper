@@ -323,10 +323,9 @@ async function cdpInjectFilesBluesky(tabId, imageIds) {
 // limitations.
 
 async function cdpFillText(tabId, text) {
-  const safeText = JSON.stringify(text);
   await cdpAttach(tabId);
   try {
-    // Step 1: Focus the editor so execCommand targets the right element.
+    // Step 1: Focus the Lexical editor.
     await cdpSend(tabId, "Runtime.evaluate", {
       expression: `(function(){
         const ta = document.querySelector('[data-testid="tweetTextarea_0"]');
@@ -336,32 +335,109 @@ async function cdpFillText(tabId, text) {
       userGesture: true,
     });
     await new Promise((r) => setTimeout(r, 80));
-    // Step 2: Select-all, delete existing content, insert new text.
-    //         userGesture:true makes execCommand fire trusted beforeinput events.
+
+    // Step 2: Select all existing content via Ctrl+A (trusted CDP keystroke).
+    await cdpSend(tabId, "Input.dispatchKeyEvent", {
+      type: "keyDown", modifiers: 2, key: "a", code: "KeyA",
+      windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65,
+    });
+    await cdpSend(tabId, "Input.dispatchKeyEvent", {
+      type: "keyUp", modifiers: 2, key: "a", code: "KeyA",
+      windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65,
+    });
+    await new Promise((r) => setTimeout(r, 40));
+
+    // Step 3: Delete selected content via Backspace (trusted CDP keystroke).
+    await cdpSend(tabId, "Input.dispatchKeyEvent", {
+      type: "keyDown", key: "Backspace", code: "Backspace",
+      windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8,
+    });
+    await cdpSend(tabId, "Input.dispatchKeyEvent", {
+      type: "keyUp", key: "Backspace", code: "Backspace",
+      windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8,
+    });
+    await new Promise((r) => setTimeout(r, 40));
+
+    // Step 4: Insert text via CDP Input.insertText.
+    // This is OS-level input — fires fully trusted beforeinput/textInput events
+    // that Lexical processes identically to real keyboard typing.
+    // Runtime.evaluate execCommand fires isTrusted=false events which modern
+    // Lexical versions (X ≥ 2024) filter out, leaving the EditorState empty
+    // even though the DOM appears updated.
+    await cdpSend(tabId, "Input.insertText", { text });
+    await new Promise((r) => setTimeout(r, 120));
+
+    // Step 5: Verify Lexical actually updated its state (textContent reflects it).
     const { result } = await cdpSend(tabId, "Runtime.evaluate", {
       expression: `(function(){
         const ta = document.querySelector('[data-testid="tweetTextarea_0"]');
-        if (!ta) return { ok: false, reason: 'no textarea' };
-        ta.focus();
-        const sel = window.getSelection();
-        if (sel) {
-          const r = document.createRange();
-          r.selectNodeContents(ta);
-          sel.removeAllRanges();
-          sel.addRange(r);
-        }
-        document.execCommand('delete', false, null);
-        document.execCommand('insertText', false, ${safeText});
-        const len = (ta.textContent ?? '').replace(/​/g, '').trim().length;
+        const len = (ta?.textContent ?? '').replace(/​/g, '').trim().length;
         return { ok: len > 0, len };
       })()`,
       returnByValue: true,
-      userGesture: true,
     });
     const val = result?.value;
     if (!val?.ok) {
-      throw new Error(`CDP fill: len=${val?.len ?? '?'} reason=${val?.reason ?? 'empty'}`);
+      throw new Error(`CDP fill: len=${val?.len ?? '?'} — Lexical state not updated`);
     }
+  } finally {
+    await cdpDetach(tabId);
+  }
+}
+
+// ── CDP hashtag finalization ───────────────────────────────────────────────
+//
+// After execCommand('insertText') fills the Lexical editor, the cursor sits at
+// the end of the last hashtag.  Two things need to happen:
+//   1. Escape → dismiss the tag-autocomplete overlay.
+//   2. Space  → Lexical runs all pending TextNode→HashtagNode transforms.
+//
+// These keystrokes must be *trusted* (i.e. from CDP Input.dispatchKeyEvent),
+// not synthetic DOM events from a content script.  Untrusted keydown events
+// are ignored by X's Lexical editor for security reasons.
+
+async function cdpFinalizeHashtags(tabId) {
+  await cdpAttach(tabId);
+  try {
+    // Re-focus so the keystrokes land in the compose box.
+    await cdpSend(tabId, "Runtime.evaluate", {
+      expression: `(function(){
+        const ta = document.querySelector('[data-testid="tweetTextarea_0"]');
+        if (ta) ta.focus();
+      })()`,
+      returnByValue: false,
+    });
+    await new Promise((r) => setTimeout(r, 80));
+
+    // Space: finalise all pending HashtagNode transforms AND dismiss any
+    // hashtag autocomplete overlay in one step.  Space is not a valid hashtag
+    // character, so X's Lexical autocomplete closes automatically and all
+    // pending TextNode→HashtagNode transforms run.
+    //
+    // We do NOT send Escape here — CDP Escape is fully trusted and triggers
+    // X's global compose-close handler ("Discard post?" dialog appears).
+    await cdpSend(tabId, "Input.insertText", { text: " " });
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Move cursor to the start so the user can prepend text if needed.
+    await cdpSend(tabId, "Runtime.evaluate", {
+      expression: `(function(){
+        const ta = document.querySelector('[data-testid="tweetTextarea_0"]');
+        if (!ta) return;
+        const sel = window.getSelection();
+        if (!sel) return;
+        const walker = document.createTreeWalker(ta, NodeFilter.SHOW_TEXT);
+        const first = walker.nextNode();
+        if (first) {
+          const r = document.createRange();
+          r.setStart(first, 0);
+          r.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(r);
+        }
+      })()`,
+      returnByValue: false,
+    });
   } finally {
     await cdpDetach(tabId);
   }
@@ -425,6 +501,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "CDP_FILL_TEXT") {
     cdpFillText(sender.tab.id, msg.text)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "CDP_FINALIZE_HASHTAGS") {
+    cdpFinalizeHashtags(sender.tab.id)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;

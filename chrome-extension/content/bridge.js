@@ -161,13 +161,16 @@ window.CrosspostBridge = {
         } catch { /* clipboard API unavailable */ }
 
         // ── Method 4: innerText + input event (LAST RESORT) ──────────────
-        // Direct DOM mutation — bypasses the framework but at least puts the
-        // text in the DOM so the user can see it and submit manually.
+        // Direct DOM mutation — bypasses Lexical's state entirely.
+        // The text appears in the DOM but Lexical's virtual tree stays empty,
+        // causing the placeholder to show through and hashtags to stay white.
+        // We return FALSE so the caller falls through to CDP_FILL_TEXT which
+        // uses userGesture:true execCommand and properly updates Lexical state.
         await refocus();
         element.innerText = text;
         element.dispatchEvent(new Event("input", { bubbles: true }));
         await new Promise((r) => setTimeout(r, 50));
-        return getContent().length > 0;
+        return false; // always treat innerText as failure → trigger CDP fill
       }
 
       // Regular input / textarea — use native setter so React picks up the change.
@@ -319,10 +322,6 @@ if (_bridgeFirstRun) {
         if (!res.ok) { setTimeout(pollOnce, 2500); return; }
         const data = await res.json();
         if (data.pending) {
-          // Only process the trigger if this tab is currently visible.
-          // Background tabs skip the claim — the next visible X tab will handle it.
-          if (document.visibilityState !== "visible") { setTimeout(pollOnce, 2500); return; }
-
           // Atomically claim the trigger — only one tab wins the race.
           const claimRes = await fetch(`${BRIDGE_URL}/claim-auto-inject`, {
             method: "POST",

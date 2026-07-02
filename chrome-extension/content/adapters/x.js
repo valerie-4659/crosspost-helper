@@ -89,41 +89,25 @@ window.CrosspostBridge._currentAdapter = {
         const text = [postContent.description, tags].filter(Boolean).join("\n");
         pendingText = text;
         if (text) {
-          // Re-query — X may have remounted the textarea after file injection.
-          const freshTextarea = document.querySelector('[data-testid="tweetTextarea_0"]') || textarea;
+          // ── Method A: CDP fill (PRIMARY) ──────────────────────────────────
+          // Uses CDP Input.insertText — OS-level trusted input that Lexical
+          // processes identically to real keyboard typing.
+          //
+          // We skip the in-page fillTextField() approach entirely for X because:
+          // content-script execCommand fires isTrusted=false beforeinput events.
+          // X's Lexical ignores untrusted events but does NOT call preventDefault(),
+          // so the browser inserts text directly into the DOM.  This produces a
+          // "ghost state": textContent shows text, but Lexical's EditorState is
+          // empty — the field is visually non-editable and posts as blank.
+          const cdpFillResult = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({ type: "CDP_FILL_TEXT", text }, resolve);
+          });
+          textFilled = cdpFillResult?.ok ?? false;
 
-          // ── Method A: in-page fillTextField ──────────────────────────────
-          // Fast, but runs in content-script isolated world.  execCommand events
-          // may not be trusted; innerText (method 4 fallback) bypasses Lexical
-          // state and gets cleared on the next render cycle.
-          textFilled = await bridge.fillTextField(freshTextarea, text);
-
-          // Verify method A actually stuck — Lexical clears DOM writes that
-          // bypass its own state management (e.g. innerText) on the next tick.
-          if (textFilled) {
-            await new Promise((r) => setTimeout(r, 250));
-            const taCheck = document.querySelector('[data-testid="tweetTextarea_0"]') || freshTextarea;
-            const verified = (taCheck?.textContent ?? "").replace(/​/g, "").trim();
-            if (verified.length < 3) textFilled = false; // Lexical cleared it
-          }
-
-          // ── Method B: CDP fill (primary reliable path) ────────────────────
-          // Runs execCommand('insertText') in PAGE context via Runtime.evaluate
-          // with userGesture:true → fires trusted beforeinput → Lexical handles
-          // it exactly like real keyboard input.  Bypasses both content-script
-          // isolation and the clipboard-permission requirement.
+          // ── Method B: clipboard + CDP Ctrl+V (last resort) ───────────────
           if (!textFilled) {
-            const cdpFillResult = await new Promise((resolve) => {
-              chrome.runtime.sendMessage({ type: "CDP_FILL_TEXT", text }, resolve);
-            });
-            textFilled = cdpFillResult?.ok ?? false;
-          }
-
-          // ── Method C: clipboard + CDP Ctrl+V (last resort) ───────────────
-          if (!textFilled) {
-            // navigator.clipboard.writeText() requires a user gesture in content
-            // scripts — it will fail silently here (timer context).  We try it
-            // anyway in case the browser grants it, then dispatch the keystroke.
+            // clipboardWrite permission is declared in manifest.json so
+            // navigator.clipboard.writeText() works without a user gesture.
             await navigator.clipboard.writeText(text).catch(() => {});
             bridge.notify(`Pasting text via clipboard…`, "info");
             await new Promise((r) => setTimeout(r, 700));
@@ -154,48 +138,14 @@ window.CrosspostBridge._currentAdapter = {
           }
 
           // ── Post-injection: finalise hashtag nodes & close autocomplete ──
-          // After bulk insertText, X's Lexical editor leaves the cursor at the
-          // end of the last hashtag, which (a) opens a tag autocomplete dropdown
-          // that blocks keyboard input, and (b) keeps the final #tag as a plain
-          // TextNode (white) instead of a HashtagNode (blue) because no delimiter
-          // was typed after it.
-          //
-          // Fix:
-          //  1. Escape  → dismisses the autocomplete overlay.
-          //  2. Space   → Lexical finalises ALL pending TextNode→HashtagNode
-          //               transforms (all tags turn blue); trailing space is
-          //               harmless — X trims whitespace on post.
+          // Escape + Space must be *trusted* keystrokes so Lexical processes them.
+          // Content-script dispatchEvent() is untrusted and gets ignored by X's
+          // Lexical editor — we use CDP_FINALIZE_HASHTAGS which sends them via
+          // CDP Input.dispatchKeyEvent (fully trusted, same as real keyboard).
           await new Promise((r) => setTimeout(r, 200));
-          const taFinal = document.querySelector('[data-testid="tweetTextarea_0"]') || freshTextarea;
-          taFinal.focus();
-          // Step 1: close autocomplete
-          taFinal.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true, cancelable: true }));
-          await new Promise((r) => setTimeout(r, 80));
-          taFinal.dispatchEvent(new KeyboardEvent("keyup",   { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
-          await new Promise((r) => setTimeout(r, 80));
-          // Step 2: append trailing space → finalise hashtag nodes
-          document.execCommand("insertText", false, " ");
-
-          // Step 3: move cursor to the START of the text using the Selection API.
-          // Keyboard event dispatch (Ctrl+Home) is intercepted by Lexical's own handler
-          // and doesn't reliably move the cursor — use DOM selection directly instead.
-          await new Promise((r) => setTimeout(r, 100));
-          try {
-            const sel = window.getSelection();
-            if (sel) {
-              // Walk the editor's DOM to find the very first text node
-              // (that's inside the description, before any HashtagNode spans).
-              const walker = document.createTreeWalker(taFinal, NodeFilter.SHOW_TEXT);
-              const firstText = walker.nextNode();
-              if (firstText) {
-                const range = document.createRange();
-                range.setStart(firstText, 0);
-                range.collapse(true);
-                sel.removeAllRanges();
-                sel.addRange(range);
-              }
-            }
-          } catch { /* ignore — editing will still work, cursor just stays at end */ }
+          await new Promise((resolve) => {
+            chrome.runtime.sendMessage({ type: "CDP_FINALIZE_HASHTAGS" }, resolve);
+          });
         }
       }
 
@@ -224,9 +174,11 @@ window.CrosspostBridge._currentAdapter = {
             const currentTA = document.querySelector('[data-testid="tweetTextarea_0"]') || textarea;
             const currentContent = (currentTA?.textContent ?? "").replace(/​/g, "").replace(/\s+/g, " ").trim();
             if (currentContent.length < 5) {
-              await bridge.fillTextField(currentTA, pendingText);
+              const refillResult = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({ type: "CDP_FILL_TEXT", text: pendingText }, resolve);
+              });
+              textFilled = refillResult?.ok ?? false;
               await new Promise((r) => setTimeout(r, 300));
-              textFilled = true;
             }
           }
           postBtn.click();
