@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.11 - 2026-07-02
+
+- fix: ensure text is posted and only one X tab handles auto-inject
+
+
 ## v0.3.10 - 2026-07-02
 
 - feat: add persona personality rules guide to settings UI

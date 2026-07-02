@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.11",
+    date: "2026-07-02",
+    items: [
+      "fix: ensure text is posted and only one X tab handles auto-inject",
+    ],
+  },
+  {
     version: "0.3.10",
     date: "2026-07-02",
     items: [
