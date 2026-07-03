@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.16 - 2026-07-03
+
+- Release v0.3.16
+
+
 ## v0.3.15 - 2026-07-02
 
 - fix: enforce emoji rule in story posts when persona has style notes
