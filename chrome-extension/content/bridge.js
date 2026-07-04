@@ -303,52 +303,85 @@ window.CrosspostBridge = {
   },
 };
 
-// ── Auto-inject polling ──────────────────────────────────────────────────────
-// Polls /auto-inject every 2.5 s.  When the app fires a trigger (user clicked
-// "Send to X"), only the VISIBLE tab claims and processes it — background tabs
-// skip the claim so they never accidentally post.
+// ── Auto-inject: SSE push + polling fallback ─────────────────────────────────
+//
+// Primary: EventSource (SSE) connects to /events on the bridge server.
+// The bridge pushes a "trigger" event instantly when "Send to Plugin" fires —
+// no polling delay, works even in background tabs (SSE is I/O-driven, not
+// subject to Chrome's background-tab timer throttling).
+//
+// Fallback: if SSE is unavailable (app not running, connection dropped before
+// reconnect), a lightweight poll on /auto-inject fires every 3 s as a safety
+// net. The adapter is set by the adapter script (x.js) which loads AFTER
+// bridge.js, so we wait 2 s before starting either mechanism.
 if (_bridgeFirstRun) {
-  (function startAutoInjectPoll() {
-    // Adapter is set by the adapter script (x.js) which loads AFTER bridge.js.
-    // We check it inside pollOnce (runs async), not at setup time.
-    async function pollOnce() {
+  (function startAutoInject() {
+    // Shared claim-and-inject logic used by both SSE and poll paths.
+    async function claimAndInject(platform) {
+      const claimRes = await fetch(`${BRIDGE_URL}/claim-auto-inject`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ target: platform }),
+        cache: "no-store",
+      });
+      if (!claimRes.ok) return;
+      const { claimed } = await claimRes.json();
+      if (!claimed) return; // another tab won the race
       const adapter = window.CrosspostBridge._currentAdapter;
-      if (!adapter) { setTimeout(pollOnce, 2500); return; }
-      try {
-        const res = await fetch(
-          `${BRIDGE_URL}/auto-inject?target=${encodeURIComponent(adapter.platform)}`,
-          { cache: "no-store" },
-        );
-        if (!res.ok) { setTimeout(pollOnce, 2500); return; }
-        const data = await res.json();
-        if (data.pending) {
-          // Atomically claim the trigger — only one tab wins the race.
-          const claimRes = await fetch(`${BRIDGE_URL}/claim-auto-inject`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ target: adapter.platform }),
-            cache: "no-store",
-          });
-          if (!claimRes.ok) { setTimeout(pollOnce, 2500); return; }
-          const { claimed } = await claimRes.json();
-          if (!claimed) { setTimeout(pollOnce, 2500); return; }
-
-          // Read the user's auto-post preference before injecting.
-          const { autoPostEnabled } = await new Promise((resolve) =>
-            chrome.storage.local.get("autoPostEnabled", resolve),
-          );
-          const result = await adapter.inject(adapter.platform, { autoPost: autoPostEnabled ?? false });
-          if (result?.imageIds?.length) {
-            await window.CrosspostBridge.markAllPosted(result.imageIds, result.targetId).catch(() => {});
-            await window.CrosspostBridge.clearQueue(adapter.platform).catch(() => {});
-          }
-        }
-      } catch { /* network errors are expected when app is not running */ }
-      setTimeout(pollOnce, 2500);
+      if (!adapter) return;
+      const { autoPostEnabled } = await new Promise((resolve) =>
+        chrome.storage.local.get("autoPostEnabled", resolve),
+      );
+      const result = await adapter.inject(adapter.platform, { autoPost: autoPostEnabled ?? false });
+      if (result?.imageIds?.length) {
+        await window.CrosspostBridge.markAllPosted(result.imageIds, result.targetId).catch(() => {});
+        await window.CrosspostBridge.clearQueue(adapter.platform).catch(() => {});
+      }
     }
 
-    // Delay first poll so x.js has time to register its adapter.
-    setTimeout(pollOnce, 3000);
+    // ── SSE connection ──────────────────────────────────────────────────────
+    // Opened once the adapter is known; reconnects automatically on error.
+    let sseOpen = false;
+    let es = null;
+
+    function connectSSE(platform) {
+      if (es) { es.close(); es = null; }
+      es = new EventSource(`${BRIDGE_URL}/events?target=${encodeURIComponent(platform)}`);
+      es.addEventListener("trigger", () => {
+        claimAndInject(platform).catch(() => {});
+      });
+      es.onopen  = () => { sseOpen = true; };
+      es.onerror = () => {
+        sseOpen = false;
+        // EventSource auto-reconnects after error; no manual action needed.
+      };
+    }
+
+    // ── Polling fallback ────────────────────────────────────────────────────
+    // Fires every 3 s as backup when the SSE connection is down.
+    // Also triggers SSE connect on first successful adapter resolution.
+    async function pollOnce() {
+      const adapter = window.CrosspostBridge._currentAdapter;
+      if (!adapter) { setTimeout(pollOnce, 3000); return; }
+      // Open SSE connection as soon as the adapter is known.
+      if (!es) connectSSE(adapter.platform);
+      if (!sseOpen) {
+        try {
+          const res = await fetch(
+            `${BRIDGE_URL}/auto-inject?target=${encodeURIComponent(adapter.platform)}`,
+            { cache: "no-store" },
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data.pending) await claimAndInject(adapter.platform);
+          }
+        } catch { /* app not running */ }
+      }
+      setTimeout(pollOnce, 3000);
+    }
+
+    // Wait for the adapter script to register before starting.
+    setTimeout(pollOnce, 2000);
   })();
 }
 

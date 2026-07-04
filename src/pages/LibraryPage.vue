@@ -366,8 +366,9 @@ onMounted(() => {
   // update immediately without a manual Refresh.
   window.desktop.bridge.onImagesPosted(() => imageStore.load());
 
-  // Reload library when a file is auto-indexed after a download (Wavespeed, Topaz).
+  // Reload library when a file is auto-indexed (download or file watcher) or removed.
   window.desktop.library.onFileIndexed(() => imageStore.load());
+  window.desktop.library.onFileRemoved(() => imageStore.load());
 });
 
 onUnmounted(() => {
@@ -375,6 +376,7 @@ onUnmounted(() => {
   window.desktop.bridge.offImagesPosted();
   window.desktop.topaz.offJobUpdated();
   window.desktop.library.offFileIndexed();
+  window.desktop.library.offFileRemoved();
   if (_msgTimer) clearTimeout(_msgTimer);
   if (_errTimer) clearTimeout(_errTimer);
 });

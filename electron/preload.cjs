@@ -167,8 +167,17 @@ contextBridge.exposeInMainWorld("desktop", {
     offProgress: () => ipcRenderer.removeAllListeners("scan:progress"),
   },
   library: {
-    /** Fires whenever a file was auto-indexed after a download (Wavespeed, Topaz). */
+    /** Fires whenever a file was auto-indexed after a download (Wavespeed, Topaz) or by the file watcher. */
     onFileIndexed: (cb) => ipcRenderer.on("library:file-indexed", (_e, data) => cb(data)),
     offFileIndexed: () => ipcRenderer.removeAllListeners("library:file-indexed"),
+    /** Fires whenever a watched file is deleted from disk. */
+    onFileRemoved: (cb) => ipcRenderer.on("library:file-removed", (_e, data) => cb(data)),
+    offFileRemoved: () => ipcRenderer.removeAllListeners("library:file-removed"),
+  },
+  watcher: {
+    /** Start watching a local folder for file changes. */
+    start: (sourceId, rootPath) => ipcRenderer.invoke("watcher:start", sourceId, rootPath),
+    /** Stop watching a local folder. */
+    stop: (sourceId) => ipcRenderer.invoke("watcher:stop", sourceId),
   },
 });

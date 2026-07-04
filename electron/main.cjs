@@ -144,6 +144,80 @@ async function indexSingleFile(filePath) {
   }
 }
 
+// ─── Folder Watchers ─────────────────────────────────────────────────────────
+// Uses Node's built-in fs.watch({ recursive: true }) — no extra dependency.
+// Supported on macOS and Windows; on Linux events may be less reliable.
+const folderWatchers = new Map(); // sourceId → { watcher, debounceMap }
+
+async function removeFileFromDb(absolutePath) {
+  try {
+    const db = await getDatabase();
+    const normalizedPath = absolutePath.replaceAll("\\", "/");
+    db.run("DELETE FROM images WHERE local_path = ?", [normalizedPath]);
+    persistDatabase();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("library:file-removed", { localPath: normalizedPath });
+    }
+  } catch (err) {
+    console.error("[watcher] removeFileFromDb error:", err.message);
+  }
+}
+
+function startFolderWatcher(sourceId, rootPath) {
+  if (folderWatchers.has(sourceId)) return;
+  const debounceMap = new Map(); // relative filename → setTimeout id
+  let watcher;
+  try {
+    watcher = fs.watch(rootPath, { recursive: true }, (eventType, filename) => {
+      if (!filename) return;
+      const ext = path.extname(filename).toLowerCase();
+      if (!supportedExtensions.has(ext)) return;
+      if (debounceMap.has(filename)) clearTimeout(debounceMap.get(filename));
+      const timeoutId = setTimeout(async () => {
+        debounceMap.delete(filename);
+        const absolutePath = path.join(rootPath, filename);
+        if (fs.existsSync(absolutePath)) {
+          await indexSingleFile(absolutePath);
+        } else {
+          await removeFileFromDb(absolutePath);
+        }
+      }, 500);
+      debounceMap.set(filename, timeoutId);
+    });
+    watcher.on("error", (err) => {
+      console.warn(`[watcher] Error watching ${rootPath}:`, err.message);
+      folderWatchers.delete(sourceId);
+    });
+    folderWatchers.set(sourceId, { watcher, debounceMap });
+    console.log(`[watcher] Started watching ${rootPath} (source=${sourceId})`);
+  } catch (err) {
+    console.warn(`[watcher] Cannot watch ${rootPath}:`, err.message);
+  }
+}
+
+function stopFolderWatcher(sourceId) {
+  const entry = folderWatchers.get(sourceId);
+  if (!entry) return;
+  const { watcher, debounceMap } = entry;
+  for (const id of debounceMap.values()) clearTimeout(id);
+  watcher.close();
+  folderWatchers.delete(sourceId);
+  console.log(`[watcher] Stopped watcher for source=${sourceId}`);
+}
+
+async function startAllFolderWatchers() {
+  try {
+    const db = await getDatabase();
+    const rows = db.exec("SELECT id, root_path_or_id FROM image_sources WHERE type = 'local_folder' AND enabled = 1");
+    if (!rows.length || !rows[0].values) return;
+    for (const [sourceId, rootPath] of rows[0].values) {
+      if (rootPath) startFolderWatcher(sourceId, rootPath);
+    }
+  } catch (err) {
+    console.warn("[watcher] startAllFolderWatchers error:", err.message);
+  }
+}
+
 const MIGRATIONS = [
   "001_initial.sql",
   "002_collections.sql",
@@ -675,6 +749,19 @@ const postContentStore = new Map();
 // Set when the user clicks "Send to X" etc.; cleared after the extension reads it.
 const autoInjectTriggers = new Map();
 
+// SSE clients waiting for auto-inject events: { [target]: Set<ServerResponse> }
+const sseClients = new Map();
+
+// Push an auto-inject event to all SSE clients for a platform.
+function pushAutoInjectEvent(target) {
+  const clients = sseClients.get(target);
+  if (!clients || clients.size === 0) return;
+  const payload = `event: trigger\ndata: ${JSON.stringify({ target })}\n\n`;
+  for (const res of clients) {
+    try { res.write(payload); } catch { /* client disconnected */ }
+  }
+}
+
 function bridgeSendJson(res, data, status = 200) {
   const body = JSON.stringify(data);
   res.writeHead(status, {
@@ -905,6 +992,38 @@ async function handleBridge(req, res) {
     const content = postContentStore.get(targetType);
     if (!content) { bridgeSendJson(res, { ok: false, content: null }); return; }
     bridgeSendJson(res, { ok: true, content });
+    return;
+  }
+
+  // ── GET /events?target=x ─────────────────────────────────────────────────
+  // Server-Sent Events stream.  Content scripts connect here instead of polling
+  // /auto-inject so triggers are delivered immediately regardless of background-
+  // tab timer throttling.  Sends a keepalive comment every 25 s so the TCP
+  // connection is not dropped by proxies / OS idle timeouts.
+  if (req.method === "GET" && url.pathname === "/events") {
+    const targetType = url.searchParams.get("target");
+    if (!targetType) { bridgeSendJson(res, { error: "target required" }, 400); return; }
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+      "X-Accel-Buffering": "no",
+    });
+    res.write(": connected\n\n");
+    // If a trigger is already pending when the client connects, deliver it now.
+    if (autoInjectTriggers.has(targetType)) {
+      res.write(`event: trigger\ndata: ${JSON.stringify({ target: targetType })}\n\n`);
+    }
+    if (!sseClients.has(targetType)) sseClients.set(targetType, new Set());
+    sseClients.get(targetType).add(res);
+    const keepalive = setInterval(() => {
+      try { res.write(": keepalive\n\n"); } catch { clearInterval(keepalive); }
+    }, 25000);
+    req.on("close", () => {
+      clearInterval(keepalive);
+      sseClients.get(targetType)?.delete(res);
+    });
     return;
   }
 
@@ -1933,6 +2052,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("bridge:trigger-auto-inject", (_event, target) => {
     autoInjectTriggers.set(target, true);
+    pushAutoInjectEvent(target);
     return { ok: true };
   });
   ipcMain.handle("bridge:set-post-content", (_event, target, content) => {
@@ -3119,6 +3239,15 @@ app.whenReady().then(() => {
   setInterval(pollPendingWavespeedJobs, 12000);
   setInterval(pollPendingWavespeedImageJobs, 12000);
 
+  ipcMain.handle("watcher:start", (_event, sourceId, rootPath) => {
+    startFolderWatcher(sourceId, rootPath);
+    return { ok: true };
+  });
+  ipcMain.handle("watcher:stop", (_event, sourceId) => {
+    stopFolderWatcher(sourceId);
+    return { ok: true };
+  });
+
   ipcMain.handle("core:invoke", (_event, command, args = {}) => {
     const onProgress = (mainWindow && !mainWindow.isDestroyed())
       ? (data) => mainWindow.webContents.send("scan:progress", data)
@@ -3665,10 +3794,16 @@ app.whenReady().then(() => {
 
   startBridgeServer();
   createWindow();
+  startAllFolderWatchers();
 });
 
 app.on("window-all-closed", () => {
   if (bridgeServer) bridgeServer.close();
+  for (const { watcher, debounceMap } of folderWatchers.values()) {
+    for (const id of debounceMap.values()) clearTimeout(id);
+    watcher.close();
+  }
+  folderWatchers.clear();
   if (process.platform !== "darwin") app.quit();
 });
 

@@ -28,7 +28,10 @@ export const useSourceStore = defineStore("sources", () => {
 
   async function addSource(input: ImageSourceInput) {
     error.value = null;
-    await createSource(input);
+    const source = await createSource(input);
+    if (source.type === "local_folder") {
+      window.desktop?.watcher?.start(source.id, source.rootPathOrId);
+    }
     sources.value = await listSources();
   }
 
@@ -49,6 +52,7 @@ export const useSourceStore = defineStore("sources", () => {
 
   async function removeSource(id: string) {
     error.value = null;
+    window.desktop?.watcher?.stop(id);
     await deleteSource(id);
     sources.value = await listSources();
   }

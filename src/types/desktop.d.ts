@@ -328,9 +328,16 @@ declare global {
         offProgress(): void;
       };
       library: {
-        /** Fires after a file is auto-indexed following a download (Wavespeed, Topaz). */
+        /** Fires after a file is auto-indexed following a download or by the file watcher. */
         onFileIndexed(cb: (data: { localPath: string; mimeType: string }) => void): void;
         offFileIndexed(): void;
+        /** Fires when a watched file is deleted from disk. */
+        onFileRemoved(cb: (data: { localPath: string }) => void): void;
+        offFileRemoved(): void;
+      };
+      watcher: {
+        start(sourceId: string, rootPath: string): Promise<{ ok: boolean }>;
+        stop(sourceId: string): Promise<{ ok: boolean }>;
       };
     };
   }
