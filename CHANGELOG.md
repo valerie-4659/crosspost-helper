@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.18 - 2026-07-04
+
+- Release v0.3.18
+
+
 ## v0.3.17 - 2026-07-04
 
 - feat: add file watcher for automatic library updates
