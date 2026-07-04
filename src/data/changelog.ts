@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.17",
+    date: "2026-07-04",
+    items: [
+      "feat: add file watcher for automatic library updates",
+    ],
+  },
+  {
     version: "0.3.16",
     date: "2026-07-03",
     items: [
