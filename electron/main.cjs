@@ -177,11 +177,17 @@ function startFolderWatcher(sourceId, rootPath) {
         debounceMap.delete(filename);
         const absolutePath = path.join(rootPath, filename);
         if (fs.existsSync(absolutePath)) {
+          // Bust the thumbnail cache so a stale thumbnail from a partial write
+          // (generated during a previous watcher event mid-save) is discarded.
+          const normalizedPath = absolutePath.replaceAll("\\", "/");
+          const thumbHash = crypto.createHash("md5").update(normalizedPath).digest("hex");
+          const thumbPath = path.join(thumbnailDir(), `${thumbHash}.jpg`);
+          try { fs.unlinkSync(thumbPath); } catch { /* no cached thumbnail — fine */ }
           await indexSingleFile(absolutePath);
         } else {
           await removeFileFromDb(absolutePath);
         }
-      }, 500);
+      }, 1500);
       debounceMap.set(filename, timeoutId);
     });
     watcher.on("error", (err) => {
