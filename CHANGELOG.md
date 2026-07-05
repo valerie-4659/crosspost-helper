@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.20 - 2026-07-05
+
+- fix: watcher thumbnail cache bust and longer debounce
+
+
 ## v0.3.19 - 2026-07-05
 
 - fix: bridge trigger reliability and picker header layout

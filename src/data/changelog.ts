@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.20",
+    date: "2026-07-05",
+    items: [
+      "fix: watcher thumbnail cache bust and longer debounce",
+    ],
+  },
+  {
     version: "0.3.19",
     date: "2026-07-05",
     items: [
