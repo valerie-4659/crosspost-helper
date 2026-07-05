@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.19",
+    date: "2026-07-05",
+    items: [
+      "fix: bridge trigger reliability and picker header layout",
+    ],
+  },
+  {
     version: "0.3.18",
     date: "2026-07-04",
     items: [

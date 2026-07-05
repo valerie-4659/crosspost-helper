@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.19 - 2026-07-05
+
+- fix: bridge trigger reliability and picker header layout
+
+
 ## v0.3.18 - 2026-07-04
 
 - Release v0.3.18
