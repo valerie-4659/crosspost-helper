@@ -75,7 +75,7 @@ async function indexSingleFile(filePath) {
     const normalizedPath = filePath.replaceAll("\\", "/");
 
     // Find which image_source owns this file (longest matching root_path prefix).
-    const srcRows = db.exec("SELECT id, root_path FROM image_sources WHERE type = 'local_folder'");
+    const srcRows = db.exec("SELECT id, root_path_or_id FROM image_sources WHERE type = 'local_folder'");
     let sourceId = null;
     if (srcRows.length && srcRows[0].values) {
       for (const [id, rootPath] of srcRows[0].values) {

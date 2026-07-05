@@ -318,6 +318,10 @@ if (_bridgeFirstRun) {
   (function startAutoInject() {
     // Shared claim-and-inject logic used by both SSE and poll paths.
     async function claimAndInject(platform) {
+      // Check adapter first — a tab without a ready adapter must not consume
+      // the trigger, otherwise no injection happens and the trigger is lost.
+      const adapter = window.CrosspostBridge._currentAdapter;
+      if (!adapter) return;
       const claimRes = await fetch(`${BRIDGE_URL}/claim-auto-inject`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -327,8 +331,6 @@ if (_bridgeFirstRun) {
       if (!claimRes.ok) return;
       const { claimed } = await claimRes.json();
       if (!claimed) return; // another tab won the race
-      const adapter = window.CrosspostBridge._currentAdapter;
-      if (!adapter) return;
       const { autoPostEnabled } = await new Promise((resolve) =>
         chrome.storage.local.get("autoPostEnabled", resolve),
       );
@@ -365,18 +367,20 @@ if (_bridgeFirstRun) {
       if (!adapter) { setTimeout(pollOnce, 3000); return; }
       // Open SSE connection as soon as the adapter is known.
       if (!es) connectSSE(adapter.platform);
-      if (!sseOpen) {
-        try {
-          const res = await fetch(
-            `${BRIDGE_URL}/auto-inject?target=${encodeURIComponent(adapter.platform)}`,
-            { cache: "no-store" },
-          );
-          if (res.ok) {
-            const data = await res.json();
-            if (data.pending) await claimAndInject(adapter.platform);
-          }
-        } catch { /* app not running */ }
-      }
+      // Always poll as a reliable fallback — SSE is the fast path but may miss
+      // events when Chrome throttles background-tab network callbacks.
+      // If SSE already delivered and the trigger was claimed, /auto-inject
+      // returns pending:false and nothing extra happens.
+      try {
+        const res = await fetch(
+          `${BRIDGE_URL}/auto-inject?target=${encodeURIComponent(adapter.platform)}`,
+          { cache: "no-store" },
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.pending) await claimAndInject(adapter.platform);
+        }
+      } catch { /* app not running */ }
       setTimeout(pollOnce, 3000);
     }
 

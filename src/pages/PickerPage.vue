@@ -483,17 +483,33 @@ onUnmounted(() => {
 
 <template>
   <div class="flex h-full flex-col gap-4 p-5">
-    <header class="flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold text-white">Posting Picker</h1>
-        <p class="mt-1 text-sm text-slate-400">
-          {{ picker.multiPickMode ? 'Multi-pick: select folders, set count, fill random slots.' : 'Random suggestion for the selected target.' }}
-        </p>
+    <header class="flex flex-col gap-2">
+      <!-- Row 1: title + primary action -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-semibold text-white">Posting Picker</h1>
+          <p class="mt-0.5 text-sm text-slate-400">
+            {{ picker.multiPickMode ? 'Multi-pick: select folders, set count, fill random slots.' : 'Random suggestion for the selected target.' }}
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <select v-model="targets.activeTargetId" class="field min-w-44">
+            <option v-for="target in targets.enabledTargets" :key="target.id" :value="target.id">{{ target.name }}</option>
+          </select>
+          <template v-if="!picker.multiPickMode">
+            <button
+              class="button-primary rounded-md"
+              :disabled="picker.loading || !picker.canPick"
+              @click="picker.pickRandom"
+            >
+              <Shuffle class="h-4 w-4" />Pick random
+            </button>
+          </template>
+        </div>
       </div>
-      <div class="flex items-center gap-3">
-        <select v-model="targets.activeTargetId" class="field min-w-44">
-          <option v-for="target in targets.enabledTargets" :key="target.id" :value="target.id">{{ target.name }}</option>
-        </select>
+
+      <!-- Row 2: secondary controls -->
+      <div class="flex items-center gap-2">
         <!-- Mode toggle -->
         <button
           class="button gap-1.5"
@@ -505,9 +521,10 @@ onUnmounted(() => {
           Multi-Pick
         </button>
         <template v-if="!picker.multiPickMode">
+          <div class="h-4 w-px bg-line" />
           <!-- Folder filter toggle -->
           <button
-            class="button rounded-md gap-1.5"
+            class="button gap-1.5"
             :class="picker.pickerFolderPaths.length ? 'border-accent bg-accent/10 text-accent' : ''"
             title="Select source folders for random pick"
             @click="showSinglePickFolderPanel = !showSinglePickFolderPanel"
@@ -517,7 +534,7 @@ onUnmounted(() => {
           </button>
           <!-- Mime filter toggle -->
           <button
-            class="button rounded-md gap-1.5"
+            class="button gap-1.5"
             :class="picker.mimeFilter !== 'images' ? 'border-violet-500/60 bg-violet-500/10 text-violet-300' : ''"
             :title="picker.mimeFilter === 'images' ? 'Images only — click to include videos' : picker.mimeFilter === 'videos' ? 'Videos only — click for all' : 'All media — click for images only'"
             @click="picker.mimeFilter = picker.mimeFilter === 'images' ? 'videos' : picker.mimeFilter === 'videos' ? 'all' : 'images'"
@@ -527,20 +544,15 @@ onUnmounted(() => {
             <Layers v-else class="h-4 w-4" />
             {{ picker.mimeFilter === 'images' ? 'Images' : picker.mimeFilter === 'videos' ? 'Videos' : 'All media' }}
           </button>
+          <div class="h-4 w-px bg-line" />
+          <!-- Back: icon-only -->
           <button
-            class="button rounded-md"
+            class="button"
             :disabled="!picker.canGoBack"
             :title="picker.canGoBack ? `Go back (${picker.history.length} in history)` : 'No history yet'"
             @click="picker.goBack"
           >
-            <ChevronLeft class="h-4 w-4" />Back
-          </button>
-          <button
-            class="button-primary rounded-md"
-            :disabled="picker.loading || !picker.canPick"
-            @click="picker.pickRandom"
-          >
-            <Shuffle class="h-4 w-4" />Pick random
+            <ChevronLeft class="h-4 w-4" />
           </button>
         </template>
       </div>
