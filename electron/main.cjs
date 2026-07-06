@@ -502,8 +502,7 @@ async function walkImages(rootPath, onProgress) {
   const total = fileQueue.length;
   const results = [];
   for (const file of fileQueue) {
-    // force=true: discard any stale cached thumbnail from a prior partial write
-    const thumbPath = await generateThumbnail(file.localPath, true);
+    const thumbPath = await generateThumbnail(file.localPath);
 
     // Normalise path separators to forward slashes so that paths stored in
     // the database are always /-separated regardless of the host OS.
@@ -653,6 +652,43 @@ async function scanAndIndex(sourceId, rootPath, onProgress) {
   // Single write to disk for the entire batch — previously done N times.
   persistDatabase();
   return { sourceId, scanned: files.length, indexed, duplicates, removed, errors };
+}
+
+// ─── rethumbnail_source ───────────────────────────────────────────────────────
+// Re-generates thumbnails for every image in a source without re-walking the
+// folder. Skips videos (nativeImage cannot decode them) and missing files.
+async function rethumbnailSource(sourceId, onProgress) {
+  const db = await getDatabase();
+  const stmt = db.prepare(
+    "SELECT id, local_path FROM images WHERE source_id = ? AND mime_type NOT LIKE 'video/%' ORDER BY local_path"
+  );
+  stmt.bind([sourceId]);
+  const images = [];
+  while (stmt.step()) images.push(stmt.getAsObject());
+  stmt.free();
+
+  const total = images.length;
+  let processed = 0;
+
+  for (const img of images) {
+    const localPath = img.local_path;
+    if (!localPath || !fs.existsSync(localPath)) { processed++; continue; }
+    const thumbPath = await generateThumbnail(localPath, true);
+    if (thumbPath) {
+      const fwd = thumbPath.replaceAll("\\", "/");
+      const p = fwd.startsWith("/") ? fwd : "/" + fwd;
+      const thumbnailUrl = "localfile://" + encodeURI(p);
+      db.run("UPDATE images SET thumbnail_url = ? WHERE id = ?", [thumbnailUrl, img.id]);
+    }
+    processed++;
+    if (onProgress) onProgress({ scanned: processed, total, currentFile: path.basename(localPath) });
+  }
+
+  if (total > 0) persistDatabase();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("library:file-indexed", { localPath: "", mimeType: "" });
+  }
+  return { sourceId, processed };
 }
 
 function mimeTypeFor(filePath) {
@@ -3268,6 +3304,9 @@ app.whenReady().then(() => {
     // SQLite transaction. Avoids N × 2 IPC round-trips and N disk writes.
     if (command === "scan_and_index") {
       return scanAndIndex(args.sourceId, args.rootPath, onProgress);
+    }
+    if (command === "rethumbnail_source") {
+      return rethumbnailSource(args.sourceId, onProgress);
     }
     if (command === "copy_images_to_folder") return copyImagesToFolder(args.paths ?? [], args.destination);
     if (command === "debug_image_count") return getDatabase().then((db) => {

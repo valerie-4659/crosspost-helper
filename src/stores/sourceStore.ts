@@ -10,6 +10,7 @@ export const useSourceStore = defineStore("sources", () => {
   const sources = ref<ImageSource[]>([]);
   const loading = ref(false);
   const scanningSourceId = ref<string | null>(null);
+  const rethumbingSourceId = ref<string | null>(null);
   const lastScanResults = ref<Record<string, ScanResult>>({});
   const scanProgress = ref<{ scanned: number; total: number | null; currentFile: string } | null>(null);
   const error = ref<string | null>(null);
@@ -63,6 +64,20 @@ export const useSourceStore = defineStore("sources", () => {
     sources.value = await listSources();
   }
 
+  async function rethumbSource(source: ImageSource) {
+    error.value = null;
+    rethumbingSourceId.value = source.id;
+    scanProgress.value = null;
+    window.desktop?.scan?.onProgress((data) => { scanProgress.value = data; });
+    try {
+      await window.desktop.core.invoke("rethumbnail_source", { sourceId: source.id });
+    } finally {
+      rethumbingSourceId.value = null;
+      scanProgress.value = null;
+      window.desktop?.scan?.offProgress();
+    }
+  }
+
   async function scanSource(source: ImageSource) {
     error.value = null;
     scanningSourceId.value = source.id;
@@ -87,6 +102,7 @@ export const useSourceStore = defineStore("sources", () => {
     sources,
     loading,
     scanningSourceId,
+    rethumbingSourceId,
     lastScanResults,
     scanProgress,
     error,
@@ -95,6 +111,7 @@ export const useSourceStore = defineStore("sources", () => {
     addLocalFolder,
     removeSource,
     setEnabled,
+    rethumbSource,
     scanSource,
   };
 });

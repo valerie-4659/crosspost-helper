@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Cloud, FolderPlus, Loader2, Plus, RefreshCcw, Trash2 } from "lucide-vue-next";
+import { Cloud, FolderPlus, ImagePlay, Loader2, Plus, RefreshCcw, Trash2 } from "lucide-vue-next";
 import { useImageStore } from "@/stores/imageStore";
 import { useSourceStore } from "@/stores/sourceStore";
 
@@ -59,8 +59,8 @@ async function addPlaceholder(type: "google_drive" | "dropbox") {
               <span class="rounded-md border border-line bg-panelSoft px-2 py-1 text-xs text-slate-400">{{ source.type }}</span>
             </div>
             <p class="mt-1 truncate text-sm text-slate-400">{{ source.rootPathOrId }}</p>
-            <!-- Live progress while this source is being scanned -->
-            <div v-if="sourceStore.scanningSourceId === source.id" class="mt-3 space-y-2">
+            <!-- Live progress while this source is being scanned or rethumbnailed -->
+            <div v-if="sourceStore.scanningSourceId === source.id || sourceStore.rethumbingSourceId === source.id" class="mt-3 space-y-2">
               <div class="flex items-center gap-2 text-sm text-accent">
                 <Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
                 <!-- Phase 1: worker walking the directory tree, total unknown -->
@@ -114,6 +114,16 @@ async function addPlaceholder(type: "google_drive" | "dropbox") {
               <input :checked="source.enabled" type="checkbox" class="accent-accent" @change="sourceStore.setEnabled(source.id, ($event.target as HTMLInputElement).checked)" />
               Enabled
             </label>
+            <button
+              class="button"
+              :disabled="!!sourceStore.scanningSourceId || !!sourceStore.rethumbingSourceId"
+              title="Rebuild thumbnails only — faster than a full scan"
+              @click="sourceStore.rethumbSource(source)"
+            >
+              <Loader2 v-if="sourceStore.rethumbingSourceId === source.id" class="h-4 w-4 animate-spin" />
+              <ImagePlay v-else class="h-4 w-4" />
+              {{ sourceStore.rethumbingSourceId === source.id ? 'Rebuilding…' : 'Thumbnails' }}
+            </button>
             <button class="button" :disabled="sourceStore.scanningSourceId === source.id || !source.enabled" @click="scan(source.id)">
               <Loader2 v-if="sourceStore.scanningSourceId === source.id" class="h-4 w-4 animate-spin" />
               <RefreshCcw v-else class="h-4 w-4" />
