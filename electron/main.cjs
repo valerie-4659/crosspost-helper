@@ -42,9 +42,11 @@ function thumbnailDir() {
 // Generate a 400px-wide JPEG thumbnail and cache it by source-path hash.
 // Uses Electron's built-in nativeImage — no extra dependencies.
 // Returns the absolute thumbnail path, or null if generation fails.
-async function generateThumbnail(localPath) {
+// Pass force=true to discard any cached thumbnail and regenerate from source.
+async function generateThumbnail(localPath, force = false) {
   const hash = crypto.createHash("md5").update(localPath).digest("hex");
   const thumbPath = path.join(thumbnailDir(), `${hash}.jpg`);
+  if (force) { try { fs.unlinkSync(thumbPath); } catch { /* no cache — fine */ } }
   if (fs.existsSync(thumbPath)) return thumbPath;
   try {
     const img = await nativeImage.createThumbnailFromPath(localPath, { width: 400, height: 400 });
@@ -500,7 +502,8 @@ async function walkImages(rootPath, onProgress) {
   const total = fileQueue.length;
   const results = [];
   for (const file of fileQueue) {
-    const thumbPath = await generateThumbnail(file.localPath);
+    // force=true: discard any stale cached thumbnail from a prior partial write
+    const thumbPath = await generateThumbnail(file.localPath, true);
 
     // Normalise path separators to forward slashes so that paths stored in
     // the database are always /-separated regardless of the host OS.
