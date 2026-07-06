@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.21",
+    date: "2026-07-06",
+    items: [
+      "fix: force thumbnail regeneration during full scan",
+    ],
+  },
+  {
     version: "0.3.20",
     date: "2026-07-05",
     items: [

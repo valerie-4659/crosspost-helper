@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.21 - 2026-07-06
+
+- fix: force thumbnail regeneration during full scan
+
+
 ## v0.3.20 - 2026-07-05
 
 - fix: watcher thumbnail cache bust and longer debounce
