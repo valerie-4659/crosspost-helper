@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.22",
+    date: "2026-07-11",
+    items: [
+      "feat: checkpoint stats page, PNG metadata panel, copy-to-clipboard in lightbox",
+      "feat: add per-source thumbnail rebuild button",
+    ],
+  },
+  {
     version: "0.3.21",
     date: "2026-07-06",
     items: [

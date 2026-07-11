@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.22 - 2026-07-11
+
+- feat: checkpoint stats page, PNG metadata panel, copy-to-clipboard in lightbox
+- feat: add per-source thumbnail rebuild button
+
+
 ## v0.3.21 - 2026-07-06
 
 - fix: force thumbnail regeneration during full scan
