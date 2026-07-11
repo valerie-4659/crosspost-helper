@@ -878,6 +878,40 @@ export async function removeFolderPreview(folderPath: string, imageId: string): 
   );
 }
 
+export interface CheckpointStat {
+  checkpoint: string;
+  count: number;
+}
+
+/**
+ * Count non-archived images grouped by checkpoint name.
+ * Checkpoint name = everything before the first `_v` in the filename.
+ * Filenames without `_v` are grouped under "(Other)".
+ * Excluded folders are not counted.
+ */
+export async function listCheckpointStats(): Promise<CheckpointStat[]> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<{ checkpoint: string; count: number }>>(
+    `SELECT
+       CASE
+         WHEN INSTR(filename, '_v') > 0
+         THEN SUBSTR(filename, 1, INSTR(filename, '_v') - 1)
+         ELSE '(Other)'
+       END AS checkpoint,
+       COUNT(*) AS count
+     FROM images
+     WHERE is_archived = 0
+       AND NOT EXISTS (
+         SELECT 1 FROM excluded_folders ef
+         WHERE images.folder_path = ef.folder_path
+            OR images.folder_path LIKE ef.folder_path || '/%'
+       )
+     GROUP BY checkpoint
+     ORDER BY count DESC`,
+  );
+  return rows;
+}
+
 /** Returns posted-image counts grouped by (folder_path, target_id). */
 export async function listFolderPostStats(): Promise<Array<{ folderPath: string; targetId: string; postedCount: number }>> {
   const db = await getDatabase();

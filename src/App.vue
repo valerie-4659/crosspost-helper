@@ -9,6 +9,7 @@ import SettingsPage from "@/pages/SettingsPage.vue";
 import AboutPage from "@/pages/AboutPage.vue";
 import BrowserExtensionPage from "@/pages/BrowserExtensionPage.vue";
 import HistoryPage from "@/pages/HistoryPage.vue";
+import StatsPage from "@/pages/StatsPage.vue";
 import SidebarNavigation, { type AppPage } from "@/components/SidebarNavigation.vue";
 import { useTargetStore } from "@/stores/targetStore";
 import { useSourceStore } from "@/stores/sourceStore";
@@ -46,6 +47,7 @@ onMounted(async () => {
       <SettingsPage v-else-if="currentPage === 'settings'" />
       <BrowserExtensionPage v-else-if="currentPage === 'extension'" />
       <HistoryPage v-else-if="currentPage === 'history'" />
+      <StatsPage v-else-if="currentPage === 'stats'" />
       <AboutPage v-else />
     </main>
   </div>

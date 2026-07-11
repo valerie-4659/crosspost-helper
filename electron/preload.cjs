@@ -162,6 +162,11 @@ contextBridge.exposeInMainWorld("desktop", {
     /** Copy a local file to destPath (creates parent dirs). Reveals result in Finder/Explorer. */
     copyFile: (srcPath, destPath) => ipcRenderer.invoke("files:copyFile", srcPath, destPath),
   },
+  image: {
+    /** Read embedded text metadata from a PNG file (ComfyUI / A1111).
+     *  Returns null for non-PNG files or files without metadata. */
+    readMetadata: (localPath) => ipcRenderer.invoke("image:read-metadata", localPath),
+  },
   scan: {
     onProgress: (cb) => ipcRenderer.on("scan:progress", (_e, data) => cb(data)),
     offProgress: () => ipcRenderer.removeAllListeners("scan:progress"),

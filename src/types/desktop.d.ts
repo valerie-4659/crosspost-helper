@@ -1,6 +1,16 @@
 export {};
 
 declare global {
+  /** Metadata extracted from a PNG file's embedded text chunks. */
+  interface ImageMetadata {
+    source: "comfyui" | "a1111" | "unknown";
+    positivePrompt: string | null;
+    negativePrompt: string | null;
+    /** Key/value pairs: Steps, CFG, Sampler, Scheduler, Seed, Model, … */
+    settings: Record<string, string>;
+    /** Raw text chunks (excluding large `workflow` JSON). */
+    rawChunks: Record<string, string>;
+  }
   /** Shape returned by the Wavespeed REST API. */
   interface WavespeedJob {
     id: string;
@@ -322,6 +332,14 @@ declare global {
       files: {
         /** Copy a local file to destPath (creates parent dirs). Reveals result in Finder/Explorer. */
         copyFile(srcPath: string, destPath: string): Promise<{ path: string }>;
+      };
+      image: {
+        /**
+         * Extract embedded text metadata from a PNG file.
+         * Supports ComfyUI (`prompt` chunk) and A1111 (`parameters` chunk).
+         * Returns null for non-PNG files or files without recognised metadata.
+         */
+        readMetadata(localPath: string): Promise<ImageMetadata | null>;
       };
       scan: {
         onProgress(cb: (data: { scanned: number; total: number | null; currentFile: string }) => void): void;

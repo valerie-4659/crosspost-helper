@@ -691,6 +691,41 @@ async function rethumbnailSource(sourceId, onProgress) {
   return { sourceId, processed };
 }
 
+// ─── rethumbnail_folder ───────────────────────────────────────────────────────
+// Re-generates thumbnails for images in a specific folder path (and subfolders).
+async function rethumbnailFolder(folderPath, onProgress) {
+  const db = await getDatabase();
+  const stmt = db.prepare(
+    "SELECT id, local_path FROM images WHERE mime_type NOT LIKE 'video/%' AND (folder_path = ? OR folder_path LIKE ?) ORDER BY local_path"
+  );
+  stmt.bind([folderPath, folderPath + "/%"]);
+  const images = [];
+  while (stmt.step()) images.push(stmt.getAsObject());
+  stmt.free();
+
+  const total = images.length;
+  let processed = 0;
+
+  for (const img of images) {
+    const localPath = img.local_path;
+    if (!localPath || !fs.existsSync(localPath)) { processed++; continue; }
+    const thumbPath = await generateThumbnail(localPath, true);
+    if (thumbPath) {
+      const fwd = thumbPath.replaceAll("\\", "/");
+      const p = fwd.startsWith("/") ? fwd : "/" + fwd;
+      db.run("UPDATE images SET thumbnail_url = ? WHERE id = ?", ["localfile://" + encodeURI(p), img.id]);
+    }
+    processed++;
+    if (onProgress) onProgress({ scanned: processed, total, currentFile: path.basename(localPath) });
+  }
+
+  if (total > 0) persistDatabase();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("library:file-indexed", { localPath: "", mimeType: "" });
+  }
+  return { folderPath, processed };
+}
+
 function mimeTypeFor(filePath) {
   const extension = path.extname(filePath).toLowerCase();
   if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
@@ -2573,6 +2608,162 @@ app.whenReady().then(() => {
     return { path: destPath };
   });
 
+  // image:read-metadata — extract embedded text metadata from PNG files.
+  // Returns { source, positivePrompt, negativePrompt, settings, rawChunks } or null.
+  ipcMain.handle("image:read-metadata", (_event, localPath) => {
+    if (!localPath || !fs.existsSync(localPath)) return null;
+    const ext = path.extname(localPath).toLowerCase();
+    if (ext !== ".png") return null;
+
+    // ── PNG tEXt / zTXt / iTXt chunk reader ───────────────────────────────
+    const chunks = {};
+    try {
+      const zlib = require("node:zlib");
+      const buf = fs.readFileSync(localPath);
+      // Validate PNG signature: 89 50 4E 47 0D 0A 1A 0A
+      if (buf.length < 8 || buf[0] !== 0x89 || buf[1] !== 0x50 || buf[2] !== 0x4E || buf[3] !== 0x47) {
+        return null;
+      }
+      let offset = 8;
+      while (offset + 12 <= buf.length) {
+        const dataLen = buf.readUInt32BE(offset);
+        const type = buf.slice(offset + 4, offset + 8).toString("ascii");
+        const data = buf.slice(offset + 8, offset + 8 + dataLen);
+        offset += 12 + dataLen;
+        if (type === "IEND") break;
+        if (type === "tEXt") {
+          const sep = data.indexOf(0);
+          if (sep < 0) continue;
+          chunks[data.slice(0, sep).toString("latin1")] = data.slice(sep + 1).toString("latin1");
+        } else if (type === "zTXt") {
+          const sep = data.indexOf(0);
+          if (sep < 0) continue;
+          const key = data.slice(0, sep).toString("latin1");
+          try { chunks[key] = zlib.inflateSync(data.slice(sep + 2)).toString("latin1"); } catch { /* skip */ }
+        } else if (type === "iTXt") {
+          const sep = data.indexOf(0);
+          if (sep < 0) continue;
+          const key = data.slice(0, sep).toString("latin1");
+          const compressFlag = data[sep + 1];
+          const afterLang = data.indexOf(0, sep + 3);
+          if (afterLang < 0) continue;
+          const afterTrans = data.indexOf(0, afterLang + 1);
+          if (afterTrans < 0) continue;
+          const payload = data.slice(afterTrans + 1);
+          try {
+            chunks[key] = compressFlag ? zlib.inflateSync(payload).toString("utf8") : payload.toString("utf8");
+          } catch { /* skip */ }
+        }
+      }
+    } catch { return null; }
+
+    // ── A1111 / AUTOMATIC1111 format ───────────────────────────────────────
+    // Single `parameters` tEXt chunk: "<positive>\nNegative prompt: <neg>\nSteps: …"
+    if (chunks.parameters) {
+      const text = chunks.parameters;
+      const negIdx = text.indexOf("\nNegative prompt:");
+      const settingsRe = /\nSteps: /;
+      const settingsMatch = text.search(settingsRe);
+      let positivePrompt, negativePrompt = null;
+      const settings = {};
+      if (negIdx >= 0) {
+        positivePrompt = text.slice(0, negIdx).trim();
+        const afterNeg = text.slice(negIdx + 1); // "Negative prompt: …\nSteps: …"
+        const settingsInAfter = afterNeg.search(/\nSteps: /);
+        if (settingsInAfter >= 0) {
+          negativePrompt = afterNeg.slice("Negative prompt: ".length, settingsInAfter).trim();
+          const settingsLine = afterNeg.slice(settingsInAfter + 1).trim();
+          for (const part of settingsLine.split(", ")) {
+            const ci = part.indexOf(": ");
+            if (ci >= 0) settings[part.slice(0, ci).trim()] = part.slice(ci + 2).trim();
+          }
+        } else {
+          negativePrompt = afterNeg.slice("Negative prompt: ".length).trim();
+        }
+      } else if (settingsMatch >= 0) {
+        positivePrompt = text.slice(0, settingsMatch).trim();
+        const settingsLine = text.slice(settingsMatch + 1).trim();
+        for (const part of settingsLine.split(", ")) {
+          const ci = part.indexOf(": ");
+          if (ci >= 0) settings[part.slice(0, ci).trim()] = part.slice(ci + 2).trim();
+        }
+      } else {
+        positivePrompt = text.trim();
+      }
+      const rawChunks = {};
+      for (const [k, v] of Object.entries(chunks)) if (k !== "workflow") rawChunks[k] = v;
+      return { source: "a1111", positivePrompt, negativePrompt, settings, rawChunks };
+    }
+
+    // ── ComfyUI format ─────────────────────────────────────────────────────
+    // `prompt` chunk = JSON map of nodeId → { class_type, inputs }
+    if (chunks.prompt) {
+      let nodes;
+      try { nodes = JSON.parse(chunks.prompt); } catch { nodes = null; }
+      if (nodes && typeof nodes === "object") {
+        // Resolve a node input: follows [nodeId, outputIndex] references up to depth 6.
+        function resolveText(value, depth) {
+          if (depth > 6) return null;
+          if (typeof value === "string") return value;
+          if (Array.isArray(value) && typeof value[0] === "string") {
+            const n = nodes[value[0]];
+            if (!n) return null;
+            const ct = n.class_type || "";
+            if (ct === "CLIPTextEncode" || ct === "CLIPTextEncodeFlux" || ct === "smZ CLIPTextEncode") {
+              return resolveText(n.inputs?.text, depth + 1);
+            }
+            if (ct === "CLIPTextEncodeSDXL") {
+              return resolveText(n.inputs?.text_g, depth + 1) ?? resolveText(n.inputs?.text_l, depth + 1);
+            }
+            if (ct.includes("String") || ct === "PrimitiveNode" || ct === "Primitive") {
+              return resolveText(n.inputs?.value, depth + 1) ?? resolveText(n.inputs?.text, depth + 1);
+            }
+          }
+          return null;
+        }
+        const SAMPLER_TYPES = new Set(["KSampler", "KSamplerAdvanced", "SamplerCustomAdvanced", "KSamplerSelect"]);
+        const samplerNodes = Object.values(nodes).filter(n => SAMPLER_TYPES.has(n.class_type));
+        let positivePrompt = null, negativePrompt = null;
+        const settings = {};
+        if (samplerNodes.length > 0) {
+          const s = samplerNodes[0];
+          positivePrompt = resolveText(s.inputs?.positive, 0);
+          negativePrompt = resolveText(s.inputs?.negative, 0);
+          if (s.inputs?.steps != null) settings["Steps"] = String(s.inputs.steps);
+          if (s.inputs?.cfg != null) settings["CFG"] = String(s.inputs.cfg);
+          if (s.inputs?.sampler_name) settings["Sampler"] = String(s.inputs.sampler_name);
+          if (s.inputs?.scheduler) settings["Scheduler"] = String(s.inputs.scheduler);
+          const seed = s.inputs?.seed ?? s.inputs?.noise_seed;
+          if (seed != null) settings["Seed"] = String(seed);
+        }
+        // Collect all CLIPTextEncode texts when no sampler resolved them
+        if (!positivePrompt) {
+          const clipTexts = Object.values(nodes)
+            .filter(n => n.class_type === "CLIPTextEncode" && typeof n.inputs?.text === "string")
+            .map(n => n.inputs.text);
+          if (clipTexts[0]) positivePrompt = clipTexts[0];
+          if (clipTexts[1]) negativePrompt = clipTexts[1];
+        }
+        // Checkpoint
+        const loaders = Object.values(nodes).filter(n =>
+          n.class_type === "CheckpointLoaderSimple" || n.class_type === "CheckpointLoader" || n.class_type === "UNETLoader"
+        );
+        if (loaders.length > 0) {
+          const ckpt = loaders[0].inputs?.ckpt_name ?? loaders[0].inputs?.unet_name;
+          if (typeof ckpt === "string") settings["Model"] = ckpt;
+        }
+        const rawChunks = {};
+        for (const [k, v] of Object.entries(chunks)) if (k !== "workflow" && k !== "prompt") rawChunks[k] = v;
+        return { source: "comfyui", positivePrompt, negativePrompt, settings, rawChunks };
+      }
+    }
+
+    // ── Unknown / no recognised metadata ──────────────────────────────────
+    const rawChunks = {};
+    for (const [k, v] of Object.entries(chunks)) if (k !== "workflow") rawChunks[k] = v;
+    return { source: "unknown", positivePrompt: null, negativePrompt: null, settings: {}, rawChunks };
+  });
+
   // ── Shared Topaz upscale logic ────────────────────────────────────────────
   // Used by both the blocking modal IPC (Library/Picker) and the background
   // queue runner (Image Queue). Accepts a local file path + a params object.
@@ -3307,6 +3498,9 @@ app.whenReady().then(() => {
     }
     if (command === "rethumbnail_source") {
       return rethumbnailSource(args.sourceId, onProgress);
+    }
+    if (command === "rethumbnail_folder") {
+      return rethumbnailFolder(args.folderPath, onProgress);
     }
     if (command === "copy_images_to_folder") return copyImagesToFolder(args.paths ?? [], args.destination);
     if (command === "debug_image_count") return getDatabase().then((db) => {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { Archive, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Download, Eye, EyeOff, Folder, FolderOpen, FolderX, Image, RefreshCcw, RotateCcw, Send, Sparkles, Trash2, Upload, X, Zap } from "lucide-vue-next";
+import { Archive, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Download, Eye, EyeOff, Folder, FolderOpen, FolderX, Image, ImagePlay, Loader2, RefreshCcw, RotateCcw, Send, Sparkles, Trash2, Upload, X, Zap } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import VideoPromptPanel from "@/components/VideoPromptPanel.vue";
 import ImageGeneratePanel from "@/components/ImageGeneratePanel.vue";
@@ -382,6 +382,21 @@ onUnmounted(() => {
 });
 watch(() => imageStore.filters, () => imageStore.load(), { deep: true });
 watch(() => imageStore.showExcludedFolders, () => imageStore.load());
+
+// ── Thumbnail rebuild for current folder ────────────────────────────────────
+const rethumbingFolder = ref(false);
+async function rethumbCurrentFolder() {
+  if (!browsePath.value || rethumbingFolder.value) return;
+  rethumbingFolder.value = true;
+  window.desktop?.scan?.onProgress((data) => { imageStore.message = `Rebuilding thumbnails… ${data.scanned}/${data.total ?? "?"}`; });
+  try {
+    const result = await window.desktop.core.invoke<{ processed: number }>("rethumbnail_folder", { folderPath: browsePath.value });
+    imageStore.message = `✓ Rebuilt ${result.processed} thumbnail(s).`;
+  } finally {
+    rethumbingFolder.value = false;
+    window.desktop?.scan?.offProgress();
+  }
+}
 
 // Auto-dismiss banners after 5 s so they don't linger forever.
 let _msgTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1092,6 +1107,19 @@ async function fillSlot(slotId: string) {
           <ChevronRight v-if="i < breadcrumbs.length - 1" class="h-3.5 w-3.5 shrink-0 text-slate-600" />
         </template>
       </nav>
+
+      <!-- Rebuild thumbnails for current folder -->
+      <button
+        v-if="browsePath"
+        class="button h-6 px-2 gap-1 text-xs"
+        :disabled="rethumbingFolder"
+        title="Rebuild thumbnails for this folder"
+        @click="rethumbCurrentFolder"
+      >
+        <Loader2 v-if="rethumbingFolder" class="h-3 w-3 animate-spin" />
+        <ImagePlay v-else class="h-3 w-3" />
+        {{ rethumbingFolder ? 'Rebuilding…' : 'Thumbnails' }}
+      </button>
 
       <!-- Prev / Next sibling folder buttons -->
       <div v-if="siblingFolders.length > 1" class="ml-auto flex shrink-0 items-center gap-1">
