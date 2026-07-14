@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Clipboard, Copy, Film, FolderOpen, Image, Images, Layers, Maximize2, Send, SkipForward, Shuffle, Sparkles, X, Zap } from "lucide-vue-next";
+import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Clipboard, Copy, FileText, Film, FolderOpen, Image, Images, Layers, Loader2, Maximize2, Send, SkipForward, Shuffle, Sparkles, X, Zap } from "lucide-vue-next";
 import AiPostPanel from "@/components/AiPostPanel.vue";
 import VideoPromptPanel from "@/components/VideoPromptPanel.vue";
 import ImageGeneratePanel from "@/components/ImageGeneratePanel.vue";
@@ -251,6 +251,39 @@ function toggleAlternative(img: ImageWithPostState) {
 
 function clearAlternatives() {
   alternativeImages.value = [];
+}
+
+// ── Alternatives grid: click-to-view metadata ──────────────────────────────
+const gridMetaImage      = ref<ImageWithPostState | null>(null);
+const gridMetaData       = ref<ImageMetadata | null | "none">(null);
+const gridMetaLoading    = ref(false);
+const gridMetaCopiedKey  = ref<string | null>(null);
+
+async function openGridMeta(img: ImageWithPostState) {
+  gridMetaImage.value = img;
+  gridMetaData.value = null;
+  gridMetaCopiedKey.value = null;
+  if (!img.localPath?.toLowerCase().endsWith(".png") || !window.desktop?.image) {
+    gridMetaData.value = "none";
+    return;
+  }
+  gridMetaLoading.value = true;
+  try {
+    const result = await window.desktop.image.readMetadata(img.localPath);
+    gridMetaData.value = result ?? "none";
+  } finally {
+    gridMetaLoading.value = false;
+  }
+}
+
+function closeGridMeta() {
+  gridMetaImage.value = null;
+}
+
+async function copyGridMetaText(text: string, key: string) {
+  await navigator.clipboard.writeText(text);
+  gridMetaCopiedKey.value = key;
+  setTimeout(() => { gridMetaCopiedKey.value = null; }, 1500);
 }
 
 async function openFolderBrowser() {
@@ -735,7 +768,143 @@ onUnmounted(() => {
 
     <!-- ══ SINGLE-PICK MODE (original) ═════════════════════════════════ -->
     <div v-else class="flex min-h-0 flex-1 gap-4">
-      <ImagePreview :image="activeImage" />
+      <ImagePreview v-if="alternativeImages.length <= 1" :image="activeImage" />
+
+      <!-- Grid of selected alternatives — click a tile to inspect its embedded metadata -->
+      <section v-else class="surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg">
+        <div class="flex items-center justify-between border-b border-line px-3 py-2">
+          <p class="text-xs font-semibold text-white">{{ alternativeImages.length }} alternatives selected</p>
+          <p class="text-[11px] text-slate-500">Click an image to view its metadata</p>
+        </div>
+        <div class="grid min-h-0 flex-1 auto-rows-fr grid-cols-2 gap-2 overflow-y-auto p-3 sm:grid-cols-3">
+          <button
+            v-for="alt in alternativeImages"
+            :key="alt.id"
+            class="group relative overflow-hidden rounded-md border border-line bg-black/40 transition hover:border-accent"
+            title="Click to view metadata"
+            @click="openGridMeta(alt)"
+          >
+            <img
+              :src="alt.localPath ? convertFileSrc(alt.localPath) : (alt.thumbnailUrl ?? '')"
+              :alt="alt.filename"
+              class="h-full w-full object-cover"
+            />
+            <div class="absolute inset-x-0 bottom-0 truncate bg-black/70 px-1.5 py-1 text-[10px] text-slate-200 opacity-0 transition group-hover:opacity-100">
+              {{ alt.filename }}
+            </div>
+            <div class="absolute right-1 top-1 rounded bg-black/70 p-1 opacity-0 transition group-hover:opacity-100">
+              <FileText class="h-3 w-3 text-slate-200" />
+            </div>
+          </button>
+        </div>
+      </section>
+
+      <!-- Metadata overlay for a grid tile -->
+      <div
+        v-if="gridMetaImage"
+        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+        @click.self="closeGridMeta"
+      >
+        <div class="flex h-full max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-lg border border-line bg-ink">
+          <div class="flex min-h-0 flex-1 items-center justify-center bg-black/40">
+            <img
+              :src="gridMetaImage.localPath ? convertFileSrc(gridMetaImage.localPath) : (gridMetaImage.thumbnailUrl ?? '')"
+              :alt="gridMetaImage.filename"
+              class="max-h-full max-w-full object-contain"
+            />
+          </div>
+          <aside class="flex w-80 shrink-0 flex-col overflow-hidden border-l border-line bg-ink/95">
+            <div class="flex shrink-0 items-center justify-between border-b border-line px-3 py-2">
+              <span class="truncate text-xs font-semibold text-white" :title="gridMetaImage.filename">{{ gridMetaImage.filename }}</span>
+              <button class="button h-6 w-6 shrink-0 p-0" title="Close" @click="closeGridMeta"><X class="h-3.5 w-3.5" /></button>
+            </div>
+
+            <div v-if="gridMetaLoading" class="flex flex-1 items-center justify-center gap-2 text-sm text-slate-400">
+              <Loader2 class="h-4 w-4 animate-spin" /> Loading…
+            </div>
+
+            <div v-else-if="gridMetaData === 'none'" class="flex flex-1 items-center justify-center text-sm text-slate-500">
+              No embedded metadata found.
+            </div>
+
+            <div v-else-if="gridMetaData" class="flex flex-col gap-0 overflow-y-auto p-4 text-xs">
+              <div class="mb-3 flex items-center justify-between">
+                <span
+                  class="rounded px-2 py-0.5 font-medium uppercase tracking-wide"
+                  :class="gridMetaData.source === 'comfyui' ? 'bg-purple-500/20 text-purple-300' : gridMetaData.source === 'a1111' ? 'bg-blue-500/20 text-blue-300' : 'bg-panel text-slate-400'"
+                >
+                  {{ gridMetaData.source === "comfyui" ? "ComfyUI" : gridMetaData.source === "a1111" ? "A1111" : "Unknown" }}
+                </span>
+              </div>
+
+              <div v-if="gridMetaData.positivePrompt" class="mb-3">
+                <div class="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wide text-slate-500">
+                  <span>Positive Prompt</span>
+                  <button
+                    class="flex items-center gap-1 rounded px-1.5 py-0.5 transition hover:bg-panel hover:text-white"
+                    :class="gridMetaCopiedKey === 'positive' ? 'text-green-400' : 'text-slate-500'"
+                    @click="copyGridMetaText(gridMetaData.positivePrompt!, 'positive')"
+                  >
+                    <Clipboard class="h-3 w-3" />
+                    {{ gridMetaCopiedKey === "positive" ? "Copied" : "Copy" }}
+                  </button>
+                </div>
+                <pre class="whitespace-pre-wrap break-words rounded border border-line bg-panel px-2.5 py-2 font-sans leading-relaxed text-slate-200">{{ gridMetaData.positivePrompt }}</pre>
+              </div>
+
+              <div v-if="gridMetaData.negativePrompt" class="mb-3">
+                <div class="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wide text-slate-500">
+                  <span>Negative Prompt</span>
+                  <button
+                    class="flex items-center gap-1 rounded px-1.5 py-0.5 transition hover:bg-panel hover:text-white"
+                    :class="gridMetaCopiedKey === 'negative' ? 'text-green-400' : 'text-slate-500'"
+                    @click="copyGridMetaText(gridMetaData.negativePrompt!, 'negative')"
+                  >
+                    <Clipboard class="h-3 w-3" />
+                    {{ gridMetaCopiedKey === "negative" ? "Copied" : "Copy" }}
+                  </button>
+                </div>
+                <pre class="whitespace-pre-wrap break-words rounded border border-line bg-panel px-2.5 py-2 font-sans leading-relaxed text-slate-400">{{ gridMetaData.negativePrompt }}</pre>
+              </div>
+
+              <div v-if="Object.keys(gridMetaData.settings).length > 0" class="mb-3">
+                <div class="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Settings</div>
+                <div class="rounded border border-line bg-panel px-2.5 py-2">
+                  <div
+                    v-for="[key, val] in Object.entries(gridMetaData.settings)"
+                    :key="key"
+                    class="flex gap-2 py-0.5"
+                  >
+                    <span class="w-24 shrink-0 text-slate-500">{{ key }}</span>
+                    <span class="min-w-0 break-all text-slate-200">{{ val }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <template v-if="gridMetaData.source === 'unknown' && Object.keys(gridMetaData.rawChunks).length > 0">
+                <div
+                  v-for="[key, val] in Object.entries(gridMetaData.rawChunks)"
+                  :key="key"
+                  class="mb-3"
+                >
+                  <div class="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wide text-slate-500">
+                    <span>{{ key }}</span>
+                    <button
+                      class="flex items-center gap-1 rounded px-1.5 py-0.5 transition hover:bg-panel hover:text-white"
+                      :class="gridMetaCopiedKey === key ? 'text-green-400' : 'text-slate-500'"
+                      @click="copyGridMetaText(val, key)"
+                    >
+                      <Clipboard class="h-3 w-3" />
+                      {{ gridMetaCopiedKey === key ? "Copied" : "Copy" }}
+                    </button>
+                  </div>
+                  <pre class="whitespace-pre-wrap break-words rounded border border-line bg-panel px-2.5 py-2 font-sans leading-relaxed text-slate-300">{{ val }}</pre>
+                </div>
+              </template>
+            </div>
+          </aside>
+        </div>
+      </div>
 
       <aside class="surface flex w-96 shrink-0 flex-col gap-2 overflow-y-auto rounded-lg p-3">
         <p class="text-xs font-semibold text-white">Use image</p>
