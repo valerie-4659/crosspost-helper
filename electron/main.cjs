@@ -1281,10 +1281,12 @@ async function generateAiPost(imagePaths, network, hint = "", postType = "engage
   const maxTokens = Math.min(4000, Math.max(600, Math.ceil(nc.descMax / 3) + 400));
 
   const tagInstruction = tags.length
-    ? `Pick up to ${nc.tagCount} tags that fit both the platform AND the image's content level/mood. Start from this list (add better ones if needed): ${tags.join(", ")}.`
+    ? `Choose up to ${nc.tagCount} tags STRICTLY from this approved list — pick whichever ones best match the image's subject, style and content level. Do NOT invent, modify or add any tag that is not in this list, even if it seems like a better fit: ${tags.join(", ")}.`
     : `Generate up to ${nc.tagCount} tags that fit the platform AND the image's content level/mood.`;
   const tagNote = (nc.tagHasHash ? "Include the # symbol in each tag. " : "Do NOT include # symbol in tags. ")
-    + `Tag mix guidance: include mood/vibe tags that match the image level (e.g. for dreamy images: romance, longing, mood; for sensual: desire, seductive; for explicit: nsfw, explicit, adult — calibrate to what this platform allows and what fits the image's energy).`;
+    + (tags.length
+      ? "Prioritize the tags from the approved list that most specifically match what's actually in the image (subject, style, mood, content level) over generic ones."
+      : `Tag mix guidance: include mood/vibe tags that match the image level (e.g. for dreamy images: romance, longing, mood; for sensual: desire, seductive; for explicit: nsfw, explicit, adult — calibrate to what this platform allows and what fits the image's energy).`);
 
   // Context/hint = mood & theme FRAMEWORK (not verbatim copy) in "context" mode.
   // In "refine" mode the hint is the user's rough draft — the AI polishes it.
@@ -1616,10 +1618,20 @@ Respond with ONLY valid JSON, no markdown fences:
       .replace(/—/g, "-")           // em dash → hyphen
       .replace(/–/g, "-");          // en dash → hyphen
 
+  // Defensive filter: even with explicit instructions, models sometimes invent
+  // tags outside the approved list. When an approved list exists for this
+  // network, silently drop anything that isn't on it (matched loosely, since
+  // the model may omit/add the leading #).
+  let outTags = parsed.tags ?? [];
+  if (tags.length) {
+    const approved = new Set(tags.map((t) => t.replace(/^#/, "").toLowerCase()));
+    outTags = outTags.filter((t) => approved.has(String(t).replace(/^#/, "").toLowerCase()));
+  }
+
   return {
     title: normalizeTypo(parsed.title),
     description: normalizeTypo(parsed.description),
-    tags: parsed.tags ?? [],
+    tags: outTags,
   };
 }
 
