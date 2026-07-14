@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.24",
+    date: "2026-07-14",
+    items: [
+      "chore: track .claude/launch.json, ignore local Claude settings",
+      "feat: add per-checkpoint image library and top 10 to Stats page",
+    ],
+  },
+  {
     version: "0.3.23",
     date: "2026-07-14",
     items: [

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.24 - 2026-07-14
+
+- chore: track .claude/launch.json, ignore local Claude settings
+- feat: add per-checkpoint image library and top 10 to Stats page
+
+
 ## v0.3.23 - 2026-07-14
 
 - fix: keep AI-generated tags strictly within the approved network list
