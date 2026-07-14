@@ -6,6 +6,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: "0.3.23",
+    date: "2026-07-14",
+    items: [
+      "fix: keep AI-generated tags strictly within the approved network list",
+      "feat: add zoom/pan to picker image preview for artifact inspection",
+      "feat: show alternatives grid with click-to-view PNG metadata in picker",
+    ],
+  },
+  {
     version: "0.3.22",
     date: "2026-07-11",
     items: [
