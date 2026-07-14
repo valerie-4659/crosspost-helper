@@ -884,6 +884,25 @@ export interface CheckpointStat {
 }
 
 /**
+ * SQL expression that derives the checkpoint name from an image filename:
+ * everything before the first `_v`, or "(Other)" when there is no `_v`.
+ * Shared by the stats aggregation and the per-checkpoint image queries so
+ * the grouping and the filtering always agree.
+ */
+const CHECKPOINT_EXPR = `CASE
+  WHEN INSTR(images.filename, '_v') > 0
+  THEN SUBSTR(images.filename, 1, INSTR(images.filename, '_v') - 1)
+  ELSE '(Other)'
+END`;
+
+/** NOT EXISTS clause that filters out images in excluded folders (or their subfolders). */
+const NOT_IN_EXCLUDED_FOLDER = `NOT EXISTS (
+  SELECT 1 FROM excluded_folders ef
+  WHERE images.folder_path = ef.folder_path
+     OR images.folder_path LIKE ef.folder_path || '/%'
+)`;
+
+/**
  * Count non-archived images grouped by checkpoint name.
  * Checkpoint name = everything before the first `_v` in the filename.
  * Filenames without `_v` are grouped under "(Other)".
@@ -893,23 +912,56 @@ export async function listCheckpointStats(): Promise<CheckpointStat[]> {
   const db = await getDatabase();
   const rows = await db.select<Array<{ checkpoint: string; count: number }>>(
     `SELECT
-       CASE
-         WHEN INSTR(filename, '_v') > 0
-         THEN SUBSTR(filename, 1, INSTR(filename, '_v') - 1)
-         ELSE '(Other)'
-       END AS checkpoint,
+       ${CHECKPOINT_EXPR} AS checkpoint,
        COUNT(*) AS count
      FROM images
      WHERE is_archived = 0
-       AND NOT EXISTS (
-         SELECT 1 FROM excluded_folders ef
-         WHERE images.folder_path = ef.folder_path
-            OR images.folder_path LIKE ef.folder_path || '/%'
-       )
+       AND ${NOT_IN_EXCLUDED_FOLDER}
      GROUP BY checkpoint
      ORDER BY count DESC`,
   );
   return rows;
+}
+
+/** How many non-archived images belong to a single checkpoint (excluded folders skipped). */
+export async function countCheckpointImages(checkpoint: string): Promise<number> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<{ count: number }>>(
+    `SELECT COUNT(*) AS count
+     FROM images
+     WHERE is_archived = 0
+       AND (${CHECKPOINT_EXPR}) = $1
+       AND ${NOT_IN_EXCLUDED_FOLDER}`,
+    [checkpoint],
+  );
+  return rows[0]?.count ?? 0;
+}
+
+/**
+ * Paginated list of images belonging to a single checkpoint, newest first.
+ * Mirrors listCheckpointStats' grouping so the results match the counted total.
+ */
+export async function listCheckpointImages(
+  checkpoint: string,
+  limit: number,
+  offset: number,
+): Promise<ImageWithPostState[]> {
+  const db = await getDatabase();
+  const rows = await db.select<ImageListRow[]>(
+    `SELECT images.*, image_sources.name AS source_name, image_sources.type AS source_type,
+      GROUP_CONCAT(post_records.target_id || ':' || post_records.status, '|') AS post_states
+     FROM images
+     JOIN image_sources ON image_sources.id = images.source_id
+     LEFT JOIN post_records ON post_records.image_id = images.id
+     WHERE images.is_archived = 0
+       AND (${CHECKPOINT_EXPR}) = $1
+       AND ${NOT_IN_EXCLUDED_FOLDER}
+     GROUP BY images.id
+     ORDER BY COALESCE(images.created_at, images.modified_at, images.indexed_at) DESC
+     LIMIT $2 OFFSET $3`,
+    [checkpoint, limit, offset],
+  );
+  return rows.map(mapImageWithState);
 }
 
 /** Returns posted-image counts grouped by (folder_path, target_id). */
