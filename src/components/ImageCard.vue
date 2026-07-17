@@ -16,7 +16,9 @@ function handleDragStart(event: DragEvent) {
     const firstImg = dragImages.value[0];
     let iconPath: string | undefined;
     if (firstImg.thumbnailUrl?.startsWith("localfile://")) {
-      let p = decodeURIComponent(firstImg.thumbnailUrl.slice("localfile://".length));
+      // Drop any cache-busting query string (?v=<mtime>) before mapping to a path.
+      const raw = firstImg.thumbnailUrl.slice("localfile://".length).split("?")[0];
+      let p = decodeURIComponent(raw);
       if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1);
       iconPath = p;
     }

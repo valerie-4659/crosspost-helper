@@ -884,16 +884,15 @@ export interface CheckpointStat {
 }
 
 /**
- * SQL expression that derives the checkpoint name from an image filename:
- * everything before the first `_v`, or "(Other)" when there is no `_v`.
- * Shared by the stats aggregation and the per-checkpoint image queries so
- * the grouping and the filtering always agree.
+ * SQL expression that derives the checkpoint (model) name from an image filename.
+ * Delegates to the `checkpoint_name(...)` SQL function registered on the sql.js
+ * database in the main process (see extractCheckpoint in electron/main.cjs): it
+ * splits the ComfyUI "<name>-<date>-<date>-<time>-<seed>_raw" filename and strips
+ * render markers plus trailing version tokens (`_v10`, `_d4`, camelCase `V10b`).
+ * Shared by the stats aggregation and the per-checkpoint image queries so the
+ * grouping and the filtering always agree.
  */
-const CHECKPOINT_EXPR = `CASE
-  WHEN INSTR(images.filename, '_v') > 0
-  THEN SUBSTR(images.filename, 1, INSTR(images.filename, '_v') - 1)
-  ELSE '(Other)'
-END`;
+const CHECKPOINT_EXPR = `checkpoint_name(images.filename)`;
 
 /** NOT EXISTS clause that filters out images in excluded folders (or their subfolders). */
 const NOT_IN_EXCLUDED_FOLDER = `NOT EXISTS (
@@ -903,9 +902,9 @@ const NOT_IN_EXCLUDED_FOLDER = `NOT EXISTS (
 )`;
 
 /**
- * Count non-archived images grouped by checkpoint name.
- * Checkpoint name = everything before the first `_v` in the filename.
- * Filenames without `_v` are grouped under "(Other)".
+ * Count non-archived images grouped by checkpoint (model) name.
+ * The name is derived from the filename by `checkpoint_name(...)` (see
+ * CHECKPOINT_EXPR); unparseable filenames are grouped under "(Other)".
  * Excluded folders are not counted.
  */
 export async function listCheckpointStats(): Promise<CheckpointStat[]> {

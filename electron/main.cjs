@@ -49,13 +49,44 @@ async function generateThumbnail(localPath, force = false) {
   if (force) { try { fs.unlinkSync(thumbPath); } catch { /* no cache — fine */ } }
   if (fs.existsSync(thumbPath)) return thumbPath;
   try {
-    const img = await nativeImage.createThumbnailFromPath(localPath, { width: 400, height: 400 });
+    // Decode the FULL image with Chromium's decoder and downscale it ourselves.
+    // We deliberately avoid nativeImage.createThumbnailFromPath here: on macOS it
+    // goes through QuickLook, which for large or cloud-synced (Google Drive/iCloud)
+    // files can hand back a partial or placeholder render — i.e. an incomplete
+    // thumbnail that is missing the bottom of the image. createFromPath forces a
+    // real, complete decode.
+    let img = nativeImage.createFromPath(localPath);
+    if (!img.isEmpty()) {
+      const { width, height } = img.getSize();
+      const MAX = 800; // longest edge
+      if (Math.max(width, height) > MAX) {
+        img = width >= height ? img.resize({ width: MAX, quality: "better" })
+                              : img.resize({ height: MAX, quality: "better" });
+      }
+    } else {
+      // Fallback for formats Chromium can't decode from disk (rare, e.g. some webp).
+      img = await nativeImage.createThumbnailFromPath(localPath, { width: 800, height: 800 });
+    }
     if (img.isEmpty()) return null;
     fs.writeFileSync(thumbPath, img.toJPEG(85));
     return thumbPath;
   } catch {
     return null;
   }
+}
+
+// Build the localfile:// URL for a generated thumbnail.
+// Always 3-slash (/-prefixed) so Chromium keeps a Windows drive letter, and
+// with a cache-busting ?v=<mtime> so a regenerated thumbnail (same path on disk)
+// is re-fetched by the renderer instead of showing the stale cached bitmap.
+// The localfile:// protocol handler and any consumer that maps the URL back to
+// a path must strip the query string.
+function thumbUrl(thumbPath) {
+  const fwd = thumbPath.replaceAll("\\", "/");
+  const p = fwd.startsWith("/") ? fwd : "/" + fwd;
+  let v = "";
+  try { v = "?v=" + Math.floor(fs.statSync(thumbPath).mtimeMs); } catch { /* stat failed — no cache-buster */ }
+  return "localfile://" + encodeURI(p) + v;
 }
 
 const VIDEO_EXTS = new Set([".mp4", ".webm", ".mov"]);
@@ -95,11 +126,7 @@ async function indexSingleFile(filePath) {
     let thumbnailUrl = null;
     if (!isVideo) {
       const thumbPath = await generateThumbnail(filePath);
-      if (thumbPath) {
-        const fwd = thumbPath.replaceAll("\\", "/");
-        const p = fwd.startsWith("/") ? fwd : "/" + fwd;
-        thumbnailUrl = "localfile://" + encodeURI(p);
-      }
+      if (thumbPath) thumbnailUrl = thumbUrl(thumbPath);
     }
 
     const stemId = fileStem(normalizedPath);
@@ -334,6 +361,39 @@ function runMigrations(db) {
   }
 }
 
+// Derive a model/checkpoint name from an image filename for the Stats page.
+//
+// ComfyUI names files "<name>-<date>-<date>-<time>-<seed>_raw[_NN].<ext>", so we
+// split on the date-time-seed block: the model name is whatever sits before it
+// (or after it, if the block leads the filename). We then strip render markers
+// ("_raw", "_raw_03") and a trailing version/variant token ("_v10", "_d4", or a
+// camelCase "V10b"). Examples:
+//   anima_aestheticV10b-2026-...              -> anima_aesthetic
+//   graizelle_lustima_ink_d4-2026-...         -> graizelle_lustima_ink
+//   loOmaij_thread005LeanIn-2026-...          -> loOmaij_thread005LeanIn
+//   electrumCinnamonBeta_electrumCinnamon-... -> electrumCinnamonBeta_electrumCinnamon
+//   dessertModels_honeyBun-2026-...           -> dessertModels_honeyBun
+function extractCheckpoint(filename) {
+  if (!filename) return "(Other)";
+  let name = String(filename).replace(/\.[^.]+$/, ""); // drop extension
+  const DATE_BLOCK = /\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}-\d{6}-\d+/;
+  const m = name.match(DATE_BLOCK);
+  let raw;
+  if (m) {
+    const before = name.slice(0, m.index).replace(/[-_]+$/, "");
+    const after = name.slice(m.index + m[0].length).replace(/^[-_]+/, "");
+    raw = before || after; // name is before the block, or after it if it leads
+  } else {
+    raw = name;
+  }
+  // Render markers are never part of the model name.
+  raw = raw.replace(/_raw(_\d+)?$/i, "").replace(/^raw(_\d+)?$/i, "");
+  // Trailing version/variant: "_v10", "_d4", "_D2", or camelCase "V10b".
+  raw = raw.replace(/_[vd]\d+[a-z]?$/i, "").replace(/V\d+[a-z]?$/, "");
+  raw = raw.replace(/[-_]+$/, "").trim();
+  return raw || "(Other)";
+}
+
 async function getSql() {
   if (!sqlPromise) {
     sqlPromise = initSqlJs({
@@ -357,6 +417,11 @@ async function getDatabase() {
         database = new SQL.Database();
       }
       runMigrations(database);
+
+      // Register the checkpoint_name(filename) SQL function so the Stats queries
+      // can group/filter by model name derived from the filename. Must be
+      // re-registered on every fresh Database instance (it lives in-memory).
+      database.create_function("checkpoint_name", extractCheckpoint);
 
       // One-time normalisation: convert Windows backslash paths that were
       // written by pre-v0.2.5 builds.  Forward slashes work on every platform
@@ -515,13 +580,7 @@ async function walkImages(rootPath, onProgress) {
     // thumbnailUrl: always use the 3-slash localfile:/// format.
     // localfile://C:/... gets parsed by Chromium as host="C", losing the drive
     // letter.  localfile:///C:/... → host="", pathname="/C:/..." → preserved.
-    const thumbnailUrl = thumbPath
-      ? (() => {
-          const fwd = thumbPath.replaceAll("\\", "/");
-          const p = fwd.startsWith("/") ? fwd : "/" + fwd;
-          return "localfile://" + encodeURI(p);
-        })()
-      : null;
+    const thumbnailUrl = thumbPath ? thumbUrl(thumbPath) : null;
 
     results.push({
       localPath,
@@ -675,10 +734,7 @@ async function rethumbnailSource(sourceId, onProgress) {
     if (!localPath || !fs.existsSync(localPath)) { processed++; continue; }
     const thumbPath = await generateThumbnail(localPath, true);
     if (thumbPath) {
-      const fwd = thumbPath.replaceAll("\\", "/");
-      const p = fwd.startsWith("/") ? fwd : "/" + fwd;
-      const thumbnailUrl = "localfile://" + encodeURI(p);
-      db.run("UPDATE images SET thumbnail_url = ? WHERE id = ?", [thumbnailUrl, img.id]);
+      db.run("UPDATE images SET thumbnail_url = ? WHERE id = ?", [thumbUrl(thumbPath), img.id]);
     }
     processed++;
     if (onProgress) onProgress({ scanned: processed, total, currentFile: path.basename(localPath) });
@@ -711,9 +767,7 @@ async function rethumbnailFolder(folderPath, onProgress) {
     if (!localPath || !fs.existsSync(localPath)) { processed++; continue; }
     const thumbPath = await generateThumbnail(localPath, true);
     if (thumbPath) {
-      const fwd = thumbPath.replaceAll("\\", "/");
-      const p = fwd.startsWith("/") ? fwd : "/" + fwd;
-      db.run("UPDATE images SET thumbnail_url = ? WHERE id = ?", ["localfile://" + encodeURI(p), img.id]);
+      db.run("UPDATE images SET thumbnail_url = ? WHERE id = ?", [thumbUrl(thumbPath), img.id]);
     }
     processed++;
     if (onProgress) onProgress({ scanned: processed, total, currentFile: path.basename(localPath) });
@@ -4016,7 +4070,10 @@ app.whenReady().then(() => {
     // After stripping "localfile://", the path always starts with "/" because
     // we use 3-slash URLs.  For Windows drive paths ("/C:/...") strip the
     // leading "/" so Node gets a valid "C:/..." absolute path.
-    const withSlash = decodeURIComponent(request.url.slice("localfile://".length));
+    // Strip any cache-busting query string (?v=<mtime>) before touching disk.
+    const rawUrl = request.url.slice("localfile://".length);
+    const qIdx = rawUrl.indexOf("?");
+    const withSlash = decodeURIComponent(qIdx >= 0 ? rawUrl.slice(0, qIdx) : rawUrl);
     const isWinDrive = /^\/[A-Za-z]:\//.test(withSlash);
     const filePath = isWinDrive ? withSlash.slice(1) : withSlash;
     const ext = path.extname(filePath).toLowerCase();
